@@ -16,9 +16,11 @@
   - CLI parameter parity improvements
 - We are not attempting a full provider abstraction rewrite in the first wave.
 - Environment policy for this workspace:
-  - Prefer the user's existing global/shared Python and `uv` environment.
+  - Prefer the user's existing global `uv tool` environment, not the system-installed Python interpreter.
+  - The canonical shared runtime for this repo is `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe`.
   - Do not create a new project-local `.venv` unless the user explicitly requests it.
   - A `.venv` was mistakenly created on 2026-03-09 during dataset setup and was immediately removed after the user corrected the preference.
+  - A direct editable install was also mistakenly made into `C:\Users\86166\AppData\Local\Programs\Python\Python313`; prefer the `uv tool install --editable .` environment instead.
 
 ## Compatibility Rules
 - Result keys like `target_*_critic_descN` remain the source of truth for historical runs.
