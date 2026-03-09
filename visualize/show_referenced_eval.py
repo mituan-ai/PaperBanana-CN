@@ -28,9 +28,12 @@ from pathlib import Path
 sys.path.append(os.getcwd())
 
 from utils.pipeline_state import (
+    build_render_stage_entries,
     detect_task_type_from_result,
     find_final_stage_keys,
     get_available_critic_rounds,
+    resolve_stage_artifact_keys,
+    stage_display_label,
 )
 from utils.result_bundle import load_result_bundle
 from utils.result_paths import resolve_gt_image_path
@@ -91,6 +94,31 @@ def get_latest_critic_keys(item, task_type):
         f"target_{task_type}_critic_desc{final_round}_base64_jpg",
         f"target_{task_type}_critic_desc{final_round}",
     )
+
+
+def get_display_mode_options(data, task_type):
+    ordered_sources = ["vanilla", "planner", "stylist", "critic", "polish"]
+    available_sources = []
+    seen = set()
+    for item in data:
+        for stage_entry in build_render_stage_entries(
+            item,
+            task_type,
+            item.get("exp_mode"),
+        ):
+            stage_name = stage_entry["stage_name"]
+            if stage_name in ordered_sources and stage_name not in seen:
+                seen.add(stage_name)
+                available_sources.append(stage_name)
+
+    labels = ["Auto"]
+    source_map = {"Auto": None}
+    for source in ordered_sources:
+        if source in available_sources:
+            label = stage_display_label(source)
+            labels.append(label)
+            source_map[label] = source
+    return labels, source_map
 
 def display_outcome(outcome):
     if outcome == "Model":
@@ -225,31 +253,12 @@ def main():
     # Detect task type
     task_type = detect_task_type(data)
     st.session_state["task_type"] = task_type
-    
-    # --- Display Mode Selection ---
-    if task_type == "plot":
-        display_mode = st.sidebar.selectbox(
-            "Model Display Mode",
-            ["Auto", "Vanilla", "Stylist"],
-            help="Select which stage of the model output to display."
-        )
-        
-        mode_to_keys = {
-            "Vanilla": ("target_plot_desc0_base64_jpg", "target_plot_desc0"),
-            "Stylist": ("target_plot_stylist_desc0_base64_jpg", "target_plot_stylist_desc0"),
-        }
-    else:  # diagram
-        display_mode = st.sidebar.selectbox(
-            "Model Display Mode",
-            ["Auto", "Vanilla", "Stylist", "Critic"],
-            help="Select which stage of the model output to display."
-        )
-        
-        mode_to_keys = {
-            "Vanilla": ("target_diagram_desc0_base64_jpg", "target_diagram_desc0"),
-            "Stylist": ("target_diagram_stylist_desc0_base64_jpg", "target_diagram_stylist_desc0"),
-            "Critic": (None, None),
-        }
+    display_mode_options, display_mode_source_map = get_display_mode_options(data, task_type)
+    display_mode = st.sidebar.selectbox(
+        "Model Display Mode",
+        display_mode_options,
+        help="Select which stage of the model output to display.",
+    )
     
     # --- Search Functionality ---
     search_field = "id"
@@ -358,11 +367,26 @@ def main():
                     ),
                 )
             else:
-                model_b64_key, model_text_key = mode_to_keys[display_mode]
-                if display_mode == "Critic":
+                selected_source = display_mode_source_map.get(display_mode)
+                if selected_source == "critic":
                     latest_b64_key, latest_text_key = get_latest_critic_keys(item, task_type)
-                    model_b64_key = latest_b64_key or "target_diagram_desc0_base64_jpg"
-                    model_text_key = latest_text_key or "target_diagram_desc0"
+                    if latest_b64_key and latest_text_key:
+                        model_b64_key = latest_b64_key
+                        model_text_key = latest_text_key
+                    else:
+                        model_b64_key, model_text_key = find_final_stage_keys(
+                            item,
+                            task_type,
+                            item.get(
+                                "exp_mode",
+                                st.session_state.get("exp_mode", "demo_planner_critic"),
+                            ),
+                        )
+                else:
+                    model_b64_key, model_text_key = resolve_stage_artifact_keys(
+                        task_type,
+                        selected_source or "planner",
+                    )
 
             model_b64 = item.get(model_b64_key)
             model_description = item.get(model_text_key, "N/A")

@@ -123,6 +123,16 @@
   - validated on 2026-03-10 with:
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`45` tests passed)
+- 2026-03-10 Completed in Wave 9:
+  - extended `PipelineSpec` with render-stage metadata so registry can describe displayable stages and the default base render source
+  - added `pipeline_spec` result metadata in `PaperVizProcessor`, making produced results self-describe their stage contract instead of forcing viewers to guess from `exp_mode`
+  - refactored `utils/pipeline_state.py` to resolve final outputs and available render stages from registry metadata, with backward-compatible inference for older result files
+  - refactored `utils/demo_task_utils.py` so demo timelines no longer special-case `demo_full` when deciding whether stylist stages exist
+  - updated both viewers to use registry-derived stage labels / display modes, removing the old `Planner / Vanilla` conflation and hard-coded mode mapping
+  - added focused tests for registry metadata, stylist-stage fallback selection, render-stage entry construction, and pipeline metadata propagation
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`49` tests passed)
 
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.

@@ -30,9 +30,9 @@ from pathlib import Path
 sys.path.append(os.getcwd())
 
 from utils.pipeline_state import (
-    critic_desc_key,
+    build_render_stage_entries,
     detect_task_type_from_result,
-    get_available_critic_rounds,
+    stage_display_label,
 )
 from utils.result_bundle import load_result_bundle
 from utils.result_paths import resolve_gt_image_path
@@ -71,11 +71,6 @@ def display_stage_comparison(item, results_path):
     st.markdown("### 📊 Pipeline Evolution Comparison")
     
     task_type = detect_task_type(item)
-    prefix = "target_plot" if task_type == "plot" else "target_diagram"
-    
-    # Create two rows with two columns each
-    row1_col1, row1_col2 = st.columns(2)
-    row2_col1, row2_col2 = st.columns(2)
     
     # Detect available stages dynamically
     available_stages = []
@@ -88,43 +83,33 @@ def display_stage_comparison(item, results_path):
         "color": "orange",
         "is_human": True
     })
-    
-    # Planner / Vanilla
-    planner_key = f"{prefix}_desc0"
-    if planner_key in item:
+
+    stage_colors = {
+        "vanilla": "blue",
+        "planner": "blue",
+        "stylist": "violet",
+        "critic": "green",
+        "polish": "orange",
+    }
+    for stage_entry in build_render_stage_entries(
+        item,
+        task_type,
+        item.get("exp_mode"),
+    ):
         available_stages.append({
-            "title": "📝 Planner / Vanilla",
-            "desc_key": planner_key,
-            "img_key": f"{planner_key}_base64_jpg",
-            "color": "blue",
-            "is_human": False
+            "title": stage_display_label(
+                stage_entry["stage_name"],
+                stage_entry.get("round_idx"),
+            ),
+            "desc_key": stage_entry.get("text_key"),
+            "img_key": stage_entry["image_key"],
+            "suggestions_key": stage_entry.get("suggestions_key"),
+            "color": stage_colors.get(stage_entry["stage_name"], "blue"),
+            "is_human": False,
+            "round_idx": stage_entry.get("round_idx"),
+            "stage_name": stage_entry["stage_name"],
+            "code_key": stage_entry.get("code_key"),
         })
-    
-    # Stylist
-    stylist_key = f"{prefix}_stylist_desc0"
-    if stylist_key in item:
-        available_stages.append({
-            "title": "✨ Stylist",
-            "desc_key": stylist_key,
-            "img_key": f"{stylist_key}_base64_jpg",
-            "color": "violet",
-            "is_human": False
-        })
-    
-    # Critic rounds
-    for round_idx in get_available_critic_rounds(item, task_type):
-        critic_key = critic_desc_key(task_type, round_idx)
-        if critic_key in item:
-            emoji = "🔍" * min(round_idx + 1, 3)
-            available_stages.append({
-                "title": f"{emoji} Critic Round {round_idx + 1}",
-                "desc_key": critic_key,
-                "img_key": f"{critic_key}_base64_jpg",
-                "suggestions_key": f"{prefix}_critic_suggestions{round_idx}",
-                "color": "green",
-                "is_human": False,
-                "round_idx": round_idx
-            })
             
     # Create dynamic grid based on number of stages
     num_stages = len(available_stages)
@@ -285,34 +270,30 @@ def main():
         return
     
     st.title("🍌 PaperBanana Pipeline Evolution Viewer")
-    st.markdown(f"Visualizing the progression through **Planner → Stylist → Critic** stages")
+    st.markdown("Visualizing the progression through the pipeline render stages")
     
     st.divider()
     
     # --- Global Statistics ---
     with st.expander("📊 Global Statistics", expanded=False):
         total = len(data)
-        
-        # Simple heuristic: inspect the first item to guess task type for stats
-        # (This assumes the file is consistent)
-        sample = data[0] if data else {}
-        is_plot = detect_task_type(sample) == "plot"
-        
-        if is_plot:
-            has_all_stages = sum(1 for item in data if 
-                item.get("target_plot_desc0") and 
-                item.get("target_plot_stylist_desc0") and 
-                item.get("target_plot_critic_desc0"))
-        else:
-            has_all_stages = sum(1 for item in data if 
-                item.get("target_diagram_desc0") and 
-                item.get("target_diagram_stylist_desc0") and 
-                item.get("target_diagram_critic_desc0"))
+        multi_stage_cases = sum(
+            1
+            for item in data
+            if len(
+                build_render_stage_entries(
+                    item,
+                    detect_task_type(item),
+                    item.get("exp_mode"),
+                )
+            )
+            >= 2
+        )
         
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Samples", total)
-        col2.metric("Complete Pipeline", has_all_stages)
-        col3.metric("Completion Rate", f"{has_all_stages/total*100:.1f}%")
+        col2.metric("Multi-stage Cases", multi_stage_cases)
+        col3.metric("Coverage", f"{multi_stage_cases/total*100:.1f}%")
     
     st.divider()
     

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, MutableMapping
 
+from utils.pipeline_registry import get_pipeline_metadata
+
 
 def normalize_task_name(task_name: str) -> str:
     return "plot" if str(task_name or "").strip().lower() == "plot" else "diagram"
@@ -87,6 +89,121 @@ def desc_key_from_image_key(image_key: str) -> str | None:
     return None
 
 
+def vanilla_image_key(task_name: str) -> str:
+    return f"vanilla_{normalize_task_name(task_name)}_base64_jpg"
+
+
+def polish_image_key(task_name: str) -> str:
+    return f"polished_{normalize_task_name(task_name)}_base64_jpg"
+
+
+def resolve_stage_artifact_keys(
+    task_name: str,
+    stage_name: str,
+    *,
+    round_idx: int | None = None,
+) -> tuple[str | None, str | None]:
+    normalized_task = normalize_task_name(task_name)
+
+    if stage_name == "vanilla":
+        text_key = "vanilla_plot_code" if normalized_task == "plot" else None
+        return vanilla_image_key(normalized_task), text_key
+
+    if stage_name == "planner":
+        desc_key = planner_desc_key(normalized_task)
+        return image_key_for_desc(desc_key), desc_key
+
+    if stage_name == "stylist":
+        desc_key = stylist_desc_key(normalized_task)
+        return image_key_for_desc(desc_key), desc_key
+
+    if stage_name == "critic" and round_idx is not None:
+        desc_key = critic_desc_key(normalized_task, round_idx)
+        return image_key_for_desc(desc_key), desc_key
+
+    if stage_name == "polish":
+        return polish_image_key(normalized_task), None
+
+    return None, None
+
+
+def stage_display_label(stage_name: str, round_idx: int | None = None) -> str:
+    if stage_name == "vanilla":
+        return "🪄 Vanilla"
+    if stage_name == "planner":
+        return "📝 Planner"
+    if stage_name == "stylist":
+        return "✨ Stylist"
+    if stage_name == "critic":
+        critic_round = int(round_idx or 0) + 1
+        emoji = "🔍" * min(critic_round, 3)
+        return f"{emoji} Critic Round {critic_round}"
+    if stage_name == "polish":
+        return "🎨 Polish"
+    return stage_name
+
+
+def _resolve_pipeline_metadata(
+    result: dict[str, Any] | None,
+    exp_mode: str | None = None,
+) -> dict[str, Any]:
+    metadata = result.get("pipeline_spec") if isinstance(result, dict) else None
+    if isinstance(metadata, dict):
+        metadata = dict(metadata)
+    else:
+        metadata = {}
+
+    resolved_mode = (
+        str(metadata.get("exp_mode") or "").strip()
+        or str(exp_mode or "").strip()
+        or str(result.get("exp_mode") if isinstance(result, dict) else "").strip()
+    )
+
+    if resolved_mode:
+        try:
+            merged = get_pipeline_metadata(resolved_mode)
+            merged.update({key: value for key, value in metadata.items() if value is not None})
+            return merged
+        except ValueError:
+            pass
+
+    inferred_sources = []
+    if isinstance(result, dict):
+        task_name = normalize_task_name(result.get("task_name", "diagram"))
+        inferred_candidates = [
+            "vanilla",
+            "planner",
+            "stylist",
+            "critic",
+            "polish",
+        ]
+        for stage_name in inferred_candidates:
+            if stage_name == "critic":
+                if get_available_critic_rounds(result, task_name):
+                    inferred_sources.append(stage_name)
+                continue
+            image_key, _ = resolve_stage_artifact_keys(task_name, stage_name)
+            if image_key and result.get(image_key):
+                inferred_sources.append(stage_name)
+
+    base_render_source = None
+    for stage_name in inferred_sources:
+        if stage_name != "critic":
+            base_render_source = stage_name
+
+    fallback = {
+        "exp_mode": resolved_mode,
+        "stages": [],
+        "render_stage_sources": inferred_sources,
+        "base_render_source": base_render_source,
+        "eval_image_source": None,
+        "critic_source": None,
+        "disable_eval": False,
+    }
+    fallback.update(metadata)
+    return fallback
+
+
 def get_available_critic_rounds(result: dict[str, Any], task_name: str) -> list[int]:
     prefix = f"target_{normalize_task_name(task_name)}_critic_desc"
     suffix = "_base64_jpg"
@@ -100,6 +217,63 @@ def get_available_critic_rounds(result: dict[str, Any], task_name: str) -> list[
     return sorted(set(rounds))
 
 
+def build_render_stage_entries(
+    result: dict[str, Any],
+    task_name: str,
+    exp_mode: str | None = None,
+) -> list[dict[str, Any]]:
+    normalized_task = normalize_task_name(task_name)
+    metadata = _resolve_pipeline_metadata(result, exp_mode)
+    stage_entries = []
+
+    for stage_name in metadata.get("render_stage_sources", []):
+        if stage_name == "critic":
+            for round_idx in get_available_critic_rounds(result, normalized_task):
+                image_key, text_key = resolve_stage_artifact_keys(
+                    normalized_task,
+                    "critic",
+                    round_idx=round_idx,
+                )
+                if image_key and result.get(image_key):
+                    stage_entries.append(
+                        {
+                            "stage_name": "critic",
+                            "round_idx": round_idx,
+                            "image_key": image_key,
+                            "text_key": text_key,
+                            "code_key": (
+                                code_key_for_desc(text_key)
+                                if normalized_task == "plot" and text_key
+                                else None
+                            ),
+                            "suggestions_key": critic_suggestions_key(
+                                normalized_task,
+                                round_idx,
+                            ),
+                        }
+                    )
+            continue
+
+        image_key, text_key = resolve_stage_artifact_keys(normalized_task, stage_name)
+        if image_key and result.get(image_key):
+            code_key = None
+            if normalized_task == "plot":
+                if stage_name == "vanilla":
+                    code_key = "vanilla_plot_code"
+                elif text_key:
+                    code_key = code_key_for_desc(text_key)
+            stage_entries.append(
+                {
+                    "stage_name": stage_name,
+                    "image_key": image_key,
+                    "text_key": text_key,
+                    "code_key": code_key,
+                }
+            )
+
+    return stage_entries
+
+
 def find_final_stage_keys(
     result: dict[str, Any],
     task_name: str,
@@ -110,15 +284,24 @@ def find_final_stage_keys(
         return eval_image_field, desc_key_from_image_key(eval_image_field)
 
     normalized_task = normalize_task_name(task_name)
+    metadata = _resolve_pipeline_metadata(result, exp_mode)
     critic_rounds = get_available_critic_rounds(result, task_name=normalized_task)
-    if critic_rounds:
+    if critic_rounds and "critic" in metadata.get("render_stage_sources", []):
         final_round = critic_rounds[-1]
-        desc_key = critic_desc_key(normalized_task, final_round)
-        return image_key_for_desc(desc_key), desc_key
+        return resolve_stage_artifact_keys(
+            normalized_task,
+            "critic",
+            round_idx=final_round,
+        )
 
-    if exp_mode == "demo_full":
-        desc_key = stylist_desc_key(normalized_task)
-        return image_key_for_desc(desc_key), desc_key
+    base_render_source = metadata.get("base_render_source")
+    if isinstance(base_render_source, str):
+        image_key, text_key = resolve_stage_artifact_keys(
+            normalized_task,
+            base_render_source,
+        )
+        if image_key:
+            return image_key, text_key
 
     desc_key = planner_desc_key(normalized_task)
     return image_key_for_desc(desc_key), desc_key

@@ -2,6 +2,7 @@ import unittest
 
 from utils.pipeline_state import (
     PipelineState,
+    build_render_stage_entries,
     collect_parse_error_round_keys,
     detect_task_type_from_result,
     find_final_stage_keys,
@@ -69,6 +70,46 @@ class PipelineStateTest(unittest.TestCase):
         }
 
         self.assertEqual(detect_task_type_from_result(payload), "plot")
+
+    def test_find_final_stage_keys_uses_registry_base_render_source(self):
+        result = {
+            "exp_mode": "dev_planner_stylist",
+            "target_diagram_desc0_base64_jpg": "planner",
+            "target_diagram_stylist_desc0_base64_jpg": "stylist",
+        }
+
+        image_key, desc_key = find_final_stage_keys(result, "diagram", "dev_planner_stylist")
+
+        self.assertEqual(image_key, "target_diagram_stylist_desc0_base64_jpg")
+        self.assertEqual(desc_key, "target_diagram_stylist_desc0")
+
+    def test_build_render_stage_entries_follows_pipeline_contract(self):
+        result = {
+            "exp_mode": "dev_full",
+            "pipeline_spec": {
+                "exp_mode": "dev_full",
+            },
+            "target_plot_desc0_base64_jpg": "planner",
+            "target_plot_desc0": "planner desc",
+            "target_plot_desc0_code": "print('planner')",
+            "target_plot_stylist_desc0_base64_jpg": "stylist",
+            "target_plot_stylist_desc0": "stylist desc",
+            "target_plot_stylist_desc0_code": "print('stylist')",
+            "target_plot_critic_desc1_base64_jpg": "critic",
+            "target_plot_critic_desc1": "critic desc",
+            "target_plot_critic_desc1_code": "print('critic')",
+            "target_plot_critic_suggestions1": "Refine annotations.",
+        }
+
+        stages = build_render_stage_entries(result, "plot", "dev_full")
+
+        self.assertEqual(
+            [stage["stage_name"] for stage in stages],
+            ["planner", "stylist", "critic"],
+        )
+        self.assertEqual(stages[0]["code_key"], "target_plot_desc0_code")
+        self.assertEqual(stages[1]["code_key"], "target_plot_stylist_desc0_code")
+        self.assertEqual(stages[2]["suggestions_key"], "target_plot_critic_suggestions1")
 
 
 if __name__ == "__main__":

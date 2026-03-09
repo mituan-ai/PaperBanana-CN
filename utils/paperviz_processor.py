@@ -32,7 +32,7 @@ from agents.polish_agent import PolishAgent
 
 from .config import ExpConfig
 from .eval_toolkits import get_score_for_image_referenced
-from .pipeline_registry import PipelineSpec, get_pipeline_spec
+from .pipeline_registry import PipelineSpec, get_pipeline_metadata, get_pipeline_spec
 from .pipeline_state import PipelineState
 from .result_order import prepare_input_payload
 
@@ -288,6 +288,7 @@ class PaperVizProcessor:
         data.setdefault("dataset_name", self.exp_config.dataset_name)
         data.setdefault("task_name", task_name)
         data.setdefault("exp_mode", exp_mode)
+        data.setdefault("pipeline_spec", get_pipeline_metadata(exp_mode))
         spec = get_pipeline_spec(exp_mode)
         logger.debug(f"\n── process_single_query 开始 ── candidate={candidate_id}")
         logger.debug(f"   exp_mode={exp_mode}, task={task_name}, retrieval={retrieval_setting}, provider={self.exp_config.provider}")
@@ -352,6 +353,10 @@ class PaperVizProcessor:
                         result.setdefault("dataset_name", self.exp_config.dataset_name)
                         result.setdefault("task_name", self.exp_config.task_name)
                         result.setdefault("exp_mode", self.exp_config.exp_mode)
+                        result.setdefault(
+                            "pipeline_spec",
+                            get_pipeline_metadata(self.exp_config.exp_mode),
+                        )
                     return result
                 except Exception as task_err:
                     err_summary = f"{type(task_err).__name__}: {task_err}"
@@ -372,6 +377,7 @@ class PaperVizProcessor:
                         "dataset_name": self.exp_config.dataset_name,
                         "task_name": self.exp_config.task_name,
                         "exp_mode": self.exp_config.exp_mode,
+                        "pipeline_spec": get_pipeline_metadata(self.exp_config.exp_mode),
                         "status": "failed",
                         "error": err_summary,
                         "error_detail": err_detail,

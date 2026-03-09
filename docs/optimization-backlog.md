@@ -27,10 +27,10 @@
   - [x] make `PaperVizProcessor` yield/save results in deterministic input order even under concurrent execution
   - [x] make demo display / download / ZIP export use stable candidate identifiers instead of grid indexes
   - [x] make run filenames more collision-resistant and more self-describing
-- [ ] Phase 9: Contract and registry consistency
-  - [ ] attach richer pipeline metadata (`pipeline_spec`, final-stage hints) to produced results
-  - [ ] remove hard-coded `demo_full` / planner-vs-stylist assumptions from final-stage resolution and stage timelines
-  - [ ] make viewers render stage labels and auto mode selection from registry metadata instead of guesswork
+- [x] Phase 9: Contract and registry consistency
+  - [x] attach richer pipeline metadata (`pipeline_spec`, final-stage hints) to produced results
+  - [x] remove hard-coded `demo_full` / planner-vs-stylist assumptions from final-stage resolution and stage timelines
+  - [x] make viewers render stage labels and auto mode selection from registry metadata instead of guesswork
 - [ ] Phase 10: Runtime isolation
   - [ ] replace module-level provider/client/hook globals with per-run runtime context objects
   - [ ] isolate generation runtime from refine runtime so concurrent sessions do not stomp each other

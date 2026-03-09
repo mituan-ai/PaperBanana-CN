@@ -961,7 +961,13 @@ def display_candidate_result(result, candidate_id, exp_mode, task_name="diagram"
     else:
         st.warning(f"候选方案 {candidate_id} 未生成图像")
 
-    final_code_key = f"{final_desc_key}_code" if final_desc_key else ""
+    final_code_key = ""
+    if task_name == "plot" and final_desc_key:
+        final_code_key = (
+            final_desc_key
+            if final_desc_key == "vanilla_plot_code"
+            else f"{final_desc_key}_code"
+        )
     if task_name == "plot" and final_code_key and result.get(final_code_key):
         code_text = clean_text(result[final_code_key])
         with st.expander("🧪 查看最终 Matplotlib 代码", expanded=False):
@@ -1642,7 +1648,11 @@ def main():
                             )
 
                         if current_task_name == "plot" and final_desc_key:
-                            final_code_key = f"{final_desc_key}_code"
+                            final_code_key = (
+                                final_desc_key
+                                if final_desc_key == "vanilla_plot_code"
+                                else f"{final_desc_key}_code"
+                            )
                             if result.get(final_code_key):
                                 zip_file.writestr(
                                     f"candidate_{candidate_id}.py",

@@ -59,6 +59,19 @@ class DemoTaskUtilsTest(unittest.TestCase):
         self.assertEqual(stages[1]["code_key"], "target_plot_critic_desc0_code")
         self.assertEqual(stages[1]["suggestions_key"], "target_plot_critic_suggestions0")
 
+    def test_build_evolution_stages_uses_registry_for_stylist_pipeline(self):
+        result = {
+            "exp_mode": "dev_planner_stylist",
+            "target_diagram_desc0": "planner desc",
+            "target_diagram_desc0_base64_jpg": "planner image",
+            "target_diagram_stylist_desc0": "stylist desc",
+            "target_diagram_stylist_desc0_base64_jpg": "stylist image",
+        }
+
+        stages = build_evolution_stages(result, "dev_planner_stylist", task_name="diagram")
+
+        self.assertEqual([stage["name"] for stage in stages], ["📋 规划器", "✨ 风格化器"])
+
     def test_plot_task_ui_config_marks_image_model_unused(self):
         plot_config = get_task_ui_config("plot")
         diagram_config = get_task_ui_config("diagram")

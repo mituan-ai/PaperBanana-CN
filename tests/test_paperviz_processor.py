@@ -94,6 +94,8 @@ class PaperVizProcessorRegistryTest(unittest.TestCase):
         self.assertEqual(result["dataset_name"], "PaperBananaBench")
         self.assertEqual(result["task_name"], "diagram")
         self.assertEqual(result["exp_mode"], "dev_planner")
+        self.assertEqual(result["pipeline_spec"]["exp_mode"], "dev_planner")
+        self.assertEqual(result["pipeline_spec"]["base_render_source"], "planner")
 
     def test_demo_pipeline_skips_eval_even_when_requested(self):
         processor = self._build_processor("demo_planner_critic")

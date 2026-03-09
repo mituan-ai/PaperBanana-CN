@@ -3,6 +3,7 @@
 from copy import deepcopy
 
 from utils.pipeline_state import (
+    build_render_stage_entries,
     code_key_for_desc,
     critic_desc_key,
     critic_suggestions_key,
@@ -156,50 +157,54 @@ def build_evolution_stages(result, exp_mode: str, task_name: str = "diagram"):
     task_config = get_task_ui_config(normalized_task)
     stages = []
 
-    planner_key = planner_desc_key(normalized_task)
-    planner_img_key = image_key_for_desc(planner_key)
-    if result.get(planner_img_key):
-        stage = {
-            "name": "📋 规划器",
-            "image_key": planner_img_key,
-            "desc_key": planner_key,
-            "description": task_config["planner_stage_description"],
-        }
-        planner_code_key = code_key_for_desc(planner_key)
-        if normalized_task == "plot" and result.get(planner_code_key):
-            stage["code_key"] = planner_code_key
-        stages.append(stage)
-
-    if exp_mode == "demo_full":
-        stylist_key = stylist_desc_key(normalized_task)
-        stylist_img_key = image_key_for_desc(stylist_key)
-        if result.get(stylist_img_key):
+    for stage_entry in build_render_stage_entries(
+        result,
+        normalized_task,
+        exp_mode,
+    ):
+        stage_name = stage_entry["stage_name"]
+        if stage_name == "planner":
+            stage = {
+                "name": "📋 规划器",
+                "image_key": stage_entry["image_key"],
+                "desc_key": stage_entry["text_key"],
+                "description": task_config["planner_stage_description"],
+            }
+        elif stage_name == "stylist":
             stage = {
                 "name": "✨ 风格化器",
-                "image_key": stylist_img_key,
-                "desc_key": stylist_key,
+                "image_key": stage_entry["image_key"],
+                "desc_key": stage_entry["text_key"],
                 "description": task_config["stylist_stage_description"],
             }
-            stylist_code_key = code_key_for_desc(stylist_key)
-            if normalized_task == "plot" and result.get(stylist_code_key):
-                stage["code_key"] = stylist_code_key
-            stages.append(stage)
-
-    for round_idx in get_available_critic_rounds(result, task_name=normalized_task):
-        critic_key = critic_desc_key(normalized_task, round_idx)
-        critic_img_key = image_key_for_desc(critic_key)
-        if not result.get(critic_img_key):
+        elif stage_name == "critic":
+            round_idx = stage_entry["round_idx"]
+            stage = {
+                "name": f"🔍 评审第 {round_idx + 1} 轮",
+                "image_key": stage_entry["image_key"],
+                "desc_key": stage_entry["text_key"],
+                "suggestions_key": stage_entry["suggestions_key"],
+                "description": f"根据评审反馈进行优化（第 {round_idx + 1} 次迭代）",
+            }
+        elif stage_name == "vanilla":
+            stage = {
+                "name": "🪄 Vanilla",
+                "image_key": stage_entry["image_key"],
+                "desc_key": stage_entry["text_key"],
+                "description": "直接从输入内容生成的基础结果。",
+            }
+        elif stage_name == "polish":
+            stage = {
+                "name": "🎨 精修器",
+                "image_key": stage_entry["image_key"],
+                "desc_key": stage_entry["text_key"],
+                "description": "在现有结果基础上进一步精修的最终版本。",
+            }
+        else:
             continue
-        stage = {
-            "name": f"🔍 评审第 {round_idx + 1} 轮",
-            "image_key": critic_img_key,
-            "desc_key": critic_key,
-            "suggestions_key": critic_suggestions_key(normalized_task, round_idx),
-            "description": f"根据评审反馈进行优化（第 {round_idx + 1} 次迭代）",
-        }
-        critic_code_key = code_key_for_desc(critic_key)
-        if normalized_task == "plot" and result.get(critic_code_key):
-            stage["code_key"] = critic_code_key
+
+        if stage_entry.get("code_key") and result.get(stage_entry["code_key"]):
+            stage["code_key"] = stage_entry["code_key"]
         stages.append(stage)
 
     return stages
