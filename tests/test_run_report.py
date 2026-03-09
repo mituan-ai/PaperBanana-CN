@@ -59,6 +59,26 @@ class RunReportTest(unittest.TestCase):
         self.assertIn("critic_parse_error", manifest_types)
         self.assertIn("missing_render", manifest_types)
 
+    def test_wrapped_result_payload_is_supported(self):
+        payload = {
+            "manifest": {"task_name": "diagram"},
+            "results": [
+                {
+                    "candidate_id": 3,
+                    "status": "failed",
+                    "error": "RuntimeError: wrapped boom",
+                }
+            ],
+        }
+
+        summary = build_result_summary(payload)
+        manifest = build_failure_manifest(payload)
+
+        self.assertEqual(summary["total_candidates"], 1)
+        self.assertEqual(summary["failed_candidate_ids"], [3])
+        self.assertEqual(manifest[0]["candidate_id"], 3)
+        self.assertEqual(manifest[0]["type"], "pipeline_failure")
+
     def test_gemini_media_resolution_mapping(self):
         self.assertEqual(
             normalize_gemini_media_resolution("1K"),

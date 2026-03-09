@@ -28,6 +28,7 @@ from utils.config_loader import (
     load_model_config,
 )
 from utils.demo_task_utils import create_sample_inputs
+from utils.result_bundle import build_run_manifest, write_result_bundle
 from utils.run_report import build_failure_manifest, build_result_summary
 from utils.runtime_settings import initialize_provider_runtime, resolve_runtime_settings
 
@@ -94,7 +95,7 @@ async def run_smoke_once(args) -> tuple[list[dict], dict, list[dict], Path]:
     )
 
     exp_config = ExpConfig(
-        dataset_name="Smoke",
+        dataset_name=args.dataset_name,
         task_name=args.task_name,
         split_name="smoke",
         exp_mode=args.exp_mode,
@@ -134,21 +135,19 @@ async def run_smoke_once(args) -> tuple[list[dict], dict, list[dict], Path]:
     smoke_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = smoke_dir / f"{stamp}_{args.provider}_{args.task_name}.json"
-    output_path.write_text(
-        json.dumps(
-            {
-                "provider": args.provider,
-                "task_name": args.task_name,
-                "model_name": model_name,
-                "image_model_name": image_model_name,
-                "summary": summary,
-                "failures": failures,
-                "results": results,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+    manifest = build_run_manifest(
+        exp_config=exp_config,
+        producer="smoke",
+        result_count=len(results),
+        model_name=model_name,
+        image_model_name=image_model_name,
+    )
+    write_result_bundle(
+        output_path,
+        results,
+        manifest=manifest,
+        summary=summary,
+        failures=failures,
     )
 
     if generation_utils.evolink_provider and hasattr(generation_utils.evolink_provider, "close"):
@@ -159,6 +158,11 @@ async def run_smoke_once(args) -> tuple[list[dict], dict, list[dict], Path]:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run a low-cost live smoke test.")
+    parser.add_argument(
+        "--dataset_name",
+        default="PaperBananaBench",
+        help="Dataset assets to use for retrieval/reference-path resolution.",
+    )
     parser.add_argument(
         "--task_name",
         choices=["diagram", "plot"],
@@ -215,6 +219,7 @@ def main():
         json.dumps(
             {
                 "provider": args.provider,
+                "dataset_name": args.dataset_name,
                 "task_name": args.task_name,
                 "summary": summary,
                 "output_path": str(output_path),

@@ -23,6 +23,7 @@ from typing import Dict, Any
 import base64, io, asyncio
 from PIL import Image
 
+from utils.dataset_paths import get_reference_file_path, resolve_data_asset_path
 from utils import generation_utils
 from utils.pipeline_state import PipelineState
 from .base_agent import BaseAgent
@@ -33,13 +34,15 @@ logger = get_logger("PlannerAgent")
 
 
 @lru_cache(maxsize=8)
-def _load_reference_items(work_dir: str, task_name: str) -> dict[str, dict[str, Any]]:
-    ref_file = (
-        Path(work_dir)
-        / "data"
-        / "PaperBananaBench"
-        / task_name
-        / "ref.json"
+def _load_reference_items(
+    work_dir: str,
+    dataset_name: str,
+    task_name: str,
+) -> dict[str, dict[str, Any]]:
+    ref_file = get_reference_file_path(
+        dataset_name,
+        task_name,
+        work_dir=Path(work_dir),
     )
     if not ref_file.exists():
         return {}
@@ -92,26 +95,41 @@ class PlannerAgent(BaseAgent):
         examples = data.get("retrieved_examples", [])
         if not examples:
             retrieved_ids = data.get("top10_references", [])
-            id_to_item = _load_reference_items(str(self.exp_config.work_dir), cfg["task_name"])
+            id_to_item = _load_reference_items(
+                str(self.exp_config.work_dir),
+                self.exp_config.dataset_name,
+                cfg["task_name"],
+            )
             examples = [id_to_item[ref_id] for ref_id in retrieved_ids if ref_id in id_to_item]
 
-        user_prompt = ""
         for idx, item in enumerate(examples):
-            user_prompt += f"Example {idx+1}:\n"
-
             item_content = item["content"]
             if isinstance(item_content, (dict, list)):
                 item_content = json.dumps(item_content)
 
+            image_path = resolve_data_asset_path(
+                item.get("path_to_gt_image"),
+                cfg["task_name"],
+                dataset_name=self.exp_config.dataset_name,
+                work_dir=self.exp_config.work_dir,
+            )
+            if image_path is None:
+                logger.warning(
+                    "⚠️  跳过缺失参考图像: dataset=%s task=%s path=%s",
+                    self.exp_config.dataset_name,
+                    cfg["task_name"],
+                    item.get("path_to_gt_image"),
+                )
+                continue
+
+            user_prompt = f"Example {idx+1}:\n"
             user_prompt += f"{cfg['content_label']}: {item_content}\n"
             user_prompt += f"{cfg['visual_intent_label']}: {item['visual_intent']}\nReference {cfg['task_name'].capitalize()}: "
             content_list.append({"type": "text", "text": user_prompt})
-
-            image_path = self.exp_config.work_dir / f"data/PaperBananaBench/{cfg['task_name']}" / item["path_to_gt_image"]
             ref_image_base64 = _load_reference_image_base64(str(image_path))
             content_list.append({"type": "image", "image_base64": ref_image_base64})
-            user_prompt = ""
 
+        user_prompt = ""
         user_prompt += f"Now, based on the following {cfg['content_label'].lower()} and {cfg['visual_intent_label'].lower()}, provide a detailed description for the figure to be generated.\n"
         user_prompt += f"{cfg['content_label']}: {content}\n{cfg['visual_intent_label']}: {description}\n"
         user_prompt += "Detailed description of the target figure to be generated"

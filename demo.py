@@ -53,6 +53,7 @@ try:
     print("调试：已导入所有代理模块")
     from utils import config
     from utils.config_loader import load_model_config
+    from utils.dataset_paths import DEFAULT_DATASET_NAME, get_reference_file_path
     from utils.demo_task_utils import (
         build_evolution_stages,
         create_sample_inputs,
@@ -63,6 +64,13 @@ try:
     from utils import image_utils
     from utils.concurrency import compute_effective_concurrency
     from utils.paperviz_processor import PaperVizProcessor
+    from utils.result_bundle import (
+        build_run_manifest,
+        companion_bundle_path,
+        write_json_payload,
+        write_result_bundle,
+    )
+    from utils.run_report import build_failure_manifest, build_result_summary
     from utils.runtime_settings import (
         build_all_provider_ui_defaults,
         initialize_provider_runtime,
@@ -355,6 +363,7 @@ def persist_refine_job_results(snapshot: dict) -> None:
 
 async def process_parallel_candidates(
     data_list,
+    dataset_name=DEFAULT_DATASET_NAME,
     task_name="diagram",
     exp_mode="dev_planner_critic",
     retrieval_setting="auto",
@@ -418,7 +427,7 @@ async def process_parallel_candidates(
 
     # 创建实验配置
     exp_config = config.ExpConfig(
-        dataset_name="Demo",
+        dataset_name=dataset_name,
         task_name=task_name,
         split_name="demo",
         exp_mode=exp_mode,
@@ -1044,6 +1053,14 @@ def main():
             )
             task_config = get_task_ui_config(task_name)
             st.info(f"**当前任务：** {task_config['display_name_cn']}")
+            if "tab1_dataset_name" not in st.session_state:
+                st.session_state["tab1_dataset_name"] = DEFAULT_DATASET_NAME
+            dataset_name = st.text_input(
+                "参考数据集",
+                key="tab1_dataset_name",
+                help="用于检索参考样例以及解析数据集内的相对资源路径。",
+            ).strip() or DEFAULT_DATASET_NAME
+            st.caption(f"当前数据集资源：`{dataset_name}`")
 
             exp_mode = st.selectbox(
                 "流水线模式",
@@ -1074,7 +1091,11 @@ def main():
             )
 
             retrieval_target_label = "可视化意图" if task_name == "plot" else "图注"
-            retrieval_ref_path = REPO_ROOT / "data" / "PaperBananaBench" / task_name / "ref.json"
+            retrieval_ref_path = get_reference_file_path(
+                dataset_name,
+                task_name,
+                work_dir=REPO_ROOT,
+            )
             _retrieval_cost_info = {
                 "auto": f"💡 轻量 auto：仅发送{retrieval_target_label}给 LLM 做匹配，适合大多数试跑。",
                 "auto-full": "[WARN] 完整 auto：会把候选参考的完整内容发给 LLM 做匹配，成本显著更高，仅在需要高精度检索时使用。",
@@ -1084,7 +1105,7 @@ def main():
             st.info(_retrieval_cost_info[retrieval_setting])
             if retrieval_setting != "none" and not retrieval_ref_path.exists():
                 st.warning(
-                    f"当前仓库未发现 `{task_name}/ref.json`，运行时会自动回退到 `none`。"
+                    f"当前仓库未发现数据集 `{dataset_name}` 的 `{task_name}/ref.json`，运行时会自动回退到 `none`。"
                 )
 
             num_candidates = st.number_input(
@@ -1374,6 +1395,7 @@ def main():
                     try:
                         results, used_concurrency = asyncio.run(process_parallel_candidates(
                             input_data_list,
+                            dataset_name=dataset_name,
                             task_name=task_name,
                             exp_mode=exp_mode,
                             retrieval_setting=retrieval_setting,
@@ -1395,6 +1417,7 @@ def main():
 
                         st.session_state["results"] = results
                         st.session_state["task_name"] = task_name
+                        st.session_state["dataset_name"] = dataset_name
                         st.session_state["exp_mode"] = exp_mode
                         st.session_state["concurrency_mode"] = concurrency_mode
                         st.session_state["max_concurrent"] = int(max_concurrent)
@@ -1410,13 +1433,37 @@ def main():
                             json_filename = results_dir / (
                                 f"demo_{task_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                             )
+                            bundle_filename = companion_bundle_path(json_filename)
+                            summary = build_result_summary(results)
+                            failures = build_failure_manifest(results)
+                            manifest = build_run_manifest(
+                                producer="demo",
+                                result_count=len(results),
+                                dataset_name=dataset_name,
+                                task_name=task_name,
+                                split_name="demo",
+                                exp_mode=exp_mode,
+                                retrieval_setting=retrieval_setting,
+                                provider=provider,
+                                model_name=model_name,
+                                image_model_name=image_model_name,
+                                concurrency_mode=concurrency_mode,
+                                max_concurrent=int(max_concurrent),
+                                max_critic_rounds=int(max_critic_rounds),
+                                timestamp=timestamp_str,
+                            )
 
-                            with open(json_filename, "w", encoding="utf-8", errors="surrogateescape") as f:
-                                json_string = json.dumps(results, ensure_ascii=False, indent=4)
-                                json_string = json_string.encode("utf-8", "ignore").decode("utf-8")
-                                f.write(json_string)
+                            write_json_payload(json_filename, results)
+                            write_result_bundle(
+                                bundle_filename,
+                                results,
+                                manifest=manifest,
+                                summary=summary,
+                                failures=failures,
+                            )
 
                             st.session_state["json_file"] = str(json_filename)
+                            st.session_state["bundle_file"] = str(bundle_filename)
                             success_count = sum(
                                 1 for item in results
                                 if not (isinstance(item, dict) and item.get("status") == "failed")
@@ -1445,6 +1492,14 @@ def main():
                     results[0].get("task_name", task_name) if results else task_name,
                 )
             )
+            current_dataset_name = str(
+                st.session_state.get(
+                    "dataset_name",
+                    results[0].get("dataset_name", DEFAULT_DATASET_NAME)
+                    if results
+                    else DEFAULT_DATASET_NAME,
+                )
+            ).strip() or DEFAULT_DATASET_NAME
             current_task_config = get_task_ui_config(current_task_name)
             current_mode = st.session_state.get("exp_mode", exp_mode)
             timestamp = st.session_state.get("timestamp", "N/A")
@@ -1464,25 +1519,43 @@ def main():
             failed_count = len(results) - success_count
             st.caption(
                 f"生成时间：{timestamp} | 任务：{current_task_config['display_name_cn']} | "
+                f"数据集：{current_dataset_name} | "
                 f"流水线：{mode_info.get(current_mode, current_mode)} | "
                 f"并发：{mode_used} (max={max_used}, effective={effective_used}) | "
                 f"成功/失败：{success_count}/{failed_count}"
             )
 
-            # 如果有 JSON 文件则显示下载按钮
-            if "json_file" in st.session_state:
-                json_file_path = Path(st.session_state["json_file"])
-                if json_file_path.exists():
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.info(f"📄 结果已保存至：`{json_file_path.relative_to(Path.cwd())}`")
-                    with col2:
-                        with open(json_file_path, "r", encoding="utf-8") as f:
-                            json_data = f.read()
+            # 如果有结果文件则显示下载按钮
+            json_file_path = Path(st.session_state["json_file"]) if "json_file" in st.session_state else None
+            bundle_file_path = Path(st.session_state["bundle_file"]) if "bundle_file" in st.session_state else None
+            if json_file_path and json_file_path.exists():
+                button_cols = [3, 1]
+                if bundle_file_path and bundle_file_path.exists():
+                    button_cols.append(1)
+                columns = st.columns(button_cols)
+                with columns[0]:
+                    file_label = f"📄 结果已保存至：`{json_file_path.relative_to(Path.cwd())}`"
+                    if bundle_file_path and bundle_file_path.exists():
+                        file_label += f"\n\n🧾 Bundle：`{bundle_file_path.relative_to(Path.cwd())}`"
+                    st.info(file_label)
+                with columns[1]:
+                    with open(json_file_path, "r", encoding="utf-8") as f:
+                        json_data = f.read()
+                    st.download_button(
+                        label="[DOWN] 下载 JSON",
+                        data=json_data,
+                        file_name=json_file_path.name,
+                        mime="application/json",
+                        use_container_width=True
+                    )
+                if bundle_file_path and bundle_file_path.exists():
+                    with columns[2]:
+                        with open(bundle_file_path, "r", encoding="utf-8") as f:
+                            bundle_data = f.read()
                         st.download_button(
-                            label="[DOWN] 下载 JSON",
-                            data=json_data,
-                            file_name=json_file_path.name,
+                            label="[DOWN] 下载 Bundle",
+                            data=bundle_data,
+                            file_name=bundle_file_path.name,
                             mime="application/json",
                             use_container_width=True
                         )

@@ -32,6 +32,7 @@ from utils.pipeline_state import (
     find_final_stage_keys,
     get_available_critic_rounds,
 )
+from utils.result_bundle import load_result_bundle
 from utils.result_paths import resolve_gt_image_path
 
 st.set_page_config(layout="wide", page_title="PaperBanana Referenced Eval Visualizer", page_icon="🍌")
@@ -43,40 +44,14 @@ def detect_task_type(data):
 
 @st.cache_data
 def load_data(path):
-    """Read JSONL or JSON data."""
-    data = []
+    """Read legacy JSON/JSONL files or standardized result bundles."""
     if not os.path.exists(path):
-        return []
-    
-    # Detect file format by extension
-    file_ext = os.path.splitext(path)[1].lower()
-    
+        return {"manifest": {}, "summary": {}, "failures": [], "results": []}
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            if file_ext == ".json":
-                # Load as a single JSON array
-                try:
-                    data = json.load(f)
-                    if not isinstance(data, list):
-                        st.error("JSON file must contain an array at the top level")
-                        return []
-                except json.JSONDecodeError as e:
-                    st.error(f"Invalid JSON format: {e}")
-                    return []
-            else:
-                # Load as JSONL (line-by-line)
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        data.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
+        return load_result_bundle(path)
     except Exception as e:
         st.error(f"Error reading file: {e}")
-        return []
-    return data
+        return {"manifest": {}, "summary": {}, "failures": [], "results": []}
 
 def calculate_stats(data, dimensions):
     """Calculate win rates for each dimension."""
@@ -172,7 +147,11 @@ async def run_eval_on_sample(sample, task_name="diagram"):
     
     # Ensure eval_image_field is set
     if "eval_image_field" not in sample:
-        inferred_eval_key, _ = find_final_stage_keys(sample, task_name, "demo_planner_critic")
+        inferred_eval_key, _ = find_final_stage_keys(
+            sample,
+            task_name,
+            sample.get("exp_mode", "demo_planner_critic"),
+        )
         sample["eval_image_field"] = inferred_eval_key or "vanilla_image_base64"
     
     return await get_score_for_image_referenced(
@@ -183,7 +162,7 @@ async def run_eval_on_sample(sample, task_name="diagram"):
 
 def main():
     st.sidebar.title("🍌 PaperBanana Referenced Eval")
-    file_path = st.sidebar.text_input("Results JSONL Path", placeholder="Enter path to results file...")
+    file_path = st.sidebar.text_input("Results File Path", placeholder="Enter path to results file...")
     
     # --- Debug Tool Section in Sidebar ---
     if "debug_sample" in st.session_state:
@@ -222,7 +201,26 @@ def main():
         st.error(f"File not found: {file_path}")
         st.stop()
 
-    data = load_data(file_path)
+    bundle = load_data(file_path)
+    data = bundle.get("results", [])
+    manifest = bundle.get("manifest", {})
+
+    with st.sidebar.expander("🧾 Run Manifest", expanded=False):
+        manifest_fields = [
+            ("Producer", "producer"),
+            ("Dataset", "dataset_name"),
+            ("Task", "task_name"),
+            ("Split", "split_name"),
+            ("Mode", "exp_mode"),
+            ("Provider", "provider"),
+            ("Text Model", "model_name"),
+            ("Image Model", "image_model_name"),
+        ]
+        for label, key in manifest_fields:
+            value = manifest.get(key)
+            if value:
+                st.write(f"**{label}:** {value}")
+        st.write(f"**Results:** {manifest.get('result_count', len(data))}")
     
     # Detect task type
     task_type = detect_task_type(data)
@@ -354,7 +352,10 @@ def main():
                 model_b64_key, model_text_key = find_final_stage_keys(
                     item,
                     task_type,
-                    st.session_state.get("exp_mode", "demo_planner_critic"),
+                    item.get(
+                        "exp_mode",
+                        st.session_state.get("exp_mode", "demo_planner_critic"),
+                    ),
                 )
             else:
                 model_b64_key, model_text_key = mode_to_keys[display_mode]
@@ -409,6 +410,7 @@ def main():
                     task_type,
                     file_path,
                     work_dir=os.getcwd(),
+                    dataset_name=item.get("dataset_name"),
                 )
                 gt_img = load_local_image(str(resolved_gt_path) if resolved_gt_path else None)
                 if gt_img:

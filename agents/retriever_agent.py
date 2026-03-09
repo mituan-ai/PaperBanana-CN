@@ -40,6 +40,10 @@ from typing import Dict, Any
 import base64, io, asyncio
 from PIL import Image
 
+from utils.dataset_paths import (
+    get_manual_reference_file_path,
+    get_reference_file_path,
+)
 from utils import generation_utils
 from .base_agent import BaseAgent
 
@@ -83,15 +87,22 @@ class RetrieverAgent(BaseAgent):
         candidate_id = data.get("candidate_id", "N/A")
         logger.debug(f"🔍 开始处理, setting={retrieval_setting}, task={cfg['task_name']}, provider={self.exp_config.provider}")
 
-        import os
-        ref_file = self.exp_config.work_dir / f"data/PaperBananaBench/{cfg['task_name']}/ref.json"
+        ref_file = get_reference_file_path(
+            self.exp_config.dataset_name,
+            cfg["task_name"],
+            work_dir=self.exp_config.work_dir,
+        )
 
         if retrieval_setting in ["auto", "auto-full", "random"] and not ref_file.exists():
             logger.warning(f"⚠️  参考文件未找到: {ref_file}，回退到 retrieval_setting='none'")
             retrieval_setting = "none"
 
         if retrieval_setting == "manual":
-            manual_file = self.exp_config.work_dir / f"data/PaperBananaBench/{cfg['task_name']}/agent_selected_12.json"
+            manual_file = get_manual_reference_file_path(
+                self.exp_config.dataset_name,
+                cfg["task_name"],
+                work_dir=self.exp_config.work_dir,
+            )
             if not manual_file.exists():
                 logger.warning(f"⚠️  手动参考文件未找到: {manual_file}，回退到 retrieval_setting='none'")
                 retrieval_setting = "none"
@@ -138,7 +149,11 @@ class RetrieverAgent(BaseAgent):
 
     def _load_manual_references(self, cfg: dict) -> tuple:
         if cfg["task_name"] == "diagram":
-            few_shot_file = self.exp_config.work_dir / "data/PaperBananaBench/diagram/agent_selected_12.json"
+            few_shot_file = get_manual_reference_file_path(
+                self.exp_config.dataset_name,
+                "diagram",
+                work_dir=self.exp_config.work_dir,
+            )
             with open(few_shot_file, "r", encoding="utf-8") as f:
                 examples = json.load(f)[:10]
             ids = [item["id"] for item in examples]
@@ -149,7 +164,12 @@ class RetrieverAgent(BaseAgent):
             raise ValueError(f"Unknown task_name: {cfg['task_name']}")
 
     def _load_random_references(self, cfg: dict) -> list:
-        with open(self.exp_config.work_dir / f"data/PaperBananaBench/{cfg['task_name']}/ref.json", "r", encoding="utf-8") as f:
+        ref_file = get_reference_file_path(
+            self.exp_config.dataset_name,
+            cfg["task_name"],
+            work_dir=self.exp_config.work_dir,
+        )
+        with open(ref_file, "r", encoding="utf-8") as f:
             candidate_pool = json.load(f)
 
         id_list = [item["id"] for item in candidate_pool]
@@ -179,7 +199,12 @@ class RetrieverAgent(BaseAgent):
 
         user_prompt = f"**Target Input**\n- {cfg['target_labels'][0]}: {visual_intent}\n- {cfg['target_labels'][1]}: {content}\n\n**Candidate Pool**\n"
 
-        with open(self.exp_config.work_dir / f"data/PaperBananaBench/{cfg['task_name']}/ref.json", "r", encoding="utf-8") as f:
+        ref_file = get_reference_file_path(
+            self.exp_config.dataset_name,
+            cfg["task_name"],
+            work_dir=self.exp_config.work_dir,
+        )
+        with open(ref_file, "r", encoding="utf-8") as f:
             candidate_pool = json.load(f)
             if cfg["ref_limit"]:
                 candidate_pool = candidate_pool[:cfg["ref_limit"]]

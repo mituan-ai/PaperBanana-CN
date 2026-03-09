@@ -20,6 +20,14 @@ def detect_task_type_from_result(result: dict[str, Any] | list[dict[str, Any]] |
     if not isinstance(result, dict):
         return "diagram"
 
+    wrapped_results = result.get("results")
+    if isinstance(wrapped_results, list):
+        explicit_task = str(result.get("task_name", "")).strip().lower()
+        if explicit_task in {"plot", "diagram"} and not wrapped_results:
+            return explicit_task
+        if wrapped_results:
+            result = wrapped_results[0]
+
     if any(key.startswith("target_plot_") for key in result.keys()):
         return "plot"
 

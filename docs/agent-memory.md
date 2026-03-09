@@ -25,6 +25,7 @@
 ## Compatibility Rules
 - Result keys like `target_*_critic_descN` remain the source of truth for historical runs.
 - New metadata may be added, but old files should still render.
+- Result items should now carry `dataset_name`, `task_name`, and `exp_mode` when produced by the current pipeline so viewers and evaluators stop guessing basic run context.
 - GUI remains Streamlit for now.
 
 ## Validation Status
@@ -88,7 +89,32 @@
   - preserved refine progress, recent status lines, provider/model metadata, and finished outputs through session state
   - added unit tests for background refine job completion and cancellation without requiring real provider calls
   - pointed `requirements.txt` at editable package install so `pyproject.toml` becomes the dependency source of truth for normal installs
+- 2026-03-09 Completed in Wave 6:
+  - added `utils/dataset_paths.py` to centralize dataset-root, split-file, reference-file, and asset-path resolution
+  - refactored `main.py` to resolve dataset split inputs through shared dataset helpers instead of hand-built `data/PaperBananaBench/...` paths
+  - refactored `RetrieverAgent`, `PlannerAgent`, `PolishAgent`, and `utils/eval_toolkits.py` to honor `ExpConfig.dataset_name` for references and GT assets
+  - updated `utils/result_paths.py` and both Streamlit viewers to resolve GT assets using per-result `dataset_name` metadata when available
+  - updated demo candidate generation to accept a user-provided dataset name for retrieval/reference assets instead of hard-coding `PaperBananaBench`
+  - updated `scripts/live_smoke_test.py` to accept/store `--dataset_name` so smoke runs can validate custom dataset asset layouts
+  - added pipeline result metadata defaults for `dataset_name`, `task_name`, and `exp_mode` in `PaperVizProcessor`
+  - added focused tests for dataset-aware path helpers and result metadata propagation
+  - validated on 2026-03-09 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`33` tests passed)
+- 2026-03-09 Completed in Wave 7:
+  - added `utils/result_bundle.py` as the shared loader/writer for legacy result arrays, JSONL files, old smoke wrappers, and the new portable bundle schema
+  - standardized portable bundle files around `schema` / `schema_version` / `manifest` / `summary` / `failures` / `results`
+  - updated `main.py` to keep writing the legacy array JSON while also emitting a companion `.bundle.json` with run manifest metadata
+  - updated `demo.py` to save a portable bundle alongside the legacy demo JSON and expose both downloads in the UI
+  - updated `scripts/live_smoke_test.py` to emit the same standardized bundle schema that viewers now load
+  - updated both Streamlit viewers to load legacy files and wrapped bundles through one shared loader, and to surface run-manifest metadata in the sidebar
+  - hardened `utils/run_report.py` and `utils/pipeline_state.py` so summary generation and task-type inference also tolerate wrapped bundle payloads when they are passed directly
+  - added focused tests for legacy JSON arrays, JSONL files, old wrapped smoke payloads, and standardized bundle writing
+  - validated on 2026-03-09 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`39` tests passed)
 
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.
   - dependency versions are still not locked; environment reproduction is improved, but not yet fully pinned.
+  - portable bundles currently standardize metadata and result payloads, but they do not inline external GT/reference assets; viewers still expect the referenced dataset files to exist locally.

@@ -80,6 +80,9 @@ class PaperVizProcessorRegistryTest(unittest.TestCase):
 
         self.assertEqual(result["eval_image_field"], "target_diagram_desc0_base64_jpg")
         self.assertEqual(result["target_diagram_desc0_base64_jpg"], "fake-image")
+        self.assertEqual(result["dataset_name"], "PaperBananaBench")
+        self.assertEqual(result["task_name"], "diagram")
+        self.assertEqual(result["exp_mode"], "dev_planner")
 
     def test_demo_pipeline_skips_eval_even_when_requested(self):
         processor = self._build_processor("demo_planner_critic")

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Dict, Any
 from PIL import Image
 
+from utils.dataset_paths import resolve_data_asset_path
 from utils import generation_utils, image_utils
 from utils.pipeline_state import get_render_options
 from .base_agent import BaseAgent
@@ -114,7 +115,20 @@ class PolishAgent(BaseAgent):
             logger.warning("⚠️  data 中没有 GT 图像路径")
             return data
 
-        gt_image_path = self.exp_config.work_dir / f"data/PaperBananaBench/{task_name}" / gt_image_path_rel
+        gt_image_path = resolve_data_asset_path(
+            gt_image_path_rel,
+            task_name,
+            dataset_name=self.exp_config.dataset_name,
+            work_dir=self.exp_config.work_dir,
+        )
+        if gt_image_path is None:
+            logger.warning(
+                "⚠️  无法解析 GT 图像路径: dataset=%s task=%s path=%s",
+                self.exp_config.dataset_name,
+                task_name,
+                gt_image_path_rel,
+            )
+            return data
 
         gt_image_b64, gt_image_mime = _load_image_as_base64(str(gt_image_path))
         if not gt_image_b64:

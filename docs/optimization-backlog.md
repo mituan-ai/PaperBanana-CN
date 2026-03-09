@@ -11,9 +11,12 @@
 - [x] Add portable result-path resolution across viewers
 - [x] Add richer batch summaries and failure manifests for CLI/demo exports
 - [x] Add true user-visible cancel control for refine tasks via background execution
+- [x] Unify dataset-aware asset and reference path resolution across CLI, demo, evaluation, and viewers
 
 ## Later
 - [x] Replace monolithic mode branching with a pipeline registry
 - [x] Add structured plot execution diagnostics
 - [x] Add cache layers for reference metadata and style guides
+- [x] Make viewers and smoke artifacts share one result-file schema/loader
+- [x] Add a run manifest/bundle format for portable result sharing across custom datasets
 - [ ] Unify dependency management around a single locked source

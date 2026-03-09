@@ -3,6 +3,7 @@ import unittest
 from utils.pipeline_state import (
     PipelineState,
     collect_parse_error_round_keys,
+    detect_task_type_from_result,
     find_final_stage_keys,
     get_render_options,
 )
@@ -54,6 +55,20 @@ class PipelineStateTest(unittest.TestCase):
 
         self.assertEqual(state.current_critic_round, 2)
         self.assertEqual(payload["current_critic_round"], 2)
+
+    def test_detect_task_type_from_wrapped_payload(self):
+        payload = {
+            "task_name": "plot",
+            "results": [
+                {
+                    "candidate_id": 0,
+                    "task_name": "plot",
+                    "target_plot_desc0": "line chart",
+                }
+            ],
+        }
+
+        self.assertEqual(detect_task_type_from_result(payload), "plot")
 
 
 if __name__ == "__main__":

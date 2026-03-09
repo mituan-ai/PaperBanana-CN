@@ -7,6 +7,19 @@ from typing import Any
 from utils.pipeline_state import collect_parse_error_round_keys
 
 
+def _normalize_results_input(
+    results: list[dict[str, Any]] | dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if isinstance(results, list):
+        return [item for item in results if isinstance(item, dict)]
+    if isinstance(results, dict):
+        wrapped_results = results.get("results")
+        if isinstance(wrapped_results, list):
+            return [item for item in wrapped_results if isinstance(item, dict)]
+        return [results]
+    return []
+
+
 def _has_rendered_output(result: dict[str, Any]) -> bool:
     eval_image_field = result.get("eval_image_field")
     if isinstance(eval_image_field, str) and result.get(eval_image_field):
@@ -22,13 +35,16 @@ def _collect_parse_error_rounds(result: dict[str, Any]) -> list[str]:
     return collect_parse_error_round_keys(result)
 
 
-def build_result_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
-    total = len(results)
+def build_result_summary(
+    results: list[dict[str, Any]] | dict[str, Any] | None,
+) -> dict[str, Any]:
+    normalized_results = _normalize_results_input(results)
+    total = len(normalized_results)
     failed_candidates = []
     missing_render_candidates = []
     parse_error_candidates = []
 
-    for idx, result in enumerate(results):
+    for idx, result in enumerate(normalized_results):
         candidate_id = result.get("candidate_id", idx)
         if result.get("status") == "failed":
             failed_candidates.append(candidate_id)
@@ -54,9 +70,12 @@ def build_result_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_failure_manifest(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_failure_manifest(
+    results: list[dict[str, Any]] | dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    normalized_results = _normalize_results_input(results)
     failure_items = []
-    for idx, result in enumerate(results):
+    for idx, result in enumerate(normalized_results):
         candidate_id = result.get("candidate_id", idx)
         parse_error_rounds = _collect_parse_error_rounds(result)
 

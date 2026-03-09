@@ -23,8 +23,15 @@ from pathlib import Path
 import aiofiles
 import numpy as np
 
+from utils.dataset_paths import get_dataset_split_path
 from utils.log_config import setup_logging, get_logger
 from utils.pipeline_registry import get_supported_exp_modes
+from utils.result_bundle import (
+    build_run_manifest,
+    companion_bundle_path,
+    write_json_payload_async,
+    write_result_bundle_async,
+)
 from utils.run_report import build_failure_manifest, build_result_summary
 setup_logging("INFO")
 
@@ -130,9 +137,14 @@ async def main():
         work_dir=Path(__file__).parent,
     )
     
-    base_path = Path(__file__).parent / "data" / exp_config.dataset_name
-    input_filename = base_path / exp_config.task_name / f"{exp_config.split_name}.json"
+    input_filename = get_dataset_split_path(
+        exp_config.dataset_name,
+        exp_config.task_name,
+        exp_config.split_name,
+        work_dir=Path(__file__).parent,
+    )
     output_filename = exp_config.result_dir / f"{exp_config.exp_name}.json"
+    bundle_filename = companion_bundle_path(output_filename)
     
     logger.info(f"📁 输入文件: {input_filename}  输出文件: {output_filename}")
     logger.info(
@@ -168,16 +180,31 @@ async def main():
 
     async def save_results_and_scores(current_results):
         logger.info(f"💾 增量保存结果（共 {len(current_results)} 条）到 {output_filename}")
-        async with aiofiles.open(
-            output_filename, "w", encoding="utf-8", errors="surrogateescape"
-        ) as f:
-            json_string = json.dumps(current_results, ensure_ascii=False, indent=4)
-            json_string = json_string.encode("utf-8", "ignore").decode("utf-8")
-            await f.write(json_string)
+        summary = build_result_summary(current_results)
+        failures = build_failure_manifest(current_results)
+        manifest = build_run_manifest(
+            exp_config=exp_config,
+            producer="cli",
+            result_count=len(current_results),
+        )
+        await write_json_payload_async(output_filename, current_results)
+        await write_result_bundle_async(
+            bundle_filename,
+            current_results,
+            manifest=manifest,
+            summary=summary,
+            failures=failures,
+        )
 
     async def save_run_reports(current_results):
         summary_path = output_filename.with_suffix(".summary.json")
         failures_path = output_filename.with_suffix(".failures.json")
+        summary = build_result_summary(current_results)
+        manifest = build_run_manifest(
+            exp_config=exp_config,
+            producer="cli",
+            result_count=len(current_results),
+        )
         summary_payload = {
             "dataset_name": exp_config.dataset_name,
             "task_name": exp_config.task_name,
@@ -186,7 +213,8 @@ async def main():
             "image_model_name": exp_config.image_model_name,
             "exp_mode": exp_config.exp_mode,
             "retrieval_setting": exp_config.retrieval_setting,
-            "summary": build_result_summary(current_results),
+            "manifest": manifest,
+            "summary": summary,
         }
         failures_payload = build_failure_manifest(current_results)
 

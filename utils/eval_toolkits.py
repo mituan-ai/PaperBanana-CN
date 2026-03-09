@@ -24,6 +24,7 @@ import re
 from google.genai import types
 
 from prompts import diagram_eval_prompts, plot_eval_prompts
+from utils.dataset_paths import resolve_data_asset_path, resolve_dataset_name
 from utils import image_utils
 from utils.generation_utils import (
     call_gemini_with_retry_async,
@@ -255,13 +256,31 @@ async def get_score_for_image_referenced(
         return sample_data
 
     path_to_gt_image_rel = sample_data["path_to_gt_image"]
-    
-    # Resolve relative path using work_dir
+    dataset_name = resolve_dataset_name(sample_data)
+
+    path_to_gt_image = None
     if work_dir:
-        path_to_gt_image = work_dir / f"data/PaperBananaBench/{task_name}" / path_to_gt_image_rel
+        path_to_gt_image = resolve_data_asset_path(
+            path_to_gt_image_rel,
+            task_name,
+            dataset_name=dataset_name,
+            work_dir=work_dir,
+        )
     else:
-        # Fallback for backward compatibility (assume it's already absolute)
-        path_to_gt_image = Path(path_to_gt_image_rel)
+        raw_candidate = Path(path_to_gt_image_rel)
+        if raw_candidate.exists():
+            path_to_gt_image = raw_candidate
+
+    if path_to_gt_image is None:
+        logger.warning(
+            "⚠️  无法解析 Ground Truth 图像路径，跳过评估: dataset=%s task=%s path=%s",
+            dataset_name,
+            task_name,
+            path_to_gt_image_rel,
+        )
+        for dim in ["faithfulness", "conciseness", "readability", "aesthetics", "overall"]:
+            sample_data[f"{dim}_outcome"] = "N/A - Missing GT"
+        return sample_data
 
     with open(path_to_gt_image, "rb") as f:
         gt_image_bytes = f.read()
