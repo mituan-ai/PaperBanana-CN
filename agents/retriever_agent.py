@@ -42,9 +42,14 @@ import base64, io, asyncio
 from PIL import Image
 
 from utils.dataset_paths import (
-    get_manual_reference_file_path,
     get_reference_file_path,
 )
+from utils.retrieval_profiles import (
+    find_curated_profile_path,
+    iter_curated_profile_candidate_paths,
+    load_curated_reference_profile,
+)
+from utils.retrieval_settings import normalize_retrieval_setting
 from utils import generation_utils
 from .base_agent import BaseAgent
 
@@ -90,6 +95,7 @@ class RetrieverAgent(BaseAgent):
     async def process(self, data: Dict[str, Any], retrieval_setting: str = "auto") -> Dict[str, Any]:
         cfg = self.task_config
         candidate_id = data.get("candidate_id", "N/A")
+        retrieval_setting = normalize_retrieval_setting(retrieval_setting)
         logger.debug(f"🔍 开始处理, setting={retrieval_setting}, task={cfg['task_name']}, provider={self.exp_config.provider}")
 
         ref_file = get_reference_file_path(
@@ -102,14 +108,25 @@ class RetrieverAgent(BaseAgent):
             logger.warning(f"⚠️  参考文件未找到: {ref_file}，回退到 retrieval_setting='none'")
             retrieval_setting = "none"
 
-        if retrieval_setting == "manual":
-            manual_file = get_manual_reference_file_path(
+        if retrieval_setting == "curated":
+            profile_path = find_curated_profile_path(
                 self.exp_config.dataset_name,
                 cfg["task_name"],
+                profile_name=self.exp_config.curated_profile,
                 work_dir=self.exp_config.work_dir,
             )
-            if not manual_file.exists():
-                logger.warning(f"⚠️  手动参考文件未找到: {manual_file}，回退到 retrieval_setting='none'")
+            if profile_path is None:
+                candidate_paths = iter_curated_profile_candidate_paths(
+                    self.exp_config.dataset_name,
+                    cfg["task_name"],
+                    profile_name=self.exp_config.curated_profile,
+                    work_dir=self.exp_config.work_dir,
+                )
+                logger.warning(
+                    "⚠️  未找到 curated profile（profile=%s, looked_at=%s），回退到 retrieval_setting='none'",
+                    self.exp_config.curated_profile,
+                    [str(path) for path in candidate_paths],
+                )
                 retrieval_setting = "none"
 
         if retrieval_setting == "none":
@@ -117,11 +134,26 @@ class RetrieverAgent(BaseAgent):
             data["retrieved_examples"] = []
             logger.debug("⏭️  跳过检索 (setting=none)")
 
-        elif retrieval_setting == "manual":
-            ids, examples = self._load_manual_references(cfg)
+        elif retrieval_setting == "curated":
+            profile = self._load_curated_references(cfg)
+            ids = profile.selected_ids
+            examples = profile.examples
             data["top10_references"] = ids
             data["retrieved_examples"] = examples
-            logger.info(f"✅ 手动检索完成, {len(ids)} 个参考")
+            data["curated_profile"] = profile.profile_name
+            data["curated_profile_source"] = profile.source_path.name
+            logger.info(
+                "✅ curated 检索完成, profile=%s, source=%s, %s 个参考",
+                profile.profile_name,
+                profile.source_path.name,
+                len(ids),
+            )
+            if profile.missing_ids:
+                logger.warning(
+                    "⚠️  curated profile 中有 %s 个 id 在 ref.json 中不存在: %s",
+                    len(profile.missing_ids),
+                    profile.missing_ids,
+                )
 
         elif retrieval_setting == "random":
             data["top10_references"] = self._load_random_references(cfg)
@@ -154,16 +186,14 @@ class RetrieverAgent(BaseAgent):
 
         return data
 
-    def _load_manual_references(self, cfg: dict) -> tuple:
-        few_shot_file = get_manual_reference_file_path(
+    def _load_curated_references(self, cfg: dict):
+        return load_curated_reference_profile(
             self.exp_config.dataset_name,
             cfg["task_name"],
+            profile_name=self.exp_config.curated_profile,
             work_dir=self.exp_config.work_dir,
+            limit=10,
         )
-        with open(few_shot_file, "r", encoding="utf-8") as f:
-            examples = json.load(f)[:10]
-        ids = [item["id"] for item in examples]
-        return ids, examples
 
     def _load_random_references(self, cfg: dict) -> list:
         ref_file = get_reference_file_path(

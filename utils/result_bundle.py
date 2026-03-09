@@ -80,6 +80,7 @@ def build_run_manifest(
         "timestamp": "",
         "timezone": "",
         "retrieval_setting": "",
+        "curated_profile": "",
         "provider": "",
         "model_name": "",
         "image_model_name": "",
@@ -106,6 +107,9 @@ def build_run_manifest(
                 "retrieval_setting": str(
                     getattr(exp_config, "retrieval_setting", "") or ""
                 ),
+                "curated_profile": str(
+                    getattr(exp_config, "curated_profile", "") or ""
+                ),
                 "provider": str(getattr(exp_config, "provider", "") or ""),
                 "model_name": str(getattr(exp_config, "model_name", "") or ""),
                 "image_model_name": str(
@@ -130,6 +134,7 @@ def build_run_manifest(
     manifest["result_count"] = int(manifest.get("result_count", result_count) or 0)
     manifest["max_concurrent"] = int(manifest.get("max_concurrent", 0) or 0)
     manifest["max_critic_rounds"] = int(manifest.get("max_critic_rounds", 0) or 0)
+    manifest["curated_profile"] = str(manifest.get("curated_profile", "") or "")
     if extra:
         manifest.update(extra)
     return manifest
@@ -161,6 +166,7 @@ def infer_manifest_from_results(
         timestamp=_first_non_empty(candidate_sources, "timestamp") or "",
         timezone=_first_non_empty(candidate_sources, "timezone") or "",
         retrieval_setting=_first_non_empty(candidate_sources, "retrieval_setting") or "",
+        curated_profile=_first_non_empty(candidate_sources, "curated_profile") or "",
         provider=_first_non_empty(candidate_sources, "provider") or "",
         model_name=_first_non_empty(candidate_sources, "model_name") or "",
         image_model_name=_first_non_empty(candidate_sources, "image_model_name") or "",
@@ -191,6 +197,7 @@ def _merge_manifest(
     merged["result_count"] = int(merged.get("result_count", 0) or 0)
     merged["max_concurrent"] = int(merged.get("max_concurrent", 0) or 0)
     merged["max_critic_rounds"] = int(merged.get("max_critic_rounds", 0) or 0)
+    merged["curated_profile"] = str(merged.get("curated_profile", "") or "")
     return merged
 
 

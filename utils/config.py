@@ -20,6 +20,11 @@ from pathlib import Path
 import re
 from typing import Literal
 
+from utils.retrieval_settings import (
+    DEFAULT_CURATED_PROFILE,
+    normalize_curated_profile_name,
+    normalize_retrieval_setting,
+)
 from utils.runtime_settings import RuntimeSettings, resolve_runtime_settings
 
 try:
@@ -47,17 +52,30 @@ def build_run_name(
     model_name: str,
     image_model_name: str,
     retrieval_setting: str,
+    curated_profile: str = DEFAULT_CURATED_PROFILE,
     exp_mode: str,
     split_name: str,
 ) -> str:
     provider_tag = sanitize_run_name_part(provider, default="provider", max_length=12)
     primary_model = image_model_name or model_name
     model_tag = sanitize_run_name_part(primary_model, default="model", max_length=24)
+    normalized_retrieval = normalize_retrieval_setting(retrieval_setting)
     retrieval_tag = sanitize_run_name_part(
-        f"{retrieval_setting}ret",
+        f"{normalized_retrieval}ret",
         default="ret",
         max_length=16,
     )
+    if normalized_retrieval == "curated":
+        profile_tag = sanitize_run_name_part(
+            normalize_curated_profile_name(curated_profile),
+            default=DEFAULT_CURATED_PROFILE,
+            max_length=16,
+        )
+        retrieval_tag = sanitize_run_name_part(
+            f"{normalized_retrieval}-{profile_tag}ret",
+            default="ret",
+            max_length=20,
+        )
     mode_tag = sanitize_run_name_part(exp_mode, default="mode", max_length=24)
     split_tag = sanitize_run_name_part(split_name, default="split", max_length=16)
     return f"{timestamp}_{provider_tag}_{model_tag}_{retrieval_tag}_{mode_tag}_{split_tag}"
@@ -72,7 +90,8 @@ class ExpConfig:
     split_name: str = "test"
     temperature: float = 1.0
     exp_mode: str = ""
-    retrieval_setting: Literal["auto", "auto-full", "manual", "random", "none"] = "auto"
+    retrieval_setting: Literal["auto", "auto-full", "curated", "manual", "random", "none"] = "auto"
+    curated_profile: str = DEFAULT_CURATED_PROFILE
     max_critic_rounds: int = 3
     concurrency_mode: Literal["auto", "manual"] = "auto"
     max_concurrent: int = 20
@@ -101,6 +120,8 @@ class ExpConfig:
         self.concurrency_mode = self.runtime_settings.concurrency_mode
         self.max_concurrent = self.runtime_settings.max_concurrent
         self.max_critic_rounds = self.runtime_settings.max_critic_rounds
+        self.retrieval_setting = normalize_retrieval_setting(self.retrieval_setting)
+        self.curated_profile = normalize_curated_profile_name(self.curated_profile)
 
         if self.timestamp is None:
             tz = ZoneInfo(self.timezone)
@@ -112,6 +133,7 @@ class ExpConfig:
             model_name=self.model_name,
             image_model_name=self.image_model_name,
             retrieval_setting=self.retrieval_setting,
+            curated_profile=self.curated_profile,
             exp_mode=self.exp_mode,
             split_name=self.split_name,
         )

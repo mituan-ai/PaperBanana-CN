@@ -120,7 +120,7 @@ The web interface provides two main workflows:
 - Switch between `diagram` and `plot` tasks in the same UI.
 - `diagram`: paste your method section content and provide the figure caption.
 - `plot`: paste raw data and describe the desired visualization intent. The demo now parses and previews JSON / CSV / Markdown tables before submission.
-- Configure settings (pipeline mode, retrieval setting, number of candidates, critic rounds, and task-specific controls). `manual` retrieval and `max_critic_rounds=0` are supported in the GUI.
+- Configure settings (pipeline mode, retrieval setting, number of candidates, critic rounds, and task-specific controls). The GUI supports `curated` fixed few-shot profiles, keeps `manual` as a legacy alias in CLI/smoke paths, and allows `max_critic_rounds=0` for low-cost dry runs.
 - Click "Generate Candidates" to launch a background job with progress, cancel, refresh, and rerun-safe resume behavior.
 - View results in a grid with evolution timelines and download individual outputs or batch ZIP.
 - Send any candidate directly into the refine tab, or load plot code into the built-in rerender workspace for local editing and preview.
@@ -153,7 +153,8 @@ python main.py \
 - `--task_name`: Task type - `diagram` or `plot` (default: `diagram`)
 - `--split_name`: Dataset split (default: `test`)
 - `--exp_mode`: Experiment mode (default: `dev_full`; supported: `vanilla`, `dev_planner`, `dev_planner_stylist`, `dev_planner_critic`, `demo_planner_critic`, `dev_full`, `demo_full`, `dev_polish`, `dev_retriever`)
-- `--retrieval_setting`: Retrieval strategy - `auto`, `auto-full`, `manual`, `random`, or `none` (default: `auto`)
+- `--retrieval_setting`: Retrieval strategy - `auto`, `auto-full`, `curated`, `manual` (legacy alias), `random`, or `none` (default: `auto`)
+- `--curated_profile`: Fixed few-shot profile name for `curated` retrieval. Defaults to `default` and prefers `manual_profiles/<profile>.json`, while still falling back to the legacy `agent_selected_12.json`.
 - `--max_critic_rounds`: Critic iterations. Set `0` for cheap dry runs or smoke checks.
 
 **Low-Cost Live Smoke Tests:**
@@ -282,7 +283,7 @@ streamlit run visualize/show_referenced_eval.py
 
 
 ## TODO List
-- [x] Add support for using manually selected examples in CLI and the main demo.
+- [x] Add support for fixed few-shot retrieval profiles in CLI and the main demo while preserving legacy `manual` compatibility.
 - [ ] Upload code for improving existing diagrams based on style guideline.
 - [ ] Expand the reference set to support more areas beyond computer science.
 

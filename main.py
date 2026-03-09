@@ -26,6 +26,7 @@ import numpy as np
 from utils.dataset_paths import get_dataset_split_path
 from utils.log_config import setup_logging, get_logger
 from utils.pipeline_registry import get_supported_exp_modes
+from utils.retrieval_settings import CLI_RETRIEVAL_SETTING_CHOICES
 from utils.result_bundle import (
     build_run_manifest,
     companion_bundle_path,
@@ -81,8 +82,14 @@ async def main():
         "--retrieval_setting",
         type=str,
         default="auto",
-        choices=["auto", "auto-full", "manual", "random", "none"],
-        help="retrieval setting for planner agent (default: auto)",
+        choices=list(CLI_RETRIEVAL_SETTING_CHOICES),
+        help="retrieval setting for planner agent (default: auto; 'manual' is kept as a legacy alias for 'curated')",
+    )
+    parser.add_argument(
+        "--curated_profile",
+        type=str,
+        default="default",
+        help="curated retrieval profile name when retrieval_setting is 'curated' (default: default)",
     )
     parser.add_argument(
         "--max_critic_rounds",
@@ -130,6 +137,7 @@ async def main():
         split_name=args.split_name,
         exp_mode=args.exp_mode,
         retrieval_setting=args.retrieval_setting,
+        curated_profile=args.curated_profile,
         max_critic_rounds=args.max_critic_rounds,
         concurrency_mode=args.concurrency_mode,
         max_concurrent=args.max_concurrent,
@@ -217,6 +225,7 @@ async def main():
             "image_model_name": exp_config.image_model_name,
             "exp_mode": exp_config.exp_mode,
             "retrieval_setting": exp_config.retrieval_setting,
+            "curated_profile": exp_config.curated_profile,
             "manifest": manifest,
             "summary": summary,
         }

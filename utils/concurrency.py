@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from utils.pipeline_state import normalize_task_name
+from utils.retrieval_settings import normalize_retrieval_setting
 
 
 def compute_effective_concurrency(
@@ -24,7 +25,7 @@ def compute_effective_concurrency(
         return requested
 
     normalized_task = normalize_task_name(task_name)
-    normalized_retrieval = str(retrieval_setting or "auto").strip().lower()
+    normalized_retrieval = normalize_retrieval_setting(retrieval_setting)
     normalized_mode = str(exp_mode or "").strip().lower()
     normalized_provider = str(provider or "gemini").strip().lower()
 
@@ -33,7 +34,7 @@ def compute_effective_concurrency(
     retrieval_caps = {
         "auto-full": 2,
         "auto": 4,
-        "manual": 6,
+        "curated": 6,
         "random": 6,
         "none": 8,
     }

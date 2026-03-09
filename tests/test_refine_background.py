@@ -85,6 +85,70 @@ class RefineBackgroundJobTest(unittest.TestCase):
             demo.refine_images_with_count = original
             demo.clear_refine_job(job_id)
 
+    def test_refine_images_with_count_uses_module_runtime_helpers(self):
+        original_resolve = demo.resolve_runtime_settings
+        original_build = demo.build_runtime_context
+        original_generation_utils = demo.generation_utils
+        original_refine_one = demo.refine_image_with_nanoviz
+
+        runtime_context = object()
+        closed_contexts = []
+
+        class _FakeRuntimeContextManager:
+            def __init__(self, ctx):
+                self.ctx = ctx
+
+            def __enter__(self):
+                return self.ctx
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeGenerationUtils:
+            @staticmethod
+            def use_runtime_context(ctx):
+                return _FakeRuntimeContextManager(ctx)
+
+            @staticmethod
+            async def close_runtime_context(ctx):
+                closed_contexts.append(ctx)
+
+        async def fake_refine_image_with_nanoviz(*, runtime_context=None, **kwargs):
+            self.assertIs(runtime_context, runtime_context_obj)
+            return b"refined", "ok"
+
+        runtime_context_obj = runtime_context
+        demo.resolve_runtime_settings = lambda *args, **kwargs: types.SimpleNamespace(
+            api_key="local-test-key",
+            provider="gemini",
+            image_model_name="gemini-3.1-flash-image-preview",
+        )
+        demo.build_runtime_context = lambda *args, **kwargs: runtime_context_obj
+        demo.generation_utils = _FakeGenerationUtils()
+        demo.refine_image_with_nanoviz = fake_refine_image_with_nanoviz
+
+        try:
+            results = asyncio.run(
+                demo.refine_images_with_count(
+                    image_bytes=b"input",
+                    edit_prompt="make it better",
+                    num_images=1,
+                    aspect_ratio="16:9",
+                    image_size="2K",
+                    api_key="local-test-key",
+                    provider="gemini",
+                    image_model_name="gemini-3.1-flash-image-preview",
+                    input_mime_type="image/png",
+                )
+            )
+            self.assertEqual(results, [(b"refined", "ok")])
+            self.assertEqual(closed_contexts, [runtime_context_obj])
+        finally:
+            demo.resolve_runtime_settings = original_resolve
+            demo.build_runtime_context = original_build
+            demo.generation_utils = original_generation_utils
+            demo.refine_image_with_nanoviz = original_refine_one
+
 
 if __name__ == "__main__":
     unittest.main()

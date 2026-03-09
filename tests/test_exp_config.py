@@ -91,6 +91,29 @@ class ExpConfigProviderDefaultsTest(unittest.TestCase):
         self.assertNotIn("/", run_name)
         self.assertNotIn(" ", run_name)
 
+    def test_manual_alias_normalizes_to_curated_profile(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            work_dir = Path(tmp_dir)
+            config_dir = work_dir / "configs"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "model_config.yaml").write_text(CONFIG_YAML, encoding="utf-8")
+
+            exp_config = ExpConfig(
+                dataset_name="PaperBananaBench",
+                task_name="diagram",
+                provider="gemini",
+                retrieval_setting="manual",
+                curated_profile=" paper profile ",
+                exp_mode="demo_full",
+                split_name="demo",
+                timestamp="0310_123456",
+                work_dir=work_dir,
+            )
+
+            self.assertEqual(exp_config.retrieval_setting, "curated")
+            self.assertEqual(exp_config.curated_profile, "paper-profile")
+            self.assertIn("curated-paper-profil", exp_config.exp_name)
+
 
 if __name__ == "__main__":
     unittest.main()

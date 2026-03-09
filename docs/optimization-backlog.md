@@ -53,3 +53,8 @@
   - [x] check in `uv.lock` so the repository has one shared lock source
   - [x] update install docs to recommend `uv sync --locked` for local development
   - [x] add regression coverage for lockfile/requirements/README consistency
+- [x] Phase 15: Retrieval semantics cleanup
+  - [x] reframe `manual retrieval` as a curated fixed-few-shot profile flow while keeping `manual` as a legacy CLI alias
+  - [x] add a dataset-aware curated-profile loader that prefers `manual_profiles/<profile>.json` and only falls back to legacy `agent_selected_12.json` for `default`
+  - [x] support both full-example curated files and ID-only curated files that join back to `ref.json`
+  - [x] update the demo UI, manifests, background jobs, README, and regression tests to carry `curated_profile` metadata consistently

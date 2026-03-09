@@ -21,6 +21,16 @@
   - Do not create a new project-local `.venv` unless the user explicitly requests it.
   - A `.venv` was mistakenly created on 2026-03-09 during dataset setup and was immediately removed after the user corrected the preference.
   - A direct editable install was also mistakenly made into `C:\Users\86166\AppData\Local\Programs\Python\Python313`; prefer the `uv tool install --editable .` environment instead.
+- Real-provider validation policy for this workspace:
+  - Default text model for real smoke/live tests: `gemini-3.1-flash-lite-preview`.
+  - Default image model for real smoke/live tests: `gemini-3.1-flash-image-preview`.
+  - Team shorthand note: the user's spoken `banana2` in this workspace refers to `gemini-3.1-flash-image-preview`, not Evolink's `nano-banana-2-lite`.
+  - Evolink currently has no local key and is treated as a placeholder path only; do not plan real validation around Evolink unless the user explicitly changes that setup.
+- Upstream reference policy for this workspace:
+  - Besides `dwzhu-pku/PaperBanana`, also treat `Mylszd/PaperBanana-CN` as a relevant upstream/reference repo when tracing historical behavior.
+  - `manual retrieval` in both upstream repos is hard-coded to `data/PaperBananaBench/{task}/agent_selected_12.json`.
+  - That file should be treated as an offline curated few-shot subset, not as a guaranteed public dataset artifact.
+  - When the local dataset lacks `agent_selected_12.json`, the correct product behavior is graceful fallback or an explicitly configured replacement, not assuming the dataset is corrupted.
 
 ## Compatibility Rules
 - Result keys like `target_*_critic_descN` remain the source of truth for historical runs.
@@ -178,6 +188,40 @@
   - validated on 2026-03-10 with:
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`70` tests passed)
+- 2026-03-10 Live validation:
+  - confirmed the team's real-test defaults should remain `gemini-3.1-flash-lite-preview` for text and `gemini-3.1-flash-image-preview` for image generation/editing
+  - confirmed Evolink remains a placeholder-only path in this workspace; there is no local Evolink key and live validation should not target it unless the user explicitly changes that setup
+  - live smoke passed for `diagram` with `demo_full`, `manual` retrieval requested, and `1` critic round using:
+    - text model `gemini-3.1-flash-lite-preview`
+    - image model `gemini-3.1-flash-image-preview`
+    - output `results/smoke/diagram/20260310_021019_gemini_diagram.json`
+  - live smoke passed for `plot` with `demo_full`, `manual` retrieval requested, and `1` critic round using:
+    - text model `gemini-3.1-flash-lite-preview`
+    - image model `gemini-3.1-flash-image-preview`
+    - output `results/smoke/plot/20260310_021109_gemini_plot.json`
+  - live refine passed via `demo.refine_images_with_count(...)` against the generated diagram artifact, producing:
+    - `results/smoke/refine/20260310_021336_gemini_refine.png`
+  - real refine uncovered and we fixed a bare-mode `NameError` in `demo.refine_images_with_count()` by making `generation_utils` an explicit module dependency and adding regression coverage in `tests/test_refine_background.py`
+  - note: both live smoke runs requested `manual` retrieval but the local dataset currently lacks `data/PaperBananaBench/{diagram,plot}/agent_selected_12.json`, so runtime fell back to `retrieval_setting='none'`
+- 2026-03-10 Manual-retrieval investigation:
+  - local dataset inspection shows `data/PaperBananaBench/{diagram,plot}/` currently contains `ref.json`, `test.json`, and smoke artifacts, but no `agent_selected_12.json`
+  - upstream `dwzhu-pku/PaperBanana` and `Mylszd/PaperBanana-CN` both hard-code `manual` retrieval to `data/PaperBananaBench/{task}/agent_selected_12.json`
+  - in the original upstream code, `diagram` manual mode loads full examples from that file, while `plot` manual mode was still an empty placeholder
+  - our Wave 12 refactor preserved the same filename contract and extended it to `plot`, which means the code path is now complete but still depends on a curated file that is not part of our local extracted dataset
+  - Planner consumes manual references as full few-shot examples (`content + visual_intent + GT image`), so `agent_selected_12.json` should match the `ref.json` item schema rather than only storing IDs
+  - Hugging Face dataset tree for `dwzhu/PaperBananaBench` currently exposes a top-level `PaperBananaBench.zip`; the curated `agent_selected_12.json` subset is therefore best treated as a repo-side/manual-selection convention, not a guaranteed dataset-distribution contract
+  - paper inspection for arXiv:2601.23265 reinforces this interpretation: the paper describes a full reference set (292 reference cases for diagrams; 240 reference examples for plots) and a Retriever that dynamically selects the Top 10 examples, but it does not document any shipped file or benchmark contract named `agent_selected_12.json`
+  - the only explicit manual-selection note in the paper concerns choosing the best generated candidate for figures shown in the manuscript, which is separate from retrieval-time few-shot reference selection
+- 2026-03-10 Completed in Wave 15:
+  - introduced `utils/retrieval_settings.py` so `manual` is now treated as a legacy alias and the canonical retrieval mode is `curated`
+  - introduced `utils/retrieval_profiles.py` to load fixed few-shot profiles from `data/<dataset>/<task>/manual_profiles/<profile>.json`, while preserving backward compatibility for the legacy default file `agent_selected_12.json`
+  - curated profiles now support either full example payloads or ID-only payloads that join back to `ref.json`, which is a better fit for custom datasets and reduces duplicate reference data
+  - updated `ExpConfig`, run naming, result bundles, processor metadata, CLI, live smoke, and demo background jobs to carry `curated_profile` consistently
+  - updated the Streamlit generation UI so fixed few-shot retrieval is surfaced as `curated`, with explicit path/status messaging, while avoiding the old product-facing implication that users could manually pick references in-app
+  - added regression coverage for curated profile loading, legacy alias normalization, custom-profile metadata propagation, and generation background snapshots
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`75` tests passed)
 
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.

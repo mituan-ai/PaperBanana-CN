@@ -29,6 +29,7 @@ from utils.config_loader import (
 )
 from utils.demo_task_utils import create_sample_inputs
 from utils.result_bundle import build_run_manifest, write_result_bundle
+from utils.retrieval_settings import CLI_RETRIEVAL_SETTING_CHOICES
 from utils.run_report import build_failure_manifest, build_result_summary
 from utils.runtime_settings import build_runtime_context, resolve_runtime_settings
 
@@ -98,6 +99,7 @@ async def run_smoke_once(args) -> tuple[list[dict], dict, list[dict], Path]:
         split_name="smoke",
         exp_mode=args.exp_mode,
         retrieval_setting=args.retrieval_setting,
+        curated_profile=args.curated_profile,
         max_critic_rounds=runtime_settings.max_critic_rounds,
         concurrency_mode=runtime_settings.concurrency_mode,
         max_concurrent=runtime_settings.max_concurrent,
@@ -185,8 +187,13 @@ def parse_args():
     parser.add_argument(
         "--retrieval_setting",
         default="none",
-        choices=["none", "random", "auto", "auto-full", "manual"],
-        help="Retrieval mode for smoke test.",
+        choices=list(CLI_RETRIEVAL_SETTING_CHOICES),
+        help="Retrieval mode for smoke test. 'manual' remains a legacy alias for 'curated'.",
+    )
+    parser.add_argument(
+        "--curated_profile",
+        default="default",
+        help="Curated retrieval profile name when retrieval_setting is 'curated'.",
     )
     parser.add_argument(
         "--max_critic_rounds",

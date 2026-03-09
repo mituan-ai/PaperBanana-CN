@@ -51,7 +51,7 @@ try:
     from agents.vanilla_agent import VanillaAgent
     from agents.polish_agent import PolishAgent
     print("调试：已导入所有代理模块")
-    from utils import config
+    from utils import config, generation_utils
     from utils.config_loader import load_model_config
     from utils.dataset_paths import DEFAULT_DATASET_NAME, get_reference_file_path
     from utils.demo_task_utils import (
@@ -71,6 +71,17 @@ try:
         load_result_bundle,
         write_json_payload,
         write_result_bundle,
+    )
+    from utils.retrieval_profiles import (
+        find_curated_profile_path,
+        get_curated_profile_path,
+        get_legacy_manual_reference_path,
+    )
+    from utils.retrieval_settings import (
+        DEFAULT_CURATED_PROFILE,
+        get_retrieval_setting_label,
+        normalize_curated_profile_name,
+        normalize_retrieval_setting,
     )
     from utils.run_report import build_failure_manifest, build_result_summary
     from utils.runtime_settings import (
@@ -259,6 +270,7 @@ class GenerationJobState:
     task_name: str
     exp_mode: str
     retrieval_setting: str
+    curated_profile: str
     provider: str
     model_name: str
     image_model_name: str
@@ -297,6 +309,7 @@ class GenerationJobState:
                 "task_name": self.task_name,
                 "exp_mode": self.exp_mode,
                 "retrieval_setting": self.retrieval_setting,
+                "curated_profile": self.curated_profile,
                 "provider": self.provider,
                 "model_name": self.model_name,
                 "image_model_name": self.image_model_name,
@@ -391,6 +404,7 @@ def save_demo_generation_artifacts(
     task_name: str,
     exp_mode: str,
     retrieval_setting: str,
+    curated_profile: str,
     provider: str,
     model_name: str,
     image_model_name: str,
@@ -411,6 +425,7 @@ def save_demo_generation_artifacts(
         model_name=model_name,
         image_model_name=image_model_name,
         retrieval_setting=retrieval_setting,
+        curated_profile=curated_profile,
         exp_mode=exp_mode,
         split_name="demo",
     )
@@ -426,6 +441,7 @@ def save_demo_generation_artifacts(
         split_name="demo",
         exp_mode=exp_mode,
         retrieval_setting=retrieval_setting,
+        curated_profile=curated_profile,
         provider=provider,
         model_name=model_name,
         image_model_name=image_model_name,
@@ -437,6 +453,7 @@ def save_demo_generation_artifacts(
             "requested_candidates": int(requested_candidates),
             "effective_concurrent": int(effective_concurrent),
             "run_status": run_status,
+            "curated_profile": curated_profile,
         },
     )
 
@@ -770,6 +787,7 @@ def start_generation_background_job(
     task_name: str,
     exp_mode: str,
     retrieval_setting: str,
+    curated_profile: str,
     provider: str,
     api_key: str,
     model_name: str,
@@ -784,6 +802,8 @@ def start_generation_background_job(
     visual_intent: str,
 ) -> str:
     normalized_task_name = normalize_task_name(task_name)
+    retrieval_setting = normalize_retrieval_setting(retrieval_setting)
+    curated_profile = normalize_curated_profile_name(curated_profile)
     runtime_settings = resolve_runtime_settings(
         provider,
         api_key=api_key,
@@ -813,6 +833,7 @@ def start_generation_background_job(
         task_name=normalized_task_name,
         exp_mode=exp_mode,
         retrieval_setting=retrieval_setting,
+        curated_profile=curated_profile,
         provider=runtime_settings.provider,
         model_name=runtime_settings.model_name,
         image_model_name=runtime_settings.image_model_name,
@@ -863,6 +884,7 @@ def start_generation_background_job(
                     task_name=normalized_task_name,
                     exp_mode=exp_mode,
                     retrieval_setting=retrieval_setting,
+                    curated_profile=curated_profile,
                     model_name=runtime_settings.model_name,
                     image_model_name=runtime_settings.image_model_name,
                     provider=runtime_settings.provider,
@@ -884,6 +906,7 @@ def start_generation_background_job(
                     task_name=normalized_task_name,
                     exp_mode=exp_mode,
                     retrieval_setting=retrieval_setting,
+                    curated_profile=curated_profile,
                     provider=runtime_settings.provider,
                     model_name=runtime_settings.model_name,
                     image_model_name=runtime_settings.image_model_name,
@@ -934,6 +957,7 @@ async def process_parallel_candidates(
     task_name="diagram",
     exp_mode="dev_planner_critic",
     retrieval_setting="auto",
+    curated_profile=DEFAULT_CURATED_PROFILE,
     model_name="",
     image_model_name="",
     provider="evolink",
@@ -946,6 +970,8 @@ async def process_parallel_candidates(
 ):
     """使用 PaperVizProcessor 并行处理多个候选方案。"""
     task_name = normalize_task_name(task_name)
+    retrieval_setting = normalize_retrieval_setting(retrieval_setting)
+    curated_profile = normalize_curated_profile_name(curated_profile)
     total_candidates = len(data_list)
     effective_concurrent = compute_effective_concurrency(
         concurrency_mode=concurrency_mode,
@@ -1005,6 +1031,7 @@ async def process_parallel_candidates(
         retrieval_setting=retrieval_setting,
         concurrency_mode=runtime_settings.concurrency_mode,
         max_concurrent=runtime_settings.max_concurrent,
+        curated_profile=curated_profile,
         model_name=runtime_settings.model_name,
         image_model_name=runtime_settings.image_model_name,
         provider=runtime_settings.provider,
@@ -1834,19 +1861,21 @@ def main():
             }
             st.info(f"**流水线：** {mode_info[exp_mode]}")
 
+            retrieval_setting_key = "tab1_retrieval_setting"
+            retrieval_options = ["auto", "auto-full", "curated", "random", "none"]
+            current_retrieval_setting = normalize_retrieval_setting(
+                st.session_state.get(retrieval_setting_key, "auto")
+            )
+            if st.session_state.get(retrieval_setting_key) != current_retrieval_setting:
+                st.session_state[retrieval_setting_key] = current_retrieval_setting
+
             retrieval_setting = st.selectbox(
                 "检索设置",
-                ["auto", "auto-full", "manual", "random", "none"],
-                index=0,
-                key="tab1_retrieval_setting",
+                retrieval_options,
+                index=retrieval_options.index(current_retrieval_setting),
+                key=retrieval_setting_key,
                 help="如何检索参考图表",
-                format_func=lambda x: {
-                    "auto": "auto — LLM 智能选参考，轻量模式",
-                    "auto-full": "auto-full — LLM 智能选参考，完整上下文",
-                    "manual": "manual — 使用预先挑选的 few-shot 参考",
-                    "random": "random — 随机选 10 个参考（免费）",
-                    "none": "none — 不检索参考（免费）",
-                }[x],
+                format_func=get_retrieval_setting_label,
             )
 
             retrieval_target_label = "可视化意图" if task_name == "plot" else "图注"
@@ -1858,12 +1887,66 @@ def main():
             _retrieval_cost_info = {
                 "auto": f"💡 轻量 auto：仅发送{retrieval_target_label}给 LLM 做匹配，适合大多数试跑。",
                 "auto-full": "[WARN] 完整 auto：会把候选参考的完整内容发给 LLM 做匹配，成本显著更高，仅在需要高精度检索时使用。",
-                "manual": "📌 manual：直接使用数据集中预先挑选的参考样例，适合低成本复现和确定性调试。",
+                "curated": "📌 curated：使用固定 few-shot profile，适合低成本复现、A/B 对照和开发调试。",
                 "random": "✅ 随机从参考集中抽样，不调用额外检索推理。",
                 "none": "✅ 跳过检索，不使用参考图表。",
             }
             st.info(_retrieval_cost_info[retrieval_setting])
-            if retrieval_setting != "none" and not retrieval_ref_path.exists():
+
+            curated_profile_key = "tab1_curated_profile"
+            current_curated_profile = normalize_curated_profile_name(
+                st.session_state.get(curated_profile_key, DEFAULT_CURATED_PROFILE)
+            )
+            if st.session_state.get(curated_profile_key) != current_curated_profile:
+                st.session_state[curated_profile_key] = current_curated_profile
+
+            curated_profile = DEFAULT_CURATED_PROFILE
+            if retrieval_setting == "curated":
+                curated_profile = normalize_curated_profile_name(
+                    st.text_input(
+                        "Curated Profile",
+                        key=curated_profile_key,
+                        help=(
+                            "固定 few-shot profile 名称。默认优先读取 "
+                            "`manual_profiles/<profile>.json`，`default` 也兼容旧的 "
+                            "`agent_selected_12.json`。"
+                        ),
+                    )
+                )
+                st.session_state[curated_profile_key] = curated_profile
+                resolved_profile_path = find_curated_profile_path(
+                    dataset_name,
+                    task_name,
+                    profile_name=curated_profile,
+                    work_dir=REPO_ROOT,
+                )
+                if resolved_profile_path is not None:
+                    source_note = ""
+                    if resolved_profile_path.name == "agent_selected_12.json":
+                        source_note = "（兼容 legacy agent_selected_12.json）"
+                    st.caption(f"当前 curated profile：`{resolved_profile_path}`{source_note}")
+                else:
+                    expected_profile_path = get_curated_profile_path(
+                        dataset_name,
+                        task_name,
+                        profile_name=curated_profile,
+                        work_dir=REPO_ROOT,
+                    )
+                    if curated_profile == DEFAULT_CURATED_PROFILE:
+                        legacy_profile_path = get_legacy_manual_reference_path(
+                            dataset_name,
+                            task_name,
+                            work_dir=REPO_ROOT,
+                        )
+                        st.warning(
+                            "当前未发现固定 few-shot profile。默认会优先查找 "
+                            f"`{expected_profile_path}`，并兼容旧路径 `{legacy_profile_path}`。"
+                        )
+                    else:
+                        st.warning(
+                            f"当前未发现 curated profile：`{expected_profile_path}`。运行时会自动回退到 `none`。"
+                        )
+            if retrieval_setting in {"auto", "auto-full", "random"} and not retrieval_ref_path.exists():
                 st.warning(
                     f"当前仓库未发现数据集 `{dataset_name}` 的 `{task_name}/ref.json`，运行时会自动回退到 `none`。"
                 )
@@ -2130,6 +2213,7 @@ def main():
                     task_name=task_name,
                     exp_mode=exp_mode,
                     retrieval_setting=retrieval_setting,
+                    curated_profile=curated_profile,
                     provider=provider,
                     api_key=api_key,
                     model_name=model_name,

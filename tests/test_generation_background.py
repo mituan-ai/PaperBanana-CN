@@ -94,6 +94,7 @@ class GenerationBackgroundJobTest(unittest.TestCase):
                 task_name="diagram",
                 exp_mode="demo_planner_critic",
                 retrieval_setting="none",
+                curated_profile="default",
                 provider="gemini",
                 api_key="local-test-key",
                 model_name="gemini-3.1-flash-lite-preview",
@@ -113,6 +114,7 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertEqual(len(snapshot["results"]), 2)
             self.assertEqual(snapshot["json_file"], "D:/tmp/demo_generation.json")
             self.assertEqual(snapshot["bundle_file"], "D:/tmp/demo_generation.bundle.json")
+            self.assertEqual(snapshot["curated_profile"], "default")
         finally:
             demo.process_parallel_candidates = original_process
             demo.save_demo_generation_artifacts = original_save
@@ -164,6 +166,7 @@ class GenerationBackgroundJobTest(unittest.TestCase):
                 task_name="diagram",
                 exp_mode="demo_planner_critic",
                 retrieval_setting="none",
+                curated_profile="default",
                 provider="gemini",
                 api_key="local-test-key",
                 model_name="gemini-3.1-flash-lite-preview",

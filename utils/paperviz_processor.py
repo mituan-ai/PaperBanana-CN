@@ -307,6 +307,8 @@ class PaperVizProcessor:
         data.setdefault("dataset_name", self.exp_config.dataset_name)
         data.setdefault("task_name", task_name)
         data.setdefault("exp_mode", exp_mode)
+        data.setdefault("retrieval_setting", retrieval_setting)
+        data.setdefault("curated_profile", self.exp_config.curated_profile)
         data.setdefault("pipeline_spec", get_pipeline_metadata(exp_mode))
         spec = get_pipeline_spec(exp_mode)
         logger.debug(f"\n── process_single_query 开始 ── candidate={candidate_id}")
@@ -374,6 +376,8 @@ class PaperVizProcessor:
                     result.setdefault("dataset_name", self.exp_config.dataset_name)
                     result.setdefault("task_name", self.exp_config.task_name)
                     result.setdefault("exp_mode", self.exp_config.exp_mode)
+                    result.setdefault("retrieval_setting", self.exp_config.retrieval_setting)
+                    result.setdefault("curated_profile", self.exp_config.curated_profile)
                     result.setdefault(
                         "pipeline_spec",
                         get_pipeline_metadata(self.exp_config.exp_mode),
@@ -400,6 +404,8 @@ class PaperVizProcessor:
                     "dataset_name": self.exp_config.dataset_name,
                     "task_name": self.exp_config.task_name,
                     "exp_mode": self.exp_config.exp_mode,
+                    "retrieval_setting": self.exp_config.retrieval_setting,
+                    "curated_profile": self.exp_config.curated_profile,
                     "pipeline_spec": get_pipeline_metadata(self.exp_config.exp_mode),
                     "status": "failed",
                     "error": err_summary,
