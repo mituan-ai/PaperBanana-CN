@@ -20,3 +20,28 @@
 - [x] Make viewers and smoke artifacts share one result-file schema/loader
 - [x] Add a run manifest/bundle format for portable result sharing across custom datasets
 - [ ] Unify dependency management around a single locked source
+
+## 2026-03-10 Roadmap
+- [x] Phase 8: Result stability and run identity
+  - [x] assign a stable `input_index` / fallback `candidate_id` for every input sample
+  - [x] make `PaperVizProcessor` yield/save results in deterministic input order even under concurrent execution
+  - [x] make demo display / download / ZIP export use stable candidate identifiers instead of grid indexes
+  - [x] make run filenames more collision-resistant and more self-describing
+- [ ] Phase 9: Contract and registry consistency
+  - [ ] attach richer pipeline metadata (`pipeline_spec`, final-stage hints) to produced results
+  - [ ] remove hard-coded `demo_full` / planner-vs-stylist assumptions from final-stage resolution and stage timelines
+  - [ ] make viewers render stage labels and auto mode selection from registry metadata instead of guesswork
+- [ ] Phase 10: Runtime isolation
+  - [ ] replace module-level provider/client/hook globals with per-run runtime context objects
+  - [ ] isolate generation runtime from refine runtime so concurrent sessions do not stomp each other
+  - [ ] centralize agent/provider shutdown and resource cleanup
+- [ ] Phase 11: Product-loop closure
+  - [ ] move candidate generation onto background jobs with cancel / status / resume semantics
+  - [ ] add candidate-to-refine and plot-code-to-rerender entry points in the demo
+  - [ ] add history/replay for saved manifests and bundles in the demo
+- [ ] Phase 12: Experience parity and scale
+  - [ ] align GUI and CLI on `manual` retrieval and `max_critic_rounds=0`
+  - [ ] add plot input parsing / validation / preview before sending content to the planner
+  - [ ] make plot `manual` retrieval explicit or disable it cleanly until implemented
+  - [ ] replace full-prompt retrieval selection with prefilter + rerank for large datasets
+  - [ ] expand viewer/demo integration coverage and refresh README usage docs

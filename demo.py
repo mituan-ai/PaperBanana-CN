@@ -64,6 +64,7 @@ try:
     from utils import image_utils
     from utils.concurrency import compute_effective_concurrency
     from utils.paperviz_processor import PaperVizProcessor
+    from utils.result_order import get_candidate_id, sort_results_stably
     from utils.result_bundle import (
         build_run_manifest,
         companion_bundle_path,
@@ -1408,6 +1409,7 @@ def main():
                             progress_callback=on_progress,
                             status_callback=on_status,
                         ))
+                        results = sort_results_stably(results)
                         total_elapsed = time.perf_counter() - run_started_at
                         progress_bar.progress(
                             1.0,
@@ -1430,9 +1432,16 @@ def main():
                             results_dir = Path(__file__).parent / "results" / "demo" / task_name
                             results_dir.mkdir(parents=True, exist_ok=True)
 
-                            json_filename = results_dir / (
-                                f"demo_{task_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                            run_stem = config.build_run_name(
+                                timestamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+                                provider=provider,
+                                model_name=model_name,
+                                image_model_name=image_model_name,
+                                retrieval_setting=retrieval_setting,
+                                exp_mode=exp_mode,
+                                split_name="demo",
                             )
+                            json_filename = results_dir / f"demo_{task_name}_{run_stem}.json"
                             bundle_filename = companion_bundle_path(json_filename)
                             summary = build_result_summary(results)
                             failures = build_failure_manifest(results)
@@ -1569,10 +1578,12 @@ def main():
                 for col_idx in range(num_cols):
                     result_idx = row_start + col_idx
                     if result_idx < num_results:
+                        result_item = results[result_idx]
+                        candidate_id = get_candidate_id(result_item, result_idx)
                         with cols[col_idx]:
                             display_candidate_result(
-                                results[result_idx],
-                                result_idx,
+                                result_item,
+                                candidate_id,
                                 current_mode,
                                 task_name=current_task_name,
                             )
@@ -1588,7 +1599,8 @@ def main():
                 zip_export_failures = []
                 exported_count = 0
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                    for candidate_id, result in enumerate(results):
+                    for fallback_idx, result in enumerate(results):
+                        candidate_id = get_candidate_id(result, fallback_idx)
                         if isinstance(result, dict) and result.get("status") == "failed":
                             zip_export_failures.append(
                                 f"候选 {candidate_id}: 流水线执行失败，无法导出"

@@ -113,6 +113,16 @@
   - validated on 2026-03-09 with:
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`39` tests passed)
+- 2026-03-10 Completed in Wave 8:
+  - added `utils/result_order.py` to centralize stable input indexing, candidate-id fallback, and deterministic result sorting
+  - updated `PaperVizProcessor.process_queries_batch()` to backfill `input_index` / `candidate_id` and yield results in original input order even when tasks complete out of order
+  - updated CLI saves to sort results before writing legacy JSON and bundle outputs, so partial and final exports stay deterministic
+  - updated demo result display and ZIP export to label/download by stable candidate identifiers instead of grid indexes
+  - upgraded run naming in `ExpConfig` and demo exports to include second-level timestamps plus provider/model-aware slugs, reducing overwrite risk during repeated experiments
+  - added focused tests for deterministic batch ordering, candidate-id fallback, result-order helpers, and run-name sanitization
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`45` tests passed)
 
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.

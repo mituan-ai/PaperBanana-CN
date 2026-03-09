@@ -24,6 +24,13 @@ class _PlannerAgent(_PassthroughAgent):
         return data
 
 
+class _DelayedPlannerAgent(_PlannerAgent):
+    async def process(self, data, **kwargs):
+        delay = max(0, 2 - int(data.get("input_index", 0))) * 0.01
+        await asyncio.sleep(delay)
+        return await super().process(data, **kwargs)
+
+
 class _VisualizerAgent(_PassthroughAgent):
     async def process(self, data, **kwargs):
         state = PipelineState(data, self.exp_config.task_name)
@@ -38,7 +45,11 @@ class _VisualizerAgent(_PassthroughAgent):
 
 
 class PaperVizProcessorRegistryTest(unittest.TestCase):
-    def _build_processor(self, exp_mode: str) -> PaperVizProcessor:
+    def _build_processor(
+        self,
+        exp_mode: str,
+        planner_cls: type[_PassthroughAgent] = _PlannerAgent,
+    ) -> PaperVizProcessor:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         work_dir = Path(temp_dir.name)
@@ -57,7 +68,7 @@ class PaperVizProcessorRegistryTest(unittest.TestCase):
         return PaperVizProcessor(
             exp_config=exp_config,
             vanilla_agent=_PassthroughAgent(exp_config),
-            planner_agent=_PlannerAgent(exp_config),
+            planner_agent=planner_cls(exp_config),
             visualizer_agent=_VisualizerAgent(exp_config),
             stylist_agent=_PassthroughAgent(exp_config),
             critic_agent=_PassthroughAgent(exp_config),
@@ -128,6 +139,30 @@ class PaperVizProcessorRegistryTest(unittest.TestCase):
             model_name=processor.exp_config.model_name,
             work_dir=processor.exp_config.work_dir,
         )
+
+    def test_batch_processing_yields_stable_input_order(self):
+        processor = self._build_processor("dev_planner", planner_cls=_DelayedPlannerAgent)
+        payloads = [
+            {"id": "test_0", "content": "first", "visual_intent": "diagram"},
+            {"id": "test_1", "content": "second", "visual_intent": "diagram"},
+            {"id": "test_2", "content": "third", "visual_intent": "diagram"},
+        ]
+
+        async def _collect_results():
+            return [
+                item
+                async for item in processor.process_queries_batch(
+                    payloads,
+                    max_concurrent=3,
+                    do_eval=False,
+                )
+            ]
+
+        results = asyncio.run(_collect_results())
+
+        self.assertEqual([item["id"] for item in results], ["test_0", "test_1", "test_2"])
+        self.assertEqual([item["input_index"] for item in results], [0, 1, 2])
+        self.assertEqual([item["candidate_id"] for item in results], [0, 1, 2])
 
 
 if __name__ == "__main__":

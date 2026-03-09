@@ -32,6 +32,7 @@ from utils.result_bundle import (
     write_json_payload_async,
     write_result_bundle_async,
 )
+from utils.result_order import sort_results_stably
 from utils.run_report import build_failure_manifest, build_result_summary
 setup_logging("INFO")
 
@@ -179,31 +180,33 @@ async def main():
     failed_count = 0
 
     async def save_results_and_scores(current_results):
-        logger.info(f"💾 增量保存结果（共 {len(current_results)} 条）到 {output_filename}")
-        summary = build_result_summary(current_results)
-        failures = build_failure_manifest(current_results)
+        ordered_results = sort_results_stably(current_results)
+        logger.info(f"💾 增量保存结果（共 {len(ordered_results)} 条）到 {output_filename}")
+        summary = build_result_summary(ordered_results)
+        failures = build_failure_manifest(ordered_results)
         manifest = build_run_manifest(
             exp_config=exp_config,
             producer="cli",
-            result_count=len(current_results),
+            result_count=len(ordered_results),
         )
-        await write_json_payload_async(output_filename, current_results)
+        await write_json_payload_async(output_filename, ordered_results)
         await write_result_bundle_async(
             bundle_filename,
-            current_results,
+            ordered_results,
             manifest=manifest,
             summary=summary,
             failures=failures,
         )
 
     async def save_run_reports(current_results):
+        ordered_results = sort_results_stably(current_results)
         summary_path = output_filename.with_suffix(".summary.json")
         failures_path = output_filename.with_suffix(".failures.json")
-        summary = build_result_summary(current_results)
+        summary = build_result_summary(ordered_results)
         manifest = build_run_manifest(
             exp_config=exp_config,
             producer="cli",
-            result_count=len(current_results),
+            result_count=len(ordered_results),
         )
         summary_payload = {
             "dataset_name": exp_config.dataset_name,
@@ -216,7 +219,7 @@ async def main():
             "manifest": manifest,
             "summary": summary,
         }
-        failures_payload = build_failure_manifest(current_results)
+        failures_payload = build_failure_manifest(ordered_results)
 
         async with aiofiles.open(
             summary_path, "w", encoding="utf-8", errors="surrogateescape"

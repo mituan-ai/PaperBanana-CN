@@ -17,6 +17,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Literal
 
 from utils.runtime_settings import RuntimeSettings, resolve_runtime_settings
@@ -25,6 +26,41 @@ try:
     from zoneinfo import ZoneInfo
 except ImportError:
     from backports.zoneinfo import ZoneInfo  # Python < 3.9 fallback
+
+
+def sanitize_run_name_part(
+    value: str | None,
+    *,
+    default: str,
+    max_length: int = 24,
+) -> str:
+    text = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
+    if not text:
+        text = default
+    return text[:max_length]
+
+
+def build_run_name(
+    *,
+    timestamp: str,
+    provider: str,
+    model_name: str,
+    image_model_name: str,
+    retrieval_setting: str,
+    exp_mode: str,
+    split_name: str,
+) -> str:
+    provider_tag = sanitize_run_name_part(provider, default="provider", max_length=12)
+    primary_model = image_model_name or model_name
+    model_tag = sanitize_run_name_part(primary_model, default="model", max_length=24)
+    retrieval_tag = sanitize_run_name_part(
+        f"{retrieval_setting}ret",
+        default="ret",
+        max_length=16,
+    )
+    mode_tag = sanitize_run_name_part(exp_mode, default="mode", max_length=24)
+    split_tag = sanitize_run_name_part(split_name, default="split", max_length=16)
+    return f"{timestamp}_{provider_tag}_{model_tag}_{retrieval_tag}_{mode_tag}_{split_tag}"
 
 
 @dataclass
@@ -68,9 +104,17 @@ class ExpConfig:
 
         if self.timestamp is None:
             tz = ZoneInfo(self.timezone)
-            self.timestamp = datetime.now(tz).strftime("%m%d_%H%M")
+            self.timestamp = datetime.now(tz).strftime("%m%d_%H%M%S")
 
-        self.exp_name = f"{self.timestamp}_{self.retrieval_setting}ret_{self.exp_mode}_{self.split_name}"
+        self.exp_name = build_run_name(
+            timestamp=self.timestamp,
+            provider=self.provider,
+            model_name=self.model_name,
+            image_model_name=self.image_model_name,
+            retrieval_setting=self.retrieval_setting,
+            exp_mode=self.exp_mode,
+            split_name=self.split_name,
+        )
 
         # mkdir result_dir if not exists
         self.result_dir = self.work_dir / "results" / f"{self.dataset_name}_{self.task_name}"

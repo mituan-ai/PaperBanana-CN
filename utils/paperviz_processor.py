@@ -34,6 +34,7 @@ from .config import ExpConfig
 from .eval_toolkits import get_score_for_image_referenced
 from .pipeline_registry import PipelineSpec, get_pipeline_spec
 from .pipeline_state import PipelineState
+from .result_order import prepare_input_payload
 
 from utils.log_config import get_logger
 
@@ -279,7 +280,7 @@ class PaperVizProcessor:
         """
         Complete processing pipeline for a single query
         """
-        candidate_id = data.get('candidate_id', 'N/A')
+        candidate_id = data.get("candidate_id", data.get("input_index", "N/A"))
         exp_mode = self.exp_config.exp_mode
         task_name = self.exp_config.task_name.lower()
         retrieval_setting = self.exp_config.retrieval_setting
@@ -333,7 +334,8 @@ class PaperVizProcessor:
         semaphore = asyncio.Semaphore(max_concurrent)
 
         async def process_with_semaphore(doc):
-            candidate_id = doc.get("candidate_id", "N/A")
+            input_index = doc.get("input_index", 0)
+            candidate_id = doc.get("candidate_id", input_index)
             self._emit_status(status_callback, candidate_id, "等待并发槽位")
             async with semaphore:
                 self._emit_status(status_callback, candidate_id, "进入并发执行")
@@ -344,6 +346,7 @@ class PaperVizProcessor:
                         status_callback=status_callback,
                     )
                     if isinstance(result, dict):
+                        result.setdefault("input_index", input_index)
                         result.setdefault("candidate_id", candidate_id)
                         result.setdefault("status", "ok")
                         result.setdefault("dataset_name", self.exp_config.dataset_name)
@@ -364,6 +367,7 @@ class PaperVizProcessor:
                     except Exception:
                         pass
                     return {
+                        "input_index": input_index,
                         "candidate_id": candidate_id,
                         "dataset_name": self.exp_config.dataset_name,
                         "task_name": self.exp_config.task_name,
@@ -376,24 +380,29 @@ class PaperVizProcessor:
 
         # Create all tasks
         tasks = []
-        for data in data_list:
-            task = asyncio.create_task(process_with_semaphore(data))
+        for input_index, data in enumerate(data_list):
+            prepared_data = prepare_input_payload(data, input_index)
+            task = asyncio.create_task(process_with_semaphore(prepared_data))
             tasks.append(task)
         
-        all_result_list = []
+        completed_results = []
+        buffered_results: dict[int, Dict[str, Any]] = {}
+        next_yield_index = 0
         eval_dims = ["faithfulness", "conciseness", "readability", "aesthetics", "overall"]
 
         with tqdm(total=len(tasks), desc="Processing concurrently") as pbar:
             # Iterate through completed tasks returned by as_completed
             for future in asyncio.as_completed(tasks):
                 result_data = await future
-                all_result_list.append(result_data)
+                completed_results.append(result_data)
+                result_index = int(result_data.get("input_index", next_yield_index) or 0)
+                buffered_results[result_index] = result_data
                 postfix_dict = {}
                 for dim in eval_dims:
                     winner_key = f"{dim}_outcome"
 
                     if winner_key in result_data:
-                        winners = [d.get(winner_key) for d in all_result_list]
+                        winners = [d.get(winner_key) for d in completed_results]
                         total = len(winners)
 
                         if total > 0:
@@ -410,7 +419,9 @@ class PaperVizProcessor:
 
                 pbar.set_postfix(postfix_dict)
                 pbar.update(1)
-                yield result_data
+                while next_yield_index in buffered_results:
+                    yield buffered_results.pop(next_yield_index)
+                    next_yield_index += 1
 
     async def evaluation_function(
         self, data: Dict[str, Any], exp_config: ExpConfig
