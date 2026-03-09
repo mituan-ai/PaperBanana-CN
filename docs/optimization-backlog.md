@@ -35,10 +35,10 @@
   - [x] replace module-level provider/client/hook globals with per-run runtime context objects
   - [x] isolate generation runtime from refine runtime so concurrent sessions do not stomp each other
   - [x] centralize agent/provider shutdown and resource cleanup
-- [ ] Phase 11: Product-loop closure
-  - [ ] move candidate generation onto background jobs with cancel / status / resume semantics
-  - [ ] add candidate-to-refine and plot-code-to-rerender entry points in the demo
-  - [ ] add history/replay for saved manifests and bundles in the demo
+- [x] Phase 11: Product-loop closure
+  - [x] move candidate generation onto background jobs with cancel / status / resume semantics
+  - [x] add candidate-to-refine and plot-code-to-rerender entry points in the demo
+  - [x] add history/replay for saved manifests and bundles in the demo
 - [ ] Phase 12: Experience parity and scale
   - [ ] align GUI and CLI on `manual` retrieval and `max_critic_rounds=0`
   - [ ] add plot input parsing / validation / preview before sending content to the planner

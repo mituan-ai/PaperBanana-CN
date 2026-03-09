@@ -68,6 +68,7 @@ try:
     from utils.result_bundle import (
         build_run_manifest,
         companion_bundle_path,
+        load_result_bundle,
         write_json_payload,
         write_result_bundle,
     )
@@ -77,6 +78,7 @@ try:
         build_runtime_context,
         resolve_runtime_settings,
     )
+    from utils.plot_executor import execute_plot_code_with_details
     print("调试：已导入工具模块")
 
     REPO_ROOT = Path(__file__).parent
@@ -241,9 +243,86 @@ def build_provider_defaults():
 
 
 PROVIDER_DEFAULTS = build_provider_defaults()
+GENERATION_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+GENERATION_JOBS_LOCK = threading.Lock()
+GENERATION_JOBS: dict[str, "GenerationJobState"] = {}
 REFINE_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 REFINE_JOBS_LOCK = threading.Lock()
 REFINE_JOBS: dict[str, "RefineJobState"] = {}
+
+
+@dataclass
+class GenerationJobState:
+    job_id: str
+    dataset_name: str
+    task_name: str
+    exp_mode: str
+    retrieval_setting: str
+    provider: str
+    model_name: str
+    image_model_name: str
+    concurrency_mode: str
+    max_concurrent: int
+    requested_candidates: int
+    max_critic_rounds: int
+    aspect_ratio: str
+    image_resolution: str
+    content: str
+    visual_intent: str
+    status: str = "running"
+    progress_done: int = 0
+    progress_total: int = 0
+    effective_concurrent: int = 0
+    estimated_batches: int = 0
+    status_history: list[str] = field(default_factory=list)
+    results: list[dict] = field(default_factory=list)
+    summary: dict = field(default_factory=dict)
+    failures: list[dict] = field(default_factory=list)
+    error: str = ""
+    created_at: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    elapsed_seconds: float = 0.0
+    cancel_requested: bool = False
+    json_file: str = ""
+    bundle_file: str = ""
+    future: Future | None = field(default=None, repr=False)
+    cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            return {
+                "job_id": self.job_id,
+                "dataset_name": self.dataset_name,
+                "task_name": self.task_name,
+                "exp_mode": self.exp_mode,
+                "retrieval_setting": self.retrieval_setting,
+                "provider": self.provider,
+                "model_name": self.model_name,
+                "image_model_name": self.image_model_name,
+                "concurrency_mode": self.concurrency_mode,
+                "max_concurrent": self.max_concurrent,
+                "requested_candidates": self.requested_candidates,
+                "max_critic_rounds": self.max_critic_rounds,
+                "aspect_ratio": self.aspect_ratio,
+                "image_resolution": self.image_resolution,
+                "content": self.content,
+                "visual_intent": self.visual_intent,
+                "status": self.status,
+                "progress_done": self.progress_done,
+                "progress_total": self.progress_total,
+                "effective_concurrent": self.effective_concurrent,
+                "estimated_batches": self.estimated_batches,
+                "status_history": list(self.status_history),
+                "results": list(self.results),
+                "summary": dict(self.summary),
+                "failures": list(self.failures),
+                "error": self.error,
+                "created_at": self.created_at,
+                "elapsed_seconds": self.elapsed_seconds,
+                "cancel_requested": self.cancel_requested,
+                "json_file": self.json_file,
+                "bundle_file": self.bundle_file,
+            }
 
 
 @dataclass
@@ -292,6 +371,324 @@ class RefineJobState:
                 "cancel_requested": self.cancel_requested,
                 "original_image_bytes": self.original_image_bytes,
             }
+
+
+def get_demo_results_dir(task_name: str) -> Path:
+    results_dir = Path(__file__).parent / "results" / "demo" / normalize_task_name(task_name)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    return results_dir
+
+
+def save_demo_generation_artifacts(
+    *,
+    results: list[dict],
+    dataset_name: str,
+    task_name: str,
+    exp_mode: str,
+    retrieval_setting: str,
+    provider: str,
+    model_name: str,
+    image_model_name: str,
+    concurrency_mode: str,
+    max_concurrent: int,
+    max_critic_rounds: int,
+    requested_candidates: int,
+    effective_concurrent: int,
+    timestamp_str: str | None = None,
+    run_status: str = "completed",
+) -> dict:
+    normalized_task_name = normalize_task_name(task_name)
+    timestamp_str = timestamp_str or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    results_dir = get_demo_results_dir(normalized_task_name)
+    run_stem = config.build_run_name(
+        timestamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+        provider=provider,
+        model_name=model_name,
+        image_model_name=image_model_name,
+        retrieval_setting=retrieval_setting,
+        exp_mode=exp_mode,
+        split_name="demo",
+    )
+    json_filename = results_dir / f"demo_{normalized_task_name}_{run_stem}.json"
+    bundle_filename = companion_bundle_path(json_filename)
+    summary = build_result_summary(results)
+    failures = build_failure_manifest(results)
+    manifest = build_run_manifest(
+        producer="demo",
+        result_count=len(results),
+        dataset_name=dataset_name,
+        task_name=normalized_task_name,
+        split_name="demo",
+        exp_mode=exp_mode,
+        retrieval_setting=retrieval_setting,
+        provider=provider,
+        model_name=model_name,
+        image_model_name=image_model_name,
+        concurrency_mode=concurrency_mode,
+        max_concurrent=int(max_concurrent),
+        max_critic_rounds=int(max_critic_rounds),
+        timestamp=timestamp_str,
+        extra={
+            "requested_candidates": int(requested_candidates),
+            "effective_concurrent": int(effective_concurrent),
+            "run_status": run_status,
+        },
+    )
+
+    write_json_payload(json_filename, results)
+    write_result_bundle(
+        bundle_filename,
+        results,
+        manifest=manifest,
+        summary=summary,
+        failures=failures,
+    )
+    return {
+        "timestamp": timestamp_str,
+        "json_file": str(json_filename),
+        "bundle_file": str(bundle_filename),
+        "summary": summary,
+        "failures": failures,
+        "manifest": manifest,
+    }
+
+
+def _store_generation_job(job: GenerationJobState) -> None:
+    with GENERATION_JOBS_LOCK:
+        GENERATION_JOBS[job.job_id] = job
+
+
+def get_generation_job(job_id: str) -> GenerationJobState | None:
+    with GENERATION_JOBS_LOCK:
+        return GENERATION_JOBS.get(job_id)
+
+
+def get_generation_job_snapshot(job_id: str) -> dict | None:
+    job = get_generation_job(job_id)
+    if job is None:
+        return None
+    return job.snapshot()
+
+
+def clear_generation_job(job_id: str) -> None:
+    with GENERATION_JOBS_LOCK:
+        GENERATION_JOBS.pop(job_id, None)
+
+
+def append_generation_job_status(job_id: str, message: str) -> None:
+    job = get_generation_job(job_id)
+    if job is None or not message:
+        return
+    with job.lock:
+        ts = datetime.now().strftime("%H:%M:%S")
+        line = f"[{ts}] {message}"
+        if job.status_history and job.status_history[-1] == line:
+            return
+        job.status_history.append(line)
+        if len(job.status_history) > 50:
+            job.status_history = job.status_history[-50:]
+
+
+def update_generation_job_progress(
+    job_id: str,
+    done_count: int,
+    total_count: int,
+    effective_concurrent: int,
+) -> None:
+    job = get_generation_job(job_id)
+    if job is None:
+        return
+    with job.lock:
+        job.progress_done = done_count
+        job.progress_total = total_count
+        job.effective_concurrent = int(effective_concurrent)
+        job.estimated_batches = math.ceil(total_count / max(1, effective_concurrent))
+
+
+def request_generation_job_cancel(job_id: str) -> None:
+    job = get_generation_job(job_id)
+    if job is None:
+        return
+    with job.lock:
+        job.cancel_requested = True
+        job.cancel_event.set()
+    append_generation_job_status(job_id, "[生成] 已收到停止请求，当前进行中的候选会继续完成，未开始的候选将被跳过。")
+
+
+def persist_generation_job_results(snapshot: dict, *, source_label: str = "后台生成任务") -> None:
+    st.session_state["results"] = sort_results_stably(snapshot.get("results", []))
+    st.session_state["task_name"] = normalize_task_name(snapshot.get("task_name", "diagram"))
+    st.session_state["dataset_name"] = snapshot.get("dataset_name", DEFAULT_DATASET_NAME)
+    st.session_state["exp_mode"] = snapshot.get("exp_mode", "")
+    st.session_state["concurrency_mode"] = snapshot.get("concurrency_mode", "auto")
+    st.session_state["max_concurrent"] = int(snapshot.get("max_concurrent", 0) or 0)
+    st.session_state["effective_concurrent"] = int(snapshot.get("effective_concurrent", 0) or 0)
+    st.session_state["estimated_batches"] = int(snapshot.get("estimated_batches", 0) or 0)
+    st.session_state["timestamp"] = snapshot.get("timestamp") or snapshot.get("created_at", "N/A")
+    st.session_state["json_file"] = snapshot.get("json_file", "")
+    st.session_state["bundle_file"] = snapshot.get("bundle_file", "")
+    st.session_state["generation_summary"] = snapshot.get("summary", {})
+    st.session_state["generation_failures"] = snapshot.get("failures", [])
+    st.session_state["requested_candidates"] = int(
+        snapshot.get("requested_candidates", len(snapshot.get("results", []))) or 0
+    )
+    st.session_state["result_source_label"] = source_label
+
+
+def list_demo_bundle_files(
+    task_name: str | None = None,
+    *,
+    limit: int = 20,
+) -> list[Path]:
+    root = Path(__file__).parent / "results" / "demo"
+    if not root.exists():
+        return []
+    if task_name:
+        search_root = root / normalize_task_name(task_name)
+        pattern = "*.bundle.json"
+    else:
+        search_root = root
+        pattern = "*.bundle.json"
+    if not search_root.exists():
+        return []
+    bundle_files = list(search_root.rglob(pattern))
+    bundle_files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    return bundle_files[: max(1, int(limit or 1))]
+
+
+def load_generation_history_snapshot(bundle_path: str | Path) -> dict:
+    payload = load_result_bundle(bundle_path)
+    manifest = payload.get("manifest", {})
+    results = sort_results_stably(payload.get("results", []))
+    requested_candidates = int(manifest.get("requested_candidates", len(results)) or len(results))
+    effective_concurrent = int(manifest.get("effective_concurrent", manifest.get("max_concurrent", 0)) or 0)
+    estimated_batches = math.ceil(requested_candidates / max(1, effective_concurrent)) if effective_concurrent else 0
+    json_path = Path(bundle_path)
+    legacy_json_path = (
+        Path(str(json_path).replace(".bundle.json", ".json"))
+        if str(json_path).endswith(".bundle.json")
+        else json_path
+    )
+    return {
+        "results": results,
+        "summary": payload.get("summary", {}),
+        "failures": payload.get("failures", []),
+        "dataset_name": manifest.get("dataset_name", DEFAULT_DATASET_NAME),
+        "task_name": manifest.get("task_name", "diagram"),
+        "exp_mode": manifest.get("exp_mode", ""),
+        "concurrency_mode": manifest.get("concurrency_mode", "auto"),
+        "max_concurrent": int(manifest.get("max_concurrent", 0) or 0),
+        "effective_concurrent": effective_concurrent,
+        "estimated_batches": estimated_batches,
+        "requested_candidates": requested_candidates,
+        "timestamp": manifest.get("timestamp") or manifest.get("created_at", ""),
+        "json_file": str(legacy_json_path) if legacy_json_path.exists() else "",
+        "bundle_file": str(bundle_path),
+        "status": manifest.get("run_status", "completed"),
+        "manifest": manifest,
+    }
+
+
+def format_demo_bundle_label(bundle_path: str | Path) -> str:
+    snapshot = load_generation_history_snapshot(bundle_path)
+    manifest = snapshot.get("manifest", {})
+    stamp = manifest.get("timestamp") or manifest.get("created_at") or Path(bundle_path).stem
+    task_name = normalize_task_name(manifest.get("task_name", "diagram"))
+    provider = manifest.get("provider", "-")
+    exp_mode = manifest.get("exp_mode", "-")
+    result_count = len(snapshot.get("results", []))
+    return f"{stamp} | {task_name} | {provider} | {exp_mode} | {result_count} results"
+
+
+def stage_refine_source_image(
+    image_bytes: bytes,
+    *,
+    input_mime_type: str = "image/png",
+    source_label: str,
+    default_prompt: str = "",
+) -> None:
+    st.session_state["refine_staged_image_bytes"] = image_bytes
+    st.session_state["refine_staged_input_mime_type"] = normalize_image_mime_type(input_mime_type)
+    st.session_state["refine_staged_source_label"] = source_label
+    st.session_state["refine_input_source"] = "候选方案"
+    if default_prompt and not st.session_state.get("edit_prompt", "").strip():
+        st.session_state["edit_prompt"] = default_prompt
+
+
+def clear_staged_refine_source() -> None:
+    for key in (
+        "refine_staged_image_bytes",
+        "refine_staged_input_mime_type",
+        "refine_staged_source_label",
+    ):
+        st.session_state.pop(key, None)
+    if st.session_state.get("refine_input_source") == "候选方案":
+        st.session_state["refine_input_source"] = "上传图像"
+
+
+def extract_result_image_payload(
+    result: dict,
+    *,
+    exp_mode: str,
+    task_name: str,
+) -> tuple[bytes | None, str]:
+    final_image_key, _ = find_final_stage_keys(
+        result,
+        task_name=task_name,
+        exp_mode=exp_mode,
+    )
+    if not final_image_key or not result.get(final_image_key):
+        return None, "image/png"
+    image = base64_to_image(result[final_image_key])
+    if image is None:
+        return None, "image/png"
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue(), "image/png"
+
+
+def stage_candidate_for_refine(
+    result: dict,
+    *,
+    candidate_id: int | str,
+    exp_mode: str,
+    task_name: str,
+) -> bool:
+    image_bytes, input_mime_type = extract_result_image_payload(
+        result,
+        exp_mode=exp_mode,
+        task_name=task_name,
+    )
+    if not image_bytes:
+        return False
+    default_prompt = "保持内容与语义不变，优化清晰度、对齐、版式与视觉层次。"
+    stage_refine_source_image(
+        image_bytes,
+        input_mime_type=input_mime_type,
+        source_label=f"候选方案 {candidate_id}",
+        default_prompt=default_prompt,
+    )
+    return True
+
+
+def stage_plot_code_for_rerender(result: dict, *, candidate_id: int | str, exp_mode: str) -> bool:
+    _, final_desc_key = find_final_stage_keys(
+        result,
+        task_name="plot",
+        exp_mode=exp_mode,
+    )
+    if not final_desc_key:
+        return False
+    code_key = final_desc_key if final_desc_key == "vanilla_plot_code" else f"{final_desc_key}_code"
+    code_text = clean_text(result.get(code_key, ""))
+    if not code_text:
+        return False
+    st.session_state["plot_rerender_code"] = code_text
+    st.session_state["plot_rerender_code_editor"] = code_text
+    st.session_state["plot_rerender_candidate_id"] = candidate_id
+    st.session_state["plot_rerender_source_desc_key"] = final_desc_key
+    st.session_state.pop("plot_rerender_preview", None)
+    return True
 
 
 def _store_refine_job(job: RefineJobState) -> None:
@@ -362,6 +759,170 @@ def persist_refine_job_results(snapshot: dict) -> None:
     st.session_state["refine_failed_results"] = snapshot.get("failed_results", [])
 
 
+def start_generation_background_job(
+    *,
+    dataset_name: str,
+    task_name: str,
+    exp_mode: str,
+    retrieval_setting: str,
+    provider: str,
+    api_key: str,
+    model_name: str,
+    image_model_name: str,
+    concurrency_mode: str,
+    max_concurrent: int,
+    num_candidates: int,
+    max_critic_rounds: int,
+    aspect_ratio: str,
+    image_resolution: str,
+    content: str,
+    visual_intent: str,
+) -> str:
+    normalized_task_name = normalize_task_name(task_name)
+    runtime_settings = resolve_runtime_settings(
+        provider,
+        api_key=api_key,
+        model_name=model_name,
+        image_model_name=image_model_name,
+        concurrency_mode=concurrency_mode,
+        max_concurrent=max_concurrent,
+        max_critic_rounds=max_critic_rounds,
+        base_dir=REPO_ROOT,
+        model_config_data=model_config_data,
+    )
+    requested_candidates = max(1, int(num_candidates))
+    effective_concurrent = compute_effective_concurrency(
+        concurrency_mode=runtime_settings.concurrency_mode,
+        max_concurrent=runtime_settings.max_concurrent,
+        total_candidates=requested_candidates,
+        task_name=normalized_task_name,
+        retrieval_setting=retrieval_setting,
+        exp_mode=exp_mode,
+        provider=runtime_settings.provider,
+    )
+    estimated_batches = math.ceil(requested_candidates / max(1, effective_concurrent))
+    job_id = f"generate_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    job = GenerationJobState(
+        job_id=job_id,
+        dataset_name=dataset_name,
+        task_name=normalized_task_name,
+        exp_mode=exp_mode,
+        retrieval_setting=retrieval_setting,
+        provider=runtime_settings.provider,
+        model_name=runtime_settings.model_name,
+        image_model_name=runtime_settings.image_model_name,
+        concurrency_mode=runtime_settings.concurrency_mode,
+        max_concurrent=runtime_settings.max_concurrent,
+        requested_candidates=requested_candidates,
+        max_critic_rounds=runtime_settings.max_critic_rounds,
+        aspect_ratio=aspect_ratio,
+        image_resolution=image_resolution,
+        content=content,
+        visual_intent=visual_intent,
+        progress_total=requested_candidates,
+        effective_concurrent=effective_concurrent,
+        estimated_batches=estimated_batches,
+    )
+    _store_generation_job(job)
+    append_generation_job_status(
+        job_id,
+        (
+            f"[生成] task={normalized_task_name} dataset={dataset_name} "
+            f"candidates={requested_candidates} provider={runtime_settings.provider}"
+        ),
+    )
+
+    def worker():
+        started_at = time.perf_counter()
+        try:
+            input_data_list = create_sample_inputs(
+                content=content,
+                visual_intent=visual_intent,
+                task_name=normalized_task_name,
+                aspect_ratio=aspect_ratio,
+                num_copies=requested_candidates,
+                max_critic_rounds=runtime_settings.max_critic_rounds,
+                image_resolution=image_resolution,
+            )
+
+            def on_progress(done_count: int, total_count: int, effective_count: int):
+                update_generation_job_progress(job_id, done_count, total_count, effective_count)
+
+            def on_status(message: str):
+                append_generation_job_status(job_id, message)
+
+            results, used_concurrency = asyncio.run(
+                process_parallel_candidates(
+                    input_data_list,
+                    dataset_name=dataset_name,
+                    task_name=normalized_task_name,
+                    exp_mode=exp_mode,
+                    retrieval_setting=retrieval_setting,
+                    model_name=runtime_settings.model_name,
+                    image_model_name=runtime_settings.image_model_name,
+                    provider=runtime_settings.provider,
+                    api_key=runtime_settings.api_key,
+                    concurrency_mode=runtime_settings.concurrency_mode,
+                    max_concurrent=runtime_settings.max_concurrent,
+                    progress_callback=on_progress,
+                    status_callback=on_status,
+                    cancel_check=job.cancel_event.is_set,
+                )
+            )
+            results = sort_results_stably(results)
+            run_status = "cancelled" if job.cancel_requested else "completed"
+            artifact_payload = {}
+            try:
+                artifact_payload = save_demo_generation_artifacts(
+                    results=results,
+                    dataset_name=dataset_name,
+                    task_name=normalized_task_name,
+                    exp_mode=exp_mode,
+                    retrieval_setting=retrieval_setting,
+                    provider=runtime_settings.provider,
+                    model_name=runtime_settings.model_name,
+                    image_model_name=runtime_settings.image_model_name,
+                    concurrency_mode=runtime_settings.concurrency_mode,
+                    max_concurrent=runtime_settings.max_concurrent,
+                    max_critic_rounds=runtime_settings.max_critic_rounds,
+                    requested_candidates=requested_candidates,
+                    effective_concurrent=used_concurrency,
+                    timestamp_str=job.created_at,
+                    run_status=run_status,
+                )
+            except Exception as save_err:
+                append_generation_job_status(job_id, f"[生成][WARN] 结果写盘失败: {save_err}")
+
+            with job.lock:
+                job.results = results
+                job.summary = artifact_payload.get("summary", build_result_summary(results))
+                job.failures = artifact_payload.get("failures", build_failure_manifest(results))
+                job.json_file = artifact_payload.get("json_file", "")
+                job.bundle_file = artifact_payload.get("bundle_file", "")
+                job.progress_done = len(results)
+                job.progress_total = requested_candidates
+                job.effective_concurrent = int(used_concurrency)
+                job.estimated_batches = math.ceil(requested_candidates / max(1, used_concurrency))
+                job.elapsed_seconds = time.perf_counter() - started_at
+                job.status = run_status
+            append_generation_job_status(
+                job_id,
+                (
+                    f"[生成] finished status={run_status} "
+                    f"completed={len(results)}/{requested_candidates}"
+                ),
+            )
+        except Exception as exc:
+            with job.lock:
+                job.status = "failed"
+                job.error = f"{type(exc).__name__}: {exc}"
+                job.elapsed_seconds = time.perf_counter() - started_at
+            append_generation_job_status(job_id, f"[生成] failed: {job.error}")
+
+    job.future = GENERATION_JOB_EXECUTOR.submit(worker)
+    return job_id
+
+
 async def process_parallel_candidates(
     data_list,
     dataset_name=DEFAULT_DATASET_NAME,
@@ -376,6 +937,7 @@ async def process_parallel_candidates(
     max_concurrent=20,
     progress_callback: Optional[Callable[[int, int, int], None]] = None,
     status_callback: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ):
     """使用 PaperVizProcessor 并行处理多个候选方案。"""
     task_name = normalize_task_name(task_name)
@@ -471,6 +1033,7 @@ async def process_parallel_candidates(
                 max_concurrent=concurrent_num,
                 do_eval=False,
                 status_callback=status_callback,
+                cancel_check=cancel_check,
             ):
                 results.append(result_data)
                 if progress_callback:
@@ -1001,6 +1564,39 @@ def display_candidate_result(result, candidate_id, exp_mode, task_name="diagram"
                 use_container_width=True,
             )
 
+    action_column_count = 2 if task_name == "plot" and final_code_key and result.get(final_code_key) else 1
+    action_cols = st.columns(action_column_count)
+    with action_cols[0]:
+        if st.button(
+            "✨ 送去精修",
+            key=f"stage_candidate_for_refine_{task_name}_{candidate_id}",
+            use_container_width=True,
+        ):
+            if stage_candidate_for_refine(
+                result,
+                candidate_id=candidate_id,
+                exp_mode=exp_mode,
+                task_name=task_name,
+            ):
+                st.success(f"已将候选方案 {candidate_id} 载入精修工作台。")
+            else:
+                st.warning("当前候选方案缺少可用于精修的最终图像。")
+    if action_column_count > 1:
+        with action_cols[1]:
+            if st.button(
+                "↺ 载入代码重渲染",
+                key=f"stage_plot_rerender_{candidate_id}",
+                use_container_width=True,
+            ):
+                if stage_plot_code_for_rerender(
+                    result,
+                    candidate_id=candidate_id,
+                    exp_mode=exp_mode,
+                ):
+                    st.success(f"已将候选方案 {candidate_id} 的代码载入重渲染工作台。")
+                else:
+                    st.warning("当前候选方案没有可编辑的最终绘图代码。")
+
     # 在折叠面板中展示演化时间线
     stages = build_evolution_stages(result, exp_mode, task_name=task_name)
     if len(stages) > 1:
@@ -1049,6 +1645,136 @@ def display_candidate_result(result, candidate_id, exp_mode, task_name="diagram"
                 st.write(cleaned_desc)
             else:
                 st.info("暂无描述")
+
+
+def render_plot_rerender_workspace() -> None:
+    staged_code = clean_text(st.session_state.get("plot_rerender_code", ""))
+    if not staged_code:
+        return
+
+    candidate_id = st.session_state.get("plot_rerender_candidate_id", "N/A")
+    st.divider()
+    st.markdown("## 🧪 Plot 代码重渲染工作台")
+    st.caption(f"来源：候选方案 {candidate_id}。你可以直接编辑 Matplotlib 代码并本地预览。")
+
+    if "plot_rerender_code_editor" not in st.session_state:
+        st.session_state["plot_rerender_code_editor"] = staged_code
+
+    st.text_area(
+        "Matplotlib 代码",
+        height=260,
+        key="plot_rerender_code_editor",
+        help="支持直接粘贴或修改候选方案的最终绘图代码，然后点击重新渲染。",
+    )
+
+    action_col1, action_col2, action_col3 = st.columns(3)
+    with action_col1:
+        if st.button("🔄 重新渲染预览", use_container_width=True):
+            current_code = clean_text(st.session_state.get("plot_rerender_code_editor", ""))
+            st.session_state["plot_rerender_code"] = current_code
+            st.session_state["plot_rerender_preview"] = execute_plot_code_with_details(current_code)
+            st.rerun()
+    with action_col2:
+        if st.button("✨ 预览送去精修", use_container_width=True):
+            preview = st.session_state.get("plot_rerender_preview", {})
+            if preview.get("success") and preview.get("base64_jpg"):
+                stage_refine_source_image(
+                    base64.b64decode(preview["base64_jpg"]),
+                    input_mime_type="image/jpeg",
+                    source_label=f"Plot 重渲染预览（候选 {candidate_id}）",
+                    default_prompt="保持语义不变，优化布局、标签清晰度、留白和整体视觉层次。",
+                )
+                st.success("已将重渲染预览送入精修工作台。")
+            else:
+                st.warning("当前还没有成功的预览结果，请先执行一次重渲染。")
+    with action_col3:
+        if st.button("🧹 清空工作台", use_container_width=True):
+            for key in (
+                "plot_rerender_code",
+                "plot_rerender_code_editor",
+                "plot_rerender_candidate_id",
+                "plot_rerender_source_desc_key",
+                "plot_rerender_preview",
+            ):
+                st.session_state.pop(key, None)
+            st.rerun()
+
+    preview = st.session_state.get("plot_rerender_preview")
+    if not isinstance(preview, dict):
+        return
+
+    if preview.get("success") and preview.get("base64_jpg"):
+        preview_image = base64_to_image(preview.get("base64_jpg"))
+        if preview_image is not None:
+            st.image(preview_image, use_container_width=True, caption="重渲染预览")
+            st.download_button(
+                label="[DOWN] 下载预览 JPEG",
+                data=base64.b64decode(preview["base64_jpg"]),
+                file_name=f"plot_rerender_preview_{candidate_id}.jpg",
+                mime="image/jpeg",
+                use_container_width=True,
+            )
+    elif preview:
+        st.error("重渲染失败，请检查代码输出和报错信息。")
+
+    if preview:
+        with st.expander("查看重渲染诊断", expanded=not preview.get("success", False)):
+            if preview.get("exception"):
+                st.code(clean_text(preview["exception"]))
+            if preview.get("stdout"):
+                st.markdown("**stdout**")
+                st.code(clean_text(preview["stdout"]))
+            if preview.get("stderr"):
+                st.markdown("**stderr**")
+                st.code(clean_text(preview["stderr"]))
+
+
+def render_generation_history_panel(task_name: str) -> None:
+    with st.expander("📚 历史运行回放", expanded=False):
+        bundle_files = list_demo_bundle_files(task_name, limit=20)
+        if not bundle_files:
+            st.info("当前任务还没有历史 bundle。先运行一次生成任务后，这里会自动出现可回放记录。")
+            return
+
+        options = {format_demo_bundle_label(path): str(path) for path in bundle_files}
+        selected_label = st.selectbox(
+            "选择要回放的 bundle",
+            list(options.keys()),
+            key=f"history_bundle_select_{normalize_task_name(task_name)}",
+        )
+        selected_path = Path(options[selected_label])
+        st.caption(f"文件：`{selected_path.relative_to(Path.cwd())}`")
+
+        action_col1, action_col2 = st.columns(2)
+        with action_col1:
+            if st.button("📥 载入历史结果", use_container_width=True):
+                snapshot = load_generation_history_snapshot(selected_path)
+                persist_generation_job_results(
+                    snapshot,
+                    source_label=f"历史回放：{selected_path.name}",
+                )
+                st.rerun()
+        with action_col2:
+            if st.button("🧹 清除当前结果", use_container_width=True):
+                for key in (
+                    "results",
+                    "task_name",
+                    "dataset_name",
+                    "exp_mode",
+                    "concurrency_mode",
+                    "max_concurrent",
+                    "effective_concurrent",
+                    "estimated_batches",
+                    "timestamp",
+                    "json_file",
+                    "bundle_file",
+                    "generation_summary",
+                    "generation_failures",
+                    "requested_candidates",
+                    "result_source_label",
+                ):
+                    st.session_state.pop(key, None)
+                st.rerun()
 
 def main():
     st.title("🍌 PaperBanana 演示")
@@ -1350,173 +2076,132 @@ def main():
                 key=f"{visual_state_key}_editor",
             )
 
+        render_generation_history_panel(task_name)
+        if task_name == "plot":
+            render_plot_rerender_workspace()
+
+        active_generation_job_id = st.session_state.get("active_generation_job_id")
+        active_generation_snapshot = (
+            get_generation_job_snapshot(active_generation_job_id) if active_generation_job_id else None
+        )
+
         if st.button("🚀 生成候选方案", type="primary", use_container_width=True):
             if not input_content or not visual_intent:
                 st.error(
                     f"请同时提供{task_config['content_input_name']}和{task_config['visual_input_name']}！"
                 )
+            elif active_generation_snapshot and active_generation_snapshot.get("status") == "running":
+                st.warning("当前已有生成任务在后台运行，请先等待完成或停止当前任务。")
             else:
                 st.session_state[content_state_key] = input_content
                 st.session_state[visual_state_key] = visual_intent
+                job_id = start_generation_background_job(
+                    dataset_name=dataset_name,
+                    task_name=task_name,
+                    exp_mode=exp_mode,
+                    retrieval_setting=retrieval_setting,
+                    provider=provider,
+                    api_key=api_key,
+                    model_name=model_name,
+                    image_model_name=image_model_name,
+                    concurrency_mode=concurrency_mode,
+                    max_concurrent=int(max_concurrent),
+                    num_candidates=int(num_candidates),
+                    max_critic_rounds=int(max_critic_rounds),
+                    aspect_ratio=aspect_ratio,
+                    image_resolution=image_resolution,
+                    content=input_content,
+                    visual_intent=visual_intent,
+                )
+                st.session_state["active_generation_job_id"] = job_id
+                st.session_state["last_generation_completed_job_id"] = None
+                st.info("已启动后台生成任务，页面会自动刷新显示进度。")
+                st.rerun()
 
-                with st.spinner(
-                    f"正在并行生成 {num_candidates} 个候选方案（策略={concurrency_mode}, 上限={int(max_concurrent)}）..."
-                ):
-                    input_data_list = create_sample_inputs(
-                        content=input_content,
-                        visual_intent=visual_intent,
-                        task_name=task_name,
-                        aspect_ratio=aspect_ratio,
-                        num_copies=num_candidates,
-                        max_critic_rounds=max_critic_rounds,
-                        image_resolution=image_resolution,
+        finalized_generation_snapshot = None
+        active_generation_job_id = st.session_state.get("active_generation_job_id")
+        active_generation_snapshot = (
+            get_generation_job_snapshot(active_generation_job_id) if active_generation_job_id else None
+        )
+        if active_generation_snapshot and active_generation_snapshot.get("status") in {"completed", "cancelled", "failed"}:
+            finalized_generation_snapshot = active_generation_snapshot
+            if st.session_state.get("last_generation_completed_job_id") != active_generation_job_id:
+                if active_generation_snapshot.get("status") in {"completed", "cancelled"}:
+                    source_label = "后台生成任务"
+                    if active_generation_snapshot.get("status") == "cancelled":
+                        source_label = "后台生成任务（已停止）"
+                    persist_generation_job_results(
+                        active_generation_snapshot,
+                        source_label=source_label,
                     )
+                st.session_state["last_generation_completed_job_id"] = active_generation_job_id
+            st.session_state.pop("active_generation_job_id", None)
+            clear_generation_job(active_generation_job_id)
+            active_generation_snapshot = None
 
-                    effective_concurrency_runtime = compute_effective_concurrency(
-                        concurrency_mode=concurrency_mode,
-                        max_concurrent=int(max_concurrent),
-                        total_candidates=len(input_data_list),
-                    )
-                    estimated_batches_runtime = math.ceil(
-                        len(input_data_list) / max(1, effective_concurrency_runtime)
-                    )
+        if active_generation_snapshot and active_generation_snapshot.get("status") == "running":
+            progress_done = active_generation_snapshot.get("progress_done", 0)
+            progress_total = max(active_generation_snapshot.get("progress_total", int(num_candidates)), 1)
+            ratio = min(progress_done / progress_total, 1.0)
+            st.progress(
+                ratio,
+                text=(
+                    f"后台生成进度：已完成 {progress_done}/{progress_total} | "
+                    f"并发 {active_generation_snapshot.get('effective_concurrent', 0)}"
+                ),
+            )
+            st.caption(
+                f"Provider: {active_generation_snapshot.get('provider')} | "
+                f"文本模型: {active_generation_snapshot.get('model_name')} | "
+                f"图像模型: {active_generation_snapshot.get('image_model_name') or 'N/A'} | "
+                f"停止请求: {'已发送' if active_generation_snapshot.get('cancel_requested') else '未发送'}"
+            )
+            status_lines = active_generation_snapshot.get("status_history", [])
+            if status_lines:
+                html_lines = "<br>".join(html.escape(x) for x in status_lines[-12:])
+                st.markdown(
+                    (
+                        "**生成实时状态（最近12条）**\n"
+                        f"<div style='max-height:260px; overflow-y:auto; "
+                        f"border:1px solid rgba(255,255,255,0.12); border-radius:8px; "
+                        f"padding:8px 10px; line-height:1.6;'>"
+                        f"{html_lines}"
+                        "</div>"
+                    ),
+                    unsafe_allow_html=True,
+                )
 
-                    st.caption(
-                        f"并发配置：{concurrency_mode} | 上限 {int(max_concurrent)} | "
-                        f"有效并发 {effective_concurrency_runtime} | 预计批次 {estimated_batches_runtime}"
-                    )
-                    progress_bar = st.progress(0.0, text="等待任务开始...")
-                    progress_text = st.empty()
-                    status_text = st.empty()
-                    status_history = []
-                    run_started_at = time.perf_counter()
+            action_col1, action_col2 = st.columns(2)
+            with action_col1:
+                if st.button("🛑 停止生成", use_container_width=True):
+                    request_generation_job_cancel(active_generation_snapshot["job_id"])
+                    st.warning("已发送停止请求，当前进行中的候选会继续完成，未开始的候选将被跳过。")
+                    st.rerun()
+            with action_col2:
+                if st.button("🔄 刷新状态", use_container_width=True):
+                    st.rerun()
 
-                    def on_progress(done_count: int, total_count: int, effective_count: int):
-                        ratio = 0.0 if total_count <= 0 else min(done_count / total_count, 1.0)
-                        elapsed = time.perf_counter() - run_started_at
-                        progress_bar.progress(
-                            ratio,
-                            text=f"并发 {effective_count} | 已完成 {done_count}/{total_count}",
-                        )
-                        progress_text.caption(
-                            f"已耗时 {elapsed:.1f}s | 剩余 {max(total_count - done_count, 0)} 个候选"
-                        )
+            time.sleep(1.0)
+            st.rerun()
 
-                    def on_status(message: str):
-                        if not message:
-                            return
-                        elapsed = time.perf_counter() - run_started_at
-                        ts = datetime.now().strftime("%H:%M:%S")
-                        line = f"[{ts}] {message}"
-                        if status_history and status_history[-1] == line:
-                            return
-                        status_history.append(line)
-                        if len(status_history) > 50:
-                            status_history.pop(0)
-                        status_text.markdown(
-                            "**实时状态**\n"
-                            + "\n".join([f"- {x}" for x in status_history])
-                            + f"\n\n`已耗时 {elapsed:.1f}s`"
-                        )
-
-                    try:
-                        results, used_concurrency = asyncio.run(process_parallel_candidates(
-                            input_data_list,
-                            dataset_name=dataset_name,
-                            task_name=task_name,
-                            exp_mode=exp_mode,
-                            retrieval_setting=retrieval_setting,
-                            model_name=model_name,
-                            image_model_name=image_model_name,
-                            provider=provider,
-                            api_key=api_key,
-                            concurrency_mode=concurrency_mode,
-                            max_concurrent=int(max_concurrent),
-                            progress_callback=on_progress,
-                            status_callback=on_status,
-                        ))
-                        results = sort_results_stably(results)
-                        total_elapsed = time.perf_counter() - run_started_at
-                        progress_bar.progress(
-                            1.0,
-                            text=f"并发 {used_concurrency} | 已完成 {len(results)}/{len(input_data_list)}",
-                        )
-                        progress_text.caption(f"总耗时 {total_elapsed:.1f}s")
-
-                        st.session_state["results"] = results
-                        st.session_state["task_name"] = task_name
-                        st.session_state["dataset_name"] = dataset_name
-                        st.session_state["exp_mode"] = exp_mode
-                        st.session_state["concurrency_mode"] = concurrency_mode
-                        st.session_state["max_concurrent"] = int(max_concurrent)
-                        st.session_state["effective_concurrent"] = int(used_concurrency)
-                        st.session_state["estimated_batches"] = int(estimated_batches_runtime)
-                        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        st.session_state["timestamp"] = timestamp_str
-
-                        try:
-                            results_dir = Path(__file__).parent / "results" / "demo" / task_name
-                            results_dir.mkdir(parents=True, exist_ok=True)
-
-                            run_stem = config.build_run_name(
-                                timestamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
-                                provider=provider,
-                                model_name=model_name,
-                                image_model_name=image_model_name,
-                                retrieval_setting=retrieval_setting,
-                                exp_mode=exp_mode,
-                                split_name="demo",
-                            )
-                            json_filename = results_dir / f"demo_{task_name}_{run_stem}.json"
-                            bundle_filename = companion_bundle_path(json_filename)
-                            summary = build_result_summary(results)
-                            failures = build_failure_manifest(results)
-                            manifest = build_run_manifest(
-                                producer="demo",
-                                result_count=len(results),
-                                dataset_name=dataset_name,
-                                task_name=task_name,
-                                split_name="demo",
-                                exp_mode=exp_mode,
-                                retrieval_setting=retrieval_setting,
-                                provider=provider,
-                                model_name=model_name,
-                                image_model_name=image_model_name,
-                                concurrency_mode=concurrency_mode,
-                                max_concurrent=int(max_concurrent),
-                                max_critic_rounds=int(max_critic_rounds),
-                                timestamp=timestamp_str,
-                            )
-
-                            write_json_payload(json_filename, results)
-                            write_result_bundle(
-                                bundle_filename,
-                                results,
-                                manifest=manifest,
-                                summary=summary,
-                                failures=failures,
-                            )
-
-                            st.session_state["json_file"] = str(json_filename)
-                            st.session_state["bundle_file"] = str(bundle_filename)
-                            success_count = sum(
-                                1 for item in results
-                                if not (isinstance(item, dict) and item.get("status") == "failed")
-                            )
-                            failed_count = len(results) - success_count
-                            st.success(
-                                f"✅ {task_config['display_name_cn']}任务完成：成功 {success_count} 个，失败 {failed_count} 个候选方案。"
-                            )
-                            st.info(f"💾 结果已保存至：`{json_filename.name}`")
-                        except Exception as e:
-                            st.warning(f"[WARN] 已生成 {len(results)} 个候选方案，但 JSON 保存失败：{e}")
-                    except Exception as e:
-                        progress_bar.empty()
-                        progress_text.empty()
-                        status_text.empty()
-                        st.error(f"处理过程中出错：{e}")
-                        import traceback
-                        st.code(traceback.format_exc())
+        if finalized_generation_snapshot:
+            completed_count = len(finalized_generation_snapshot.get("results", []))
+            requested_count = int(finalized_generation_snapshot.get("requested_candidates", completed_count) or completed_count)
+            failed_count = sum(
+                1
+                for item in finalized_generation_snapshot.get("results", [])
+                if isinstance(item, dict) and item.get("status") == "failed"
+            )
+            if finalized_generation_snapshot.get("status") == "completed":
+                st.success(
+                    f"✅ {task_config['display_name_cn']}任务完成：完成 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。"
+                )
+            elif finalized_generation_snapshot.get("status") == "cancelled":
+                st.warning(
+                    f"⛔ 生成任务已停止：保留 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。"
+                )
+            else:
+                st.error(f"❌ 后台生成失败：{finalized_generation_snapshot.get('error', 'Unknown error')}")
 
         # 展示结果
         if "results" in st.session_state and st.session_state["results"]:
@@ -1540,6 +2225,8 @@ def main():
             timestamp = st.session_state.get("timestamp", "N/A")
             mode_used = st.session_state.get("concurrency_mode", concurrency_mode)
             max_used = st.session_state.get("max_concurrent", int(max_concurrent))
+            requested_candidates = int(st.session_state.get("requested_candidates", len(results)) or len(results))
+            result_source_label = st.session_state.get("result_source_label", "当前会话")
             effective_used = st.session_state.get(
                 "effective_concurrent",
                 compute_effective_concurrency(mode_used, int(max_used), len(results)),
@@ -1554,37 +2241,45 @@ def main():
             failed_count = len(results) - success_count
             st.caption(
                 f"生成时间：{timestamp} | 任务：{current_task_config['display_name_cn']} | "
+                f"来源：{result_source_label} | "
                 f"数据集：{current_dataset_name} | "
                 f"流水线：{mode_info.get(current_mode, current_mode)} | "
                 f"并发：{mode_used} (max={max_used}, effective={effective_used}) | "
+                f"保留结果：{len(results)}/{requested_candidates} | "
                 f"成功/失败：{success_count}/{failed_count}"
             )
 
             # 如果有结果文件则显示下载按钮
-            json_file_path = Path(st.session_state["json_file"]) if "json_file" in st.session_state else None
-            bundle_file_path = Path(st.session_state["bundle_file"]) if "bundle_file" in st.session_state else None
-            if json_file_path and json_file_path.exists():
+            json_file_path = Path(st.session_state["json_file"]) if st.session_state.get("json_file") else None
+            bundle_file_path = Path(st.session_state["bundle_file"]) if st.session_state.get("bundle_file") else None
+            if (json_file_path and json_file_path.exists()) or (bundle_file_path and bundle_file_path.exists()):
                 button_cols = [3, 1]
-                if bundle_file_path and bundle_file_path.exists():
+                if json_file_path and json_file_path.exists() and bundle_file_path and bundle_file_path.exists():
                     button_cols.append(1)
                 columns = st.columns(button_cols)
                 with columns[0]:
-                    file_label = f"📄 结果已保存至：`{json_file_path.relative_to(Path.cwd())}`"
+                    file_label = ""
+                    if json_file_path and json_file_path.exists():
+                        file_label = f"📄 结果已保存至：`{json_file_path.relative_to(Path.cwd())}`"
                     if bundle_file_path and bundle_file_path.exists():
-                        file_label += f"\n\n🧾 Bundle：`{bundle_file_path.relative_to(Path.cwd())}`"
+                        if file_label:
+                            file_label += "\n\n"
+                        file_label += f"🧾 Bundle：`{bundle_file_path.relative_to(Path.cwd())}`"
                     st.info(file_label)
-                with columns[1]:
-                    with open(json_file_path, "r", encoding="utf-8") as f:
-                        json_data = f.read()
-                    st.download_button(
-                        label="[DOWN] 下载 JSON",
-                        data=json_data,
-                        file_name=json_file_path.name,
-                        mime="application/json",
-                        use_container_width=True
-                    )
+                if json_file_path and json_file_path.exists():
+                    with columns[1]:
+                        with open(json_file_path, "r", encoding="utf-8") as f:
+                            json_data = f.read()
+                        st.download_button(
+                            label="[DOWN] 下载 JSON",
+                            data=json_data,
+                            file_name=json_file_path.name,
+                            mime="application/json",
+                            use_container_width=True
+                        )
                 if bundle_file_path and bundle_file_path.exists():
-                    with columns[2]:
+                    target_col = columns[2] if len(columns) > 2 else columns[1]
+                    with target_col:
                         with open(bundle_file_path, "r", encoding="utf-8") as f:
                             bundle_data = f.read()
                         st.download_button(
@@ -1802,20 +2497,58 @@ def main():
 
         # 上传区域
         st.markdown("## 📤 上传图像")
+        staged_refine_bytes = st.session_state.get("refine_staged_image_bytes", b"")
+        source_options = ["上传图像"]
+        if staged_refine_bytes:
+            source_options.append("候选方案")
+        default_refine_source = st.session_state.get(
+            "refine_input_source",
+            "候选方案" if staged_refine_bytes else "上传图像",
+        )
+        if default_refine_source not in source_options:
+            default_refine_source = source_options[0]
+        refine_input_source = st.radio(
+            "图像来源",
+            source_options,
+            index=source_options.index(default_refine_source),
+            key="refine_input_source",
+            horizontal=True,
+        )
         uploaded_file = st.file_uploader(
             "选择一个图像文件",
             type=["png", "jpg", "jpeg"],
             help="上传您想要精修的图表"
         )
+        if staged_refine_bytes:
+            staged_label = st.session_state.get("refine_staged_source_label", "候选方案")
+            staged_col1, staged_col2 = st.columns([4, 1])
+            with staged_col1:
+                st.caption(f"已载入候选来源：{staged_label}")
+            with staged_col2:
+                if st.button("🧹 清除候选来源", use_container_width=True):
+                    clear_staged_refine_source()
+                    st.rerun()
 
-        if uploaded_file is not None:
-            # 展示上传的图像
-            uploaded_image = Image.open(uploaded_file)
+        selected_image_bytes = b""
+        selected_input_mime_type = "image/png"
+        selected_source_label = "上传图像"
+        if refine_input_source == "候选方案" and staged_refine_bytes:
+            selected_image_bytes = staged_refine_bytes
+            selected_input_mime_type = st.session_state.get("refine_staged_input_mime_type", "image/png")
+            selected_source_label = st.session_state.get("refine_staged_source_label", "候选方案")
+        elif uploaded_file is not None:
+            selected_image_bytes = uploaded_file.getvalue()
+            selected_input_mime_type = normalize_image_mime_type(getattr(uploaded_file, "type", None))
+            selected_source_label = "上传图像"
+
+        if selected_image_bytes:
+            preview_image = Image.open(BytesIO(selected_image_bytes))
             col1, col2 = st.columns(2)
 
             with col1:
                 st.markdown("### 原始图像")
-                st.image(uploaded_image, use_container_width=True)
+                st.caption(f"来源：{selected_source_label}")
+                st.image(preview_image, use_container_width=True)
 
             with col2:
                 st.markdown("### 编辑指令")
@@ -1838,10 +2571,8 @@ def main():
                     elif active_refine_snapshot and active_refine_snapshot.get("status") == "running":
                         st.warning("当前已有精修任务在后台运行，请先等待完成或停止当前任务。")
                     else:
-                        image_bytes = uploaded_file.getvalue()
-                        input_mime_type = normalize_image_mime_type(getattr(uploaded_file, "type", None))
                         job_id = start_refine_background_job(
-                            image_bytes=image_bytes,
+                            image_bytes=selected_image_bytes,
                             edit_prompt=edit_prompt,
                             num_images=int(refine_num_images),
                             aspect_ratio=refine_aspect_ratio,
@@ -1849,7 +2580,7 @@ def main():
                             api_key=refine_api_key,
                             provider=refine_provider,
                             image_model_name=refine_image_model_name,
-                            input_mime_type=input_mime_type,
+                            input_mime_type=selected_input_mime_type,
                         )
                         st.session_state["refined_images"] = []
                         st.session_state["refine_failed_results"] = []
@@ -1923,6 +2654,8 @@ def main():
                         st.warning(f"⛔ 精修已停止：成功 {completed} 张，失败/取消 {failed} 张。")
                     else:
                         st.error(f"❌ 后台精修失败：{finalized_refine_snapshot.get('error', 'Unknown error')}")
+        else:
+            st.info("请上传图像，或先在生成结果中点击“送去精修”载入候选方案。")
 
             # 展示精修结果（如有）
             if "refined_images" in st.session_state and st.session_state["refined_images"]:

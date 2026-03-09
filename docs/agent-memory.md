@@ -143,6 +143,17 @@
   - validated on 2026-03-10 with:
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`54` tests passed)
+- 2026-03-10 Completed in Wave 11:
+  - upgraded demo candidate generation from a blocking `asyncio.run(...)` button handler to a background job model with `GenerationJobState`, shared job registries, progress/status snapshots, and cooperative cancel handling for unscheduled candidates
+  - refactored `PaperVizProcessor.process_queries_batch()` to schedule work incrementally instead of creating every task up front, enabling generation-stop semantics without losing deterministic result ordering
+  - added demo helpers for portable generation artifact writing/loading so background jobs and history replay both use the same saved bundle/json contract
+  - added demo history replay for saved `.bundle.json` files, allowing prior runs to be loaded back into the main result grid without leaving the app
+  - added candidate-to-refine staging so any generated candidate can become the input source for the refine tab through session state instead of manual re-upload
+  - added a plot rerender workspace in the demo so final Matplotlib code can be loaded, edited, re-rendered locally, and optionally forwarded into the refine tab
+  - added focused tests for generation background jobs, generation cancellation, history bundle loading, candidate-to-refine staging, and processor cancellation behavior
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`59` tests passed)
 
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.

@@ -183,6 +183,31 @@ class PaperVizProcessorRegistryTest(unittest.TestCase):
         self.assertEqual(processor.retriever_agent.shutdown_calls, 1)
         self.assertEqual(processor.polish_agent.shutdown_calls, 1)
 
+    def test_batch_processing_cancel_stops_scheduling_future_inputs(self):
+        processor = self._build_processor("dev_planner", planner_cls=_DelayedPlannerAgent)
+        payloads = [
+            {"id": "test_0", "content": "first", "visual_intent": "diagram"},
+            {"id": "test_1", "content": "second", "visual_intent": "diagram"},
+            {"id": "test_2", "content": "third", "visual_intent": "diagram"},
+        ]
+        cancel_flag = {"value": False}
+
+        async def _collect_results():
+            results = []
+            async for item in processor.process_queries_batch(
+                payloads,
+                max_concurrent=1,
+                do_eval=False,
+                cancel_check=lambda: cancel_flag["value"],
+            ):
+                results.append(item)
+                cancel_flag["value"] = True
+            return results
+
+        results = asyncio.run(_collect_results())
+
+        self.assertEqual([item["id"] for item in results], ["test_0"])
+
 
 if __name__ == "__main__":
     unittest.main()

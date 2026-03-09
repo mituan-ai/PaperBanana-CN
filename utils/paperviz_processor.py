@@ -347,106 +347,131 @@ class PaperVizProcessor:
         max_concurrent: int = 50,
         do_eval: bool = True,
         status_callback: Optional[Callable[[str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Batch process queries with concurrency support
         """
-        semaphore = asyncio.Semaphore(max_concurrent)
+        max_concurrent = max(1, int(max_concurrent or 1))
 
-        async def process_with_semaphore(doc):
+        async def process_one(doc):
             input_index = doc.get("input_index", 0)
             candidate_id = doc.get("candidate_id", input_index)
-            self._emit_status(status_callback, candidate_id, "等待并发槽位")
-            async with semaphore:
-                self._emit_status(status_callback, candidate_id, "进入并发执行")
+            if cancel_check and cancel_check():
+                self._emit_status(status_callback, candidate_id, "任务已取消，跳过未开始的候选")
+                raise asyncio.CancelledError()
+            self._emit_status(status_callback, candidate_id, "进入并发执行")
+            try:
+                result = await self.process_single_query(
+                    doc,
+                    do_eval=do_eval,
+                    status_callback=status_callback,
+                )
+                if isinstance(result, dict):
+                    result.setdefault("input_index", input_index)
+                    result.setdefault("candidate_id", candidate_id)
+                    result.setdefault("status", "ok")
+                    result.setdefault("dataset_name", self.exp_config.dataset_name)
+                    result.setdefault("task_name", self.exp_config.task_name)
+                    result.setdefault("exp_mode", self.exp_config.exp_mode)
+                    result.setdefault(
+                        "pipeline_spec",
+                        get_pipeline_metadata(self.exp_config.exp_mode),
+                    )
+                return result
+            except asyncio.CancelledError:
+                raise
+            except Exception as task_err:
+                err_summary = f"{type(task_err).__name__}: {task_err}"
+                err_detail = traceback.format_exc()
+                self._emit_status(
+                    status_callback,
+                    candidate_id,
+                    f"候选失败: {err_summary}",
+                )
                 try:
-                    result = await self.process_single_query(
-                        doc,
-                        do_eval=do_eval,
-                        status_callback=status_callback,
-                    )
-                    if isinstance(result, dict):
-                        result.setdefault("input_index", input_index)
-                        result.setdefault("candidate_id", candidate_id)
-                        result.setdefault("status", "ok")
-                        result.setdefault("dataset_name", self.exp_config.dataset_name)
-                        result.setdefault("task_name", self.exp_config.task_name)
-                        result.setdefault("exp_mode", self.exp_config.exp_mode)
-                        result.setdefault(
-                            "pipeline_spec",
-                            get_pipeline_metadata(self.exp_config.exp_mode),
-                        )
-                    return result
-                except Exception as task_err:
-                    err_summary = f"{type(task_err).__name__}: {task_err}"
-                    err_detail = traceback.format_exc()
-                    self._emit_status(
-                        status_callback,
-                        candidate_id,
-                        f"候选失败: {err_summary}",
-                    )
-                    try:
-                        safe_detail = err_detail.encode("utf-8", errors="backslashreplace").decode("utf-8", errors="ignore")
-                        logger.error(f"❌ candidate={candidate_id} 失败: {err_summary}\n{safe_detail}")
-                    except Exception:
-                        pass
-                    return {
-                        "input_index": input_index,
-                        "candidate_id": candidate_id,
-                        "dataset_name": self.exp_config.dataset_name,
-                        "task_name": self.exp_config.task_name,
-                        "exp_mode": self.exp_config.exp_mode,
-                        "pipeline_spec": get_pipeline_metadata(self.exp_config.exp_mode),
-                        "status": "failed",
-                        "error": err_summary,
-                        "error_detail": err_detail,
-                        "eval_image_field": None,
-                    }
+                    safe_detail = err_detail.encode("utf-8", errors="backslashreplace").decode("utf-8", errors="ignore")
+                    logger.error(f"❌ candidate={candidate_id} 失败: {err_summary}\n{safe_detail}")
+                except Exception:
+                    pass
+                return {
+                    "input_index": input_index,
+                    "candidate_id": candidate_id,
+                    "dataset_name": self.exp_config.dataset_name,
+                    "task_name": self.exp_config.task_name,
+                    "exp_mode": self.exp_config.exp_mode,
+                    "pipeline_spec": get_pipeline_metadata(self.exp_config.exp_mode),
+                    "status": "failed",
+                    "error": err_summary,
+                    "error_detail": err_detail,
+                    "eval_image_field": None,
+                }
 
-        # Create all tasks
-        tasks = []
-        for input_index, data in enumerate(data_list):
-            prepared_data = prepare_input_payload(data, input_index)
-            task = asyncio.create_task(process_with_semaphore(prepared_data))
-            tasks.append(task)
-        
+        prepared_items = [
+            prepare_input_payload(data, input_index)
+            for input_index, data in enumerate(data_list)
+        ]
+        active_tasks: dict[asyncio.Task, int] = {}
+        next_schedule_index = 0
         completed_results = []
         buffered_results: dict[int, Dict[str, Any]] = {}
         next_yield_index = 0
         eval_dims = ["faithfulness", "conciseness", "readability", "aesthetics", "overall"]
 
-        with tqdm(total=len(tasks), desc="Processing concurrently") as pbar:
-            # Iterate through completed tasks returned by as_completed
-            for future in asyncio.as_completed(tasks):
-                result_data = await future
-                completed_results.append(result_data)
-                result_index = int(result_data.get("input_index", next_yield_index) or 0)
-                buffered_results[result_index] = result_data
-                postfix_dict = {}
-                for dim in eval_dims:
-                    winner_key = f"{dim}_outcome"
+        def schedule_more() -> None:
+            nonlocal next_schedule_index
+            while next_schedule_index < len(prepared_items) and len(active_tasks) < max_concurrent:
+                if cancel_check and cancel_check():
+                    break
+                prepared_data = prepared_items[next_schedule_index]
+                candidate_id = prepared_data.get("candidate_id", next_schedule_index)
+                self._emit_status(status_callback, candidate_id, "等待并发槽位")
+                task = asyncio.create_task(process_one(prepared_data))
+                active_tasks[task] = next_schedule_index
+                next_schedule_index += 1
 
-                    if winner_key in result_data:
-                        winners = [d.get(winner_key) for d in completed_results]
-                        total = len(winners)
+        schedule_more()
+        with tqdm(total=len(prepared_items), desc="Processing concurrently") as pbar:
+            while active_tasks:
+                done, _ = await asyncio.wait(
+                    active_tasks.keys(),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for future in done:
+                    active_tasks.pop(future, None)
+                    try:
+                        result_data = await future
+                    except asyncio.CancelledError:
+                        continue
+                    completed_results.append(result_data)
+                    result_index = int(result_data.get("input_index", next_yield_index) or 0)
+                    buffered_results[result_index] = result_data
+                    postfix_dict = {}
+                    for dim in eval_dims:
+                        winner_key = f"{dim}_outcome"
 
-                        if total > 0:
-                            h_cnt = winners.count("Human")
-                            m_cnt = winners.count("Model")
-                            t_cnt = winners.count("Tie") + winners.count("Both are good") + winners.count("Both are bad")
+                        if winner_key in result_data:
+                            winners = [d.get(winner_key) for d in completed_results]
+                            total = len(winners)
 
-                            h_rate = (h_cnt / total) * 100
-                            m_rate = (m_cnt / total) * 100
-                            t_rate = (t_cnt / total) * 100
+                            if total > 0:
+                                h_cnt = winners.count("Human")
+                                m_cnt = winners.count("Model")
+                                t_cnt = winners.count("Tie") + winners.count("Both are good") + winners.count("Both are bad")
 
-                            display_key = dim[:5].capitalize()
-                            postfix_dict[display_key] = f"{m_rate:.0f}/{t_rate:.0f}/{h_rate:.0f}"
+                                h_rate = (h_cnt / total) * 100
+                                m_rate = (m_cnt / total) * 100
+                                t_rate = (t_cnt / total) * 100
 
-                pbar.set_postfix(postfix_dict)
-                pbar.update(1)
+                                display_key = dim[:5].capitalize()
+                                postfix_dict[display_key] = f"{m_rate:.0f}/{t_rate:.0f}/{h_rate:.0f}"
+
+                    pbar.set_postfix(postfix_dict)
+                    pbar.update(1)
                 while next_yield_index in buffered_results:
                     yield buffered_results.pop(next_yield_index)
                     next_yield_index += 1
+                schedule_more()
 
     async def evaluation_function(
         self, data: Dict[str, Any], exp_config: ExpConfig
