@@ -374,8 +374,12 @@ class RefineJobState:
             }
 
 
+def get_demo_results_root() -> Path:
+    return Path(__file__).parent / "results" / "demo"
+
+
 def get_demo_results_dir(task_name: str) -> Path:
-    results_dir = Path(__file__).parent / "results" / "demo" / normalize_task_name(task_name)
+    results_dir = get_demo_results_root() / normalize_task_name(task_name)
     results_dir.mkdir(parents=True, exist_ok=True)
     return results_dir
 
@@ -541,7 +545,7 @@ def list_demo_bundle_files(
     *,
     limit: int = 20,
 ) -> list[Path]:
-    root = Path(__file__).parent / "results" / "demo"
+    root = get_demo_results_root()
     if not root.exists():
         return []
     if task_name:

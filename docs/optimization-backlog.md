@@ -19,7 +19,7 @@
 - [x] Add cache layers for reference metadata and style guides
 - [x] Make viewers and smoke artifacts share one result-file schema/loader
 - [x] Add a run manifest/bundle format for portable result sharing across custom datasets
-- [ ] Unify dependency management around a single locked source
+- [x] Unify dependency management around a single locked source
 
 ## 2026-03-10 Roadmap
 - [x] Phase 8: Result stability and run identity
@@ -44,4 +44,12 @@
   - [x] add plot input parsing / validation / preview before sending content to the planner
   - [x] make plot `manual` retrieval explicit or disable it cleanly until implemented
   - [x] replace full-prompt retrieval selection with prefilter + rerank for large datasets
-  - [ ] expand viewer/demo integration coverage and refresh README usage docs
+  - [x] expand viewer/demo integration coverage and refresh README usage docs
+- [x] Phase 13: Documentation and integration cleanup
+  - [x] refresh README install/run guidance to match the current demo/history workflows
+  - [x] add testable demo history helpers and bundle ordering coverage
+  - [x] route Evolink runtime construction back through the shared provider factory
+- [x] Phase 14: Dependency reproducibility
+  - [x] check in `uv.lock` so the repository has one shared lock source
+  - [x] update install docs to recommend `uv sync --locked` for local development
+  - [x] add regression coverage for lockfile/requirements/README consistency

@@ -164,6 +164,20 @@
   - validated on 2026-03-10 with:
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py agents utils tests`
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_plot_input_utils tests.test_retriever_agent tests.test_demo_task_utils`
+- 2026-03-10 Completed in Wave 13:
+  - refreshed README install/run guidance to match the current `uv`-first workflow, demo background jobs, bundle/history replay, candidate-to-refine handoff, and current result directory layout
+  - added a testable `get_demo_results_root()` helper and expanded demo history coverage to exercise bundle-file discovery order in background-generation tests
+  - wired `providers.create_provider()` back into runtime initialization for Evolink so the provider factory is no longer a dead abstraction
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`66` tests passed)
+- 2026-03-10 Completed in Wave 14:
+  - checked in `uv.lock` so repository installs can resolve from one shared lockfile instead of relying only on open-ended dependency resolution
+  - updated README and `requirements.txt` to make `uv sync --locked` the documented reproducible local setup path while keeping editable installs available for the shared tool workflow
+  - added dependency metadata regression coverage so `README.md`, `requirements.txt`, `pyproject.toml`, and `uv.lock` stay aligned
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`70` tests passed)
 
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.

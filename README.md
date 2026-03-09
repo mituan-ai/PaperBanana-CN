@@ -65,24 +65,22 @@ First download [PaperBananaBench](https://huggingface.co/datasets/dwzhu/PaperBan
 ### Step4: Installing the Environment
 1. We use `uv` to manage Python packages. Please install `uv` following the instructions [here](https://docs.astral.sh/uv/getting-started/installation/).
 
-2. Create and activate a virtual environment
-    ```bash
-    uv venv # This will create a virtual environment in the current directory, under .venv/
-    source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-    ```
-
-3. Install python 3.12
+2. Install python 3.12
     ```bash
     uv python install 3.12
     ```
 
-4. Install required packages
+3. Create a reproducible local environment from the checked-in lockfile
     ```bash
-uv pip install -r requirements.txt
-
-# Equivalent single-source install (dependencies come from pyproject.toml)
-uv pip install -e .
+    uv sync --locked
     ```
+    This uses `pyproject.toml` plus the committed `uv.lock`, and creates a local `.venv/`.
+
+4. If you prefer to reuse an existing interpreter or your shared `uv tool` environment, install the package in editable mode:
+    ```bash
+    uv pip install -e .
+    ```
+    `requirements.txt` intentionally stays a thin wrapper around `pyproject.toml` so dependency declarations do not drift.
 
 ### Step5 (Optional): Install as Global Command
 
@@ -100,6 +98,7 @@ paperbanana --help       # Show all available commands
 ```
 
 > **Note**: If `uv tool update-shell` prompts you to update your PATH, run it once so that the `paperbanana` command is available system-wide. To uninstall, run `uv tool uninstall paperbanana`.
+> For reproducible local development, prefer Step 4's `uv sync --locked`; global tool installs remain convenient, but they do not replace the checked-in lockfile workflow.
 
 ### Launch PaperBanana
 
@@ -120,14 +119,16 @@ The web interface provides two main workflows:
 **1. Generate Candidates Tab**:
 - Switch between `diagram` and `plot` tasks in the same UI.
 - `diagram`: paste your method section content and provide the figure caption.
-- `plot`: paste raw data and describe the desired visualization intent.
-- Configure settings (pipeline mode, retrieval setting, number of candidates, critic rounds, and task-specific controls).
-- Click "Generate Candidates" and wait for parallel processing.
+- `plot`: paste raw data and describe the desired visualization intent. The demo now parses and previews JSON / CSV / Markdown tables before submission.
+- Configure settings (pipeline mode, retrieval setting, number of candidates, critic rounds, and task-specific controls). `manual` retrieval and `max_critic_rounds=0` are supported in the GUI.
+- Click "Generate Candidates" to launch a background job with progress, cancel, refresh, and rerun-safe resume behavior.
 - View results in a grid with evolution timelines and download individual outputs or batch ZIP.
+- Send any candidate directly into the refine tab, or load plot code into the built-in rerender workspace for local editing and preview.
+- Replay previous demo runs directly from saved `.bundle.json` files in the app.
 - For plot tasks, inspect and download the generated Matplotlib code directly from the UI.
 
 **2. Refine Image Tab**:
-- Upload a generated candidate or any diagram.
+- Upload a generated candidate or any diagram, or consume a candidate that was staged directly from the generation tab.
 - Describe desired changes or request upscaling.
 - Select resolution (2K/4K) and aspect ratio.
 - Download the refined high-resolution output.
@@ -153,6 +154,7 @@ python main.py \
 - `--split_name`: Dataset split (default: `test`)
 - `--exp_mode`: Experiment mode (default: `dev_full`; supported: `vanilla`, `dev_planner`, `dev_planner_stylist`, `dev_planner_critic`, `demo_planner_critic`, `dev_full`, `demo_full`, `dev_polish`, `dev_retriever`)
 - `--retrieval_setting`: Retrieval strategy - `auto`, `auto-full`, `manual`, `random`, or `none` (default: `auto`)
+- `--max_critic_rounds`: Critic iterations. Set `0` for cheap dry runs or smoke checks.
 
 **Low-Cost Live Smoke Tests:**
 ```bash
@@ -176,7 +178,7 @@ python scripts/live_smoke_test.py \
   --max_critic_rounds 0
 ```
 
-The smoke script saves raw outputs plus summary/failure metadata under `results/smoke/`.
+The smoke script saves standardized bundle files plus summary/failure metadata under `results/smoke/<task>/`.
 
 **Experiment Modes:**
 - `vanilla`: Direct generation without planning or refinement
@@ -200,8 +202,6 @@ streamlit run visualize/show_referenced_eval.py
 
 ## Project Structure
 ```
-├── .venv/
-│   └── ...
 ├── data/
 │   └── PaperBananaBench/
 │       ├── diagram/
@@ -243,8 +243,11 @@ streamlit run visualize/show_referenced_eval.py
 ├── configs/
 │   └── model_config.template.yaml
 ├── results/
-│   ├── PaperBananaBench_diagram/
-│   └── parallel_demo/
+│   ├── demo/
+│   │   ├── diagram/
+│   │   └── plot/
+│   └── smoke/
+├── uv.lock
 ├── main.py
 ├── demo.py
 └── README.md
@@ -259,10 +262,15 @@ streamlit run visualize/show_referenced_eval.py
 - **Flexible Modes**: Multiple experiment modes for different use cases
 
 ### Interactive Demo
+- **Background Candidate Jobs**: Launch candidate generation in the background with progress, cancel, and rerun-safe resume
 - **Parallel Generation**: Generate up to 20 candidate diagrams or plots simultaneously
 - **Pipeline Visualization**: Track the evolution through Planner → Stylist → Critic stages
 - **Task-Aware Inputs**: Switch between methodology/caption mode and raw-data/plot-intent mode
+- **Structured Plot Parsing**: Preview JSON / CSV / Markdown table data before sending it to the planner
 - **Plot Code Visibility**: Inspect and export generated Matplotlib code for plot candidates
+- **Plot Code Rerendering**: Load generated plot code back into a local rerender workspace for quick edits and previews
+- **Candidate-to-Refine Handoff**: Send any generated candidate directly to the refine tab without re-uploading
+- **History Replay**: Load prior demo bundles back into the current session
 - **High-Resolution Refinement**: Upscale to 2K/4K using Image Generation APIs
 - **Batch Export**: Download all candidates as PNG or ZIP
 
@@ -274,7 +282,7 @@ streamlit run visualize/show_referenced_eval.py
 
 
 ## TODO List
-- [ ] Add support for using manually selected examples. Provide **a** user-friendly interface.
+- [x] Add support for using manually selected examples in CLI and the main demo.
 - [ ] Upload code for improving existing diagrams based on style guideline.
 - [ ] Expand the reference set to support more areas beyond computer science.
 

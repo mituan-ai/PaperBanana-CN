@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import importlib
+import json
 import sys
 import tempfile
 import time
@@ -245,6 +246,39 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertEqual(snapshot["requested_candidates"], 4)
             self.assertEqual(snapshot["effective_concurrent"], 2)
             self.assertEqual(snapshot["bundle_file"], str(bundle_path))
+
+    def test_list_demo_bundle_files_reads_latest_history_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            results_root = Path(tmp_dir) / "results" / "demo" / "diagram"
+            results_root.mkdir(parents=True, exist_ok=True)
+            older_path = results_root / "older.bundle.json"
+            newer_path = results_root / "newer.bundle.json"
+            payload = {
+                "schema": "paperbanana.result_bundle",
+                "schema_version": 1,
+                "manifest": {
+                    "dataset_name": "PaperBananaBench",
+                    "task_name": "diagram",
+                    "exp_mode": "demo_planner_critic",
+                    "provider": "gemini",
+                    "result_count": 0,
+                },
+                "summary": {},
+                "failures": [],
+                "results": [],
+            }
+            older_path.write_text(json.dumps(payload), encoding="utf-8")
+            time.sleep(0.02)
+            newer_path.write_text(json.dumps(payload), encoding="utf-8")
+            original_get_root = demo.get_demo_results_root
+            demo.get_demo_results_root = lambda: Path(tmp_dir) / "results" / "demo"
+            try:
+                bundle_files = demo.list_demo_bundle_files("diagram", limit=5)
+            finally:
+                demo.get_demo_results_root = original_get_root
+
+            self.assertEqual(bundle_files[0].name, "newer.bundle.json")
+            self.assertEqual(bundle_files[1].name, "older.bundle.json")
 
 
 if __name__ == "__main__":

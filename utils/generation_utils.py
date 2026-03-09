@@ -93,12 +93,12 @@ def _create_evolink_provider(api_key: str, base_url: str = ""):
     if not api_key:
         return None
     try:
-        from providers.evolink import EvolinkProvider
+        from providers import create_provider
     except ImportError:
         logger.warning("⚠️  未安装 providers.evolink，Evolink Provider 不可用")
         return None
     url = base_url or evolink_base_url
-    return EvolinkProvider(api_key=api_key, base_url=url)
+    return create_provider("evolink", api_key=api_key, base_url=url)
 
 
 def _create_gemini_client(api_key: str):
