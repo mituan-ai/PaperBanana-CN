@@ -154,6 +154,16 @@
   - validated on 2026-03-10 with:
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`59` tests passed)
+- 2026-03-10 Completed in Wave 12:
+  - aligned the Streamlit demo with CLI retrieval semantics by adding `manual` retrieval to the generation UI and allowing `max_critic_rounds=0` for low-cost dry runs
+  - added `utils/plot_input_utils.py` and wired the demo plot flow to parse JSON / CSV / Markdown table inputs, preview structured rows, and require an explicit raw-text override when parsing fails
+  - implemented real plot `manual` retrieval support in `RetrieverAgent` by loading the dataset’s manual reference file instead of silently returning an empty list
+  - replaced full-pool LLM retrieval with a two-stage retriever path: lightweight token-overlap prefiltering followed by the existing LLM rerank on a shortlist, dramatically reducing prompt size for large reference sets
+  - updated auto retrieval to pass `retrieved_examples` directly into the planner, reducing repeated disk reads after the rerank stage
+  - added focused tests for plot input parsing, plot manual retrieval, prefilter shortlist relevance, and auto retrieval example propagation
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py agents utils tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_plot_input_utils tests.test_retriever_agent tests.test_demo_task_utils`
 
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.

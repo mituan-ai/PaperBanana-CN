@@ -78,6 +78,7 @@ try:
         build_runtime_context,
         resolve_runtime_settings,
     )
+    from utils.plot_input_utils import parse_plot_input_text
     from utils.plot_executor import execute_plot_code_with_details
     print("调试：已导入工具模块")
 
@@ -1831,13 +1832,14 @@ def main():
 
             retrieval_setting = st.selectbox(
                 "检索设置",
-                ["auto", "auto-full", "random", "none"],
+                ["auto", "auto-full", "manual", "random", "none"],
                 index=0,
                 key="tab1_retrieval_setting",
                 help="如何检索参考图表",
                 format_func=lambda x: {
                     "auto": "auto — LLM 智能选参考，轻量模式",
                     "auto-full": "auto-full — LLM 智能选参考，完整上下文",
+                    "manual": "manual — 使用预先挑选的 few-shot 参考",
                     "random": "random — 随机选 10 个参考（免费）",
                     "none": "none — 不检索参考（免费）",
                 }[x],
@@ -1852,6 +1854,7 @@ def main():
             _retrieval_cost_info = {
                 "auto": f"💡 轻量 auto：仅发送{retrieval_target_label}给 LLM 做匹配，适合大多数试跑。",
                 "auto-full": "[WARN] 完整 auto：会把候选参考的完整内容发给 LLM 做匹配，成本显著更高，仅在需要高精度检索时使用。",
+                "manual": "📌 manual：直接使用数据集中预先挑选的参考样例，适合低成本复现和确定性调试。",
                 "random": "✅ 随机从参考集中抽样，不调用额外检索推理。",
                 "none": "✅ 跳过检索，不使用参考图表。",
             }
@@ -1933,11 +1936,11 @@ def main():
 
             max_critic_rounds = st.number_input(
                 "最大评审轮次",
-                min_value=1,
+                min_value=0,
                 max_value=5,
                 value=3,
                 key="tab1_max_critic_rounds",
-                help="评审优化迭代的最大轮次",
+                help="评审优化迭代的最大轮次；设为 0 可做低成本试跑。",
             )
 
             provider = st.selectbox(
@@ -2076,6 +2079,27 @@ def main():
                 key=f"{visual_state_key}_editor",
             )
 
+        content_for_generation = input_content
+        allow_raw_plot_input = False
+        if task_name == "plot":
+            parsed_plot_input = parse_plot_input_text(input_content)
+            if parsed_plot_input["ok"]:
+                content_for_generation = parsed_plot_input["normalized_content"]
+                st.caption(
+                    f"已解析 plot 输入：格式={parsed_plot_input['format']} | "
+                    f"行数={parsed_plot_input['row_count']} | 字段={', '.join(parsed_plot_input['columns']) or 'N/A'}"
+                )
+                if parsed_plot_input["preview_rows"]:
+                    with st.expander("🔎 查看结构化数据预览", expanded=False):
+                        st.dataframe(parsed_plot_input["preview_rows"], use_container_width=True)
+            else:
+                st.warning(parsed_plot_input["error"])
+                allow_raw_plot_input = st.checkbox(
+                    "按原始文本继续（跳过结构化解析）",
+                    key="plot_allow_raw_input",
+                    help="仅在你的数据不是 JSON、CSV 或 Markdown 表格时使用。",
+                )
+
         render_generation_history_panel(task_name)
         if task_name == "plot":
             render_plot_rerender_workspace()
@@ -2090,6 +2114,8 @@ def main():
                 st.error(
                     f"请同时提供{task_config['content_input_name']}和{task_config['visual_input_name']}！"
                 )
+            elif task_name == "plot" and not allow_raw_plot_input and content_for_generation == input_content:
+                st.error("当前 plot 输入无法解析为结构化数据。请修正格式，或勾选“按原始文本继续”。")
             elif active_generation_snapshot and active_generation_snapshot.get("status") == "running":
                 st.warning("当前已有生成任务在后台运行，请先等待完成或停止当前任务。")
             else:
@@ -2110,7 +2136,7 @@ def main():
                     max_critic_rounds=int(max_critic_rounds),
                     aspect_ratio=aspect_ratio,
                     image_resolution=image_resolution,
-                    content=input_content,
+                    content=content_for_generation,
                     visual_intent=visual_intent,
                 )
                 st.session_state["active_generation_job_id"] = job_id

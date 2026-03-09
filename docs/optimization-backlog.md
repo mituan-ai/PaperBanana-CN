@@ -39,9 +39,9 @@
   - [x] move candidate generation onto background jobs with cancel / status / resume semantics
   - [x] add candidate-to-refine and plot-code-to-rerender entry points in the demo
   - [x] add history/replay for saved manifests and bundles in the demo
-- [ ] Phase 12: Experience parity and scale
-  - [ ] align GUI and CLI on `manual` retrieval and `max_critic_rounds=0`
-  - [ ] add plot input parsing / validation / preview before sending content to the planner
-  - [ ] make plot `manual` retrieval explicit or disable it cleanly until implemented
-  - [ ] replace full-prompt retrieval selection with prefilter + rerank for large datasets
+- [x] Phase 12: Experience parity and scale
+  - [x] align GUI and CLI on `manual` retrieval and `max_critic_rounds=0`
+  - [x] add plot input parsing / validation / preview before sending content to the planner
+  - [x] make plot `manual` retrieval explicit or disable it cleanly until implemented
+  - [x] replace full-prompt retrieval selection with prefilter + rerank for large datasets
   - [ ] expand viewer/demo integration coverage and refresh README usage docs

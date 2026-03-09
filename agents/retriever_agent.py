@@ -36,6 +36,7 @@ Retriever Agent - 检索相关参考示例。
 
 import json
 import random
+import re
 from typing import Dict, Any
 import base64, io, asyncio
 from PIL import Image
@@ -64,6 +65,8 @@ class RetrieverAgent(BaseAgent):
             self.task_config = {
                 "task_name": "plot",
                 "ref_limit": None,
+                "lite_prefilter_limit": 48,
+                "full_prefilter_limit": 20,
                 "target_labels": ["Visual Intent", "Raw Data"],
                 "candidate_labels": ["Plot ID", "Visual Intent", "Raw Data"],
                 "candidate_type": "Plot",
@@ -75,6 +78,8 @@ class RetrieverAgent(BaseAgent):
             self.task_config = {
                 "task_name": "diagram",
                 "ref_limit": 200,
+                "lite_prefilter_limit": 40,
+                "full_prefilter_limit": 18,
                 "target_labels": ["Caption", "Methodology section"],
                 "candidate_labels": ["Diagram ID", "Caption", "Methodology section"],
                 "candidate_type": "Diagram",
@@ -124,23 +129,25 @@ class RetrieverAgent(BaseAgent):
             logger.info(f"✅ 随机检索完成, {len(data['top10_references'])} 个参考")
 
         elif retrieval_setting == "auto":
-            data["top10_references"] = await self._retrieve_and_parse(
+            retrieved_ids, retrieved_examples = await self._retrieve_and_parse(
                 data,
                 cfg,
                 candidate_id=candidate_id,
                 lite=True,
             )
-            data["retrieved_examples"] = []
+            data["top10_references"] = retrieved_ids
+            data["retrieved_examples"] = retrieved_examples
             logger.info(f"✅ 自动检索完成 (lite), {len(data['top10_references'])} 个参考: {data['top10_references']}")
 
         elif retrieval_setting == "auto-full":
-            data["top10_references"] = await self._retrieve_and_parse(
+            retrieved_ids, retrieved_examples = await self._retrieve_and_parse(
                 data,
                 cfg,
                 candidate_id=candidate_id,
                 lite=False,
             )
-            data["retrieved_examples"] = []
+            data["top10_references"] = retrieved_ids
+            data["retrieved_examples"] = retrieved_examples
             logger.info(f"✅ 自动检索完成 (full), {len(data['top10_references'])} 个参考: {data['top10_references']}")
         else:
             raise ValueError(f"Unknown retrieval_setting: {retrieval_setting}")
@@ -148,20 +155,15 @@ class RetrieverAgent(BaseAgent):
         return data
 
     def _load_manual_references(self, cfg: dict) -> tuple:
-        if cfg["task_name"] == "diagram":
-            few_shot_file = get_manual_reference_file_path(
-                self.exp_config.dataset_name,
-                "diagram",
-                work_dir=self.exp_config.work_dir,
-            )
-            with open(few_shot_file, "r", encoding="utf-8") as f:
-                examples = json.load(f)[:10]
-            ids = [item["id"] for item in examples]
-            return ids, examples
-        elif cfg["task_name"] == "plot":
-            return [], []
-        else:
-            raise ValueError(f"Unknown task_name: {cfg['task_name']}")
+        few_shot_file = get_manual_reference_file_path(
+            self.exp_config.dataset_name,
+            cfg["task_name"],
+            work_dir=self.exp_config.work_dir,
+        )
+        with open(few_shot_file, "r", encoding="utf-8") as f:
+            examples = json.load(f)[:10]
+        ids = [item["id"] for item in examples]
+        return ids, examples
 
     def _load_random_references(self, cfg: dict) -> list:
         ref_file = get_reference_file_path(
@@ -176,13 +178,86 @@ class RetrieverAgent(BaseAgent):
         sample_size = min(10, len(id_list))
         return random.sample(id_list, sample_size) if sample_size > 0 else []
 
+    @staticmethod
+    def _stringify_payload(value: Any) -> str:
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value or "")
+
+    @staticmethod
+    def _tokenize_text(value: str) -> set[str]:
+        tokens = set(re.findall(r"[a-zA-Z0-9_+-]+", str(value or "").lower()))
+        stopwords = {
+            "the", "and", "for", "with", "from", "into", "that", "this", "are", "was",
+            "were", "then", "than", "have", "has", "had", "use", "using", "used", "our",
+            "their", "your", "about", "create", "plot", "diagram", "figure", "method",
+            "section", "visual", "intent", "data", "raw",
+        }
+        return {token for token in tokens if len(token) > 1 and token not in stopwords}
+
+    def _load_candidate_pool(self, cfg: dict) -> list[dict]:
+        ref_file = get_reference_file_path(
+            self.exp_config.dataset_name,
+            cfg["task_name"],
+            work_dir=self.exp_config.work_dir,
+        )
+        with open(ref_file, "r", encoding="utf-8") as f:
+            candidate_pool = json.load(f)
+        if cfg["ref_limit"]:
+            candidate_pool = candidate_pool[:cfg["ref_limit"]]
+        return candidate_pool
+
+    def _prefilter_candidate_pool(
+        self,
+        data: Dict[str, Any],
+        cfg: dict,
+        *,
+        lite: bool,
+    ) -> list[dict]:
+        candidate_pool = self._load_candidate_pool(cfg)
+        if len(candidate_pool) <= 10:
+            return candidate_pool
+
+        raw_content = self._stringify_payload(data.get("content", ""))
+        visual_intent = str(data.get("visual_intent", "") or "")
+        target_tokens = self._tokenize_text(raw_content) | self._tokenize_text(visual_intent)
+        shortlist_limit = cfg["lite_prefilter_limit"] if lite else cfg["full_prefilter_limit"]
+        shortlist_limit = max(10, int(shortlist_limit))
+
+        scored_items = []
+        for idx, item in enumerate(candidate_pool):
+            candidate_visual = str(item.get("visual_intent", "") or "")
+            candidate_content = self._stringify_payload(item.get("content", ""))
+            visual_tokens = self._tokenize_text(candidate_visual)
+            content_tokens = self._tokenize_text(candidate_content[:4000])
+            overlap_visual = len(target_tokens & visual_tokens)
+            overlap_content = len(target_tokens & content_tokens)
+            exact_bonus = 0
+            lowered_visual_intent = visual_intent.lower()
+            lowered_candidate_visual = candidate_visual.lower()
+            if lowered_visual_intent and lowered_visual_intent[:80] in lowered_candidate_visual:
+                exact_bonus += 3
+            score = overlap_visual * 3 + overlap_content + exact_bonus
+            scored_items.append((score, idx, item))
+
+        scored_items.sort(key=lambda entry: (-entry[0], entry[1]))
+        shortlisted = [item for _, _, item in scored_items[:shortlist_limit]]
+        logger.debug(
+            "📚 预筛完成: task=%s lite=%s total=%s shortlist=%s",
+            cfg["task_name"],
+            lite,
+            len(candidate_pool),
+            len(shortlisted),
+        )
+        return shortlisted
+
     async def _retrieve_and_parse(
         self,
         data: Dict[str, Any],
         cfg: dict,
         candidate_id: Any = "N/A",
         lite: bool = True,
-    ) -> list:
+    ) -> tuple[list, list[dict]]:
         """
         通过 LLM 智能检索最相关的参考示例。
 
@@ -199,15 +274,7 @@ class RetrieverAgent(BaseAgent):
 
         user_prompt = f"**Target Input**\n- {cfg['target_labels'][0]}: {visual_intent}\n- {cfg['target_labels'][1]}: {content}\n\n**Candidate Pool**\n"
 
-        ref_file = get_reference_file_path(
-            self.exp_config.dataset_name,
-            cfg["task_name"],
-            work_dir=self.exp_config.work_dir,
-        )
-        with open(ref_file, "r", encoding="utf-8") as f:
-            candidate_pool = json.load(f)
-            if cfg["ref_limit"]:
-                candidate_pool = candidate_pool[:cfg["ref_limit"]]
+        candidate_pool = self._prefilter_candidate_pool(data, cfg, lite=lite)
 
         for idx, item in enumerate(candidate_pool):
             user_prompt += f"Candidate {cfg['candidate_type']} {idx+1}:\n"
@@ -255,7 +322,10 @@ class RetrieverAgent(BaseAgent):
             )
 
         raw_response = response_list[0].strip()
-        return self._parse_retrieval_result(raw_response, cfg["task_name"])
+        retrieved_ids = self._parse_retrieval_result(raw_response, cfg["task_name"])
+        id_to_item = {item["id"]: item for item in candidate_pool}
+        retrieved_examples = [id_to_item[ref_id] for ref_id in retrieved_ids if ref_id in id_to_item]
+        return retrieved_ids, retrieved_examples
 
     def _parse_retrieval_result(self, raw_response: str, task_name: str) -> list:
         import json_repair
