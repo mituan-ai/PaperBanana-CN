@@ -8,6 +8,7 @@ import tempfile
 import time
 import types
 import unittest
+import zipfile
 from io import BytesIO
 from pathlib import Path
 
@@ -408,6 +409,80 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertTrue(success)
         self.assertTrue(demo.st.session_state["refine_staged_image_bytes"])
         self.assertEqual(demo.st.session_state["refine_staged_source_label"], "候选方案 7")
+
+    def test_build_full_process_zip_contains_stage_images_and_metadata(self):
+        result = {
+            "candidate_id": 0,
+            "task_name": "diagram",
+            "exp_mode": "demo_planner_critic",
+            "target_diagram_desc0": "planner desc",
+            "target_diagram_desc0_base64_jpg": _build_png_base64(),
+            "target_diagram_critic_desc0": "critic desc",
+            "target_diagram_critic_desc0_base64_jpg": _build_png_base64(),
+            "target_diagram_critic_suggestions0": "make arrows clearer",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            json_path = Path(tmp_dir) / "session.json"
+            bundle_path = Path(tmp_dir) / "session.bundle.json"
+            json_path.write_text("{}", encoding="utf-8")
+            bundle_path.write_text("{}", encoding="utf-8")
+
+            zip_bytes, exported_count, failures = demo.build_full_process_zip(
+                [result],
+                task_name="diagram",
+                exp_mode="demo_planner_critic",
+                dataset_name="PaperBananaBench",
+                timestamp="2026-03-10 18:00:28",
+                source_label="后台生成任务",
+                json_file_path=json_path,
+                bundle_file_path=bundle_path,
+            )
+
+        self.assertEqual(exported_count, 1)
+        self.assertEqual(failures, [])
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as archive:
+            names = set(archive.namelist())
+
+        self.assertTrue(any(name.endswith("/00_运行总览/运行总览.txt") for name in names))
+        self.assertTrue(any(name.endswith("/00_运行总览/原始结果.json") for name in names))
+        self.assertTrue(any(name.endswith("/00_运行总览/结果Bundle.bundle.json") for name in names))
+        self.assertTrue(any("候选01_学术图解/01_最终结果/01_最终图解.png" in name for name in names))
+        self.assertTrue(any("候选01_学术图解/02_演化过程/01_规划器/01_阶段图像.png" in name for name in names))
+        self.assertTrue(any("候选01_学术图解/02_演化过程/02_评审第01轮/04_评审建议.md" in name for name in names))
+        self.assertTrue(any(name.endswith("/99_原始记录/候选完整结果.json") for name in names))
+
+    def test_build_full_process_zip_exports_plot_code_files(self):
+        result = {
+            "candidate_id": 0,
+            "task_name": "plot",
+            "exp_mode": "demo_planner_critic",
+            "target_plot_desc0": "planner desc",
+            "target_plot_desc0_base64_jpg": _build_png_base64(),
+            "target_plot_desc0_code": "print('planner')",
+            "target_plot_critic_desc0": "critic desc",
+            "target_plot_critic_desc0_base64_jpg": _build_png_base64(),
+            "target_plot_critic_desc0_code": "print('critic')",
+            "target_plot_critic_suggestions0": "tighten the layout",
+        }
+
+        zip_bytes, exported_count, failures = demo.build_full_process_zip(
+            [result],
+            task_name="plot",
+            exp_mode="demo_planner_critic",
+            dataset_name="PaperBananaBench",
+            timestamp="2026-03-10 18:00:28",
+            source_label="后台生成任务",
+        )
+
+        self.assertEqual(exported_count, 1)
+        self.assertEqual(failures, [])
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as archive:
+            names = set(archive.namelist())
+
+        self.assertTrue(any("候选01_统计图/01_最终结果/03_最终Matplotlib代码.py" in name for name in names))
+        self.assertTrue(any("候选01_统计图/02_演化过程/01_规划器/03_阶段代码.py" in name for name in names))
+        self.assertTrue(any("候选01_统计图/02_演化过程/02_评审第01轮/03_阶段代码.py" in name for name in names))
 
     def test_load_generation_history_snapshot_reads_bundle_metadata(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

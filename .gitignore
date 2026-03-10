@@ -7,6 +7,9 @@ venv/
 data/
 results/
 logs/
+docs/
+output/
+.codex-streamlit-*.log
 
 # Packaging artifacts
 *.egg-info/

@@ -1111,6 +1111,383 @@ def stage_plot_code_for_rerender(result: dict, *, candidate_id: int | str, exp_m
     return True
 
 
+def _sanitize_zip_component(text: str, *, fallback: str = "未命名") -> str:
+    cleaned = clean_text(text).strip()
+    cleaned = re.sub(r"[<>:\"/\\\\|?*]+", "_", cleaned)
+    cleaned = re.sub(r"\s+", "", cleaned)
+    cleaned = cleaned.strip("._")
+    return cleaned or fallback
+
+
+def _normalize_export_timestamp_token(timestamp: str | None = None) -> str:
+    raw = clean_text(timestamp or "").strip()
+    if raw:
+        token = re.sub(r"[^0-9]", "", raw)
+        if len(token) >= 14:
+            return f"{token[:8]}_{token[8:14]}"
+        if len(token) >= 8:
+            return token[:8]
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _format_candidate_export_folder_name(
+    candidate_id: int | str,
+    candidate_index: int,
+    *,
+    task_display_name_cn: str,
+) -> str:
+    suffix = _sanitize_zip_component(task_display_name_cn, fallback="候选结果")
+    try:
+        display_candidate = int(candidate_id) + 1
+    except Exception:
+        display_candidate = candidate_index
+    return f"候选{display_candidate:02d}_{suffix}"
+
+
+def _normalize_stage_export_label(stage_name: str, *, stage_index: int) -> str:
+    stage_text = clean_text(stage_name)
+    if "规划器" in stage_text:
+        return "规划器"
+    if "风格化器" in stage_text:
+        return "风格化器"
+    if "评审第" in stage_text:
+        round_match = re.search(r"第\s*(\d+)\s*轮", stage_text)
+        if round_match:
+            return f"评审第{int(round_match.group(1)):02d}轮"
+        return "评审轮"
+    if "Vanilla" in stage_text:
+        return "Vanilla基础结果"
+    if "精修器" in stage_text:
+        return "精修器"
+    return _sanitize_zip_component(stage_text, fallback=f"阶段{stage_index:02d}")
+
+
+def _decode_image_bytes(image_b64: str) -> bytes:
+    encoded = str(image_b64 or "")
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    return base64.b64decode(encoded)
+
+
+def _infer_image_extension_from_bytes(raw_bytes: bytes, *, fallback: str = "png") -> str:
+    try:
+        with Image.open(BytesIO(raw_bytes)) as img:
+            image_format = (img.format or "").upper()
+    except Exception:
+        return fallback
+    ext_map = {
+        "JPEG": "jpg",
+        "JPG": "jpg",
+        "PNG": "png",
+        "WEBP": "webp",
+        "GIF": "gif",
+    }
+    return ext_map.get(image_format, fallback)
+
+
+def _build_candidate_overview_text(
+    *,
+    candidate_id: int | str,
+    candidate_index: int,
+    task_display_name_cn: str,
+    exp_mode: str,
+    final_caption: str,
+    final_desc_key: str,
+    stages: list[dict],
+) -> str:
+    try:
+        display_candidate = int(candidate_id) + 1
+    except Exception:
+        display_candidate = candidate_index
+    lines = [
+        f"候选编号：{display_candidate:02d}（内部 ID: {candidate_id}）",
+        f"任务类型：{task_display_name_cn}",
+        f"流水线：{exp_mode}",
+        f"最终结果：{final_caption}",
+        f"最终描述键：{final_desc_key or '无'}",
+        f"演化阶段数：{len(stages)}",
+    ]
+    if stages:
+        lines.append("")
+        lines.append("阶段顺序：")
+        for idx, stage in enumerate(stages, start=1):
+            lines.append(f"{idx:02d}. {clean_text(stage.get('name', '阶段'))}")
+    return "\n".join(lines)
+
+
+def _write_text_to_zip(zip_file, archive_path: str, text: str, *, encoding: str = "utf-8") -> None:
+    zip_file.writestr(archive_path, clean_text(text).encode(encoding))
+
+
+def build_final_results_zip(
+    results: list[dict],
+    *,
+    task_name: str,
+    exp_mode: str,
+) -> tuple[bytes, int, list[str]]:
+    import zipfile
+
+    task_name = normalize_task_name(task_name)
+    zip_buffer = BytesIO()
+    zip_export_failures: list[str] = []
+    exported_count = 0
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for fallback_idx, result in enumerate(results):
+            candidate_id = get_candidate_id(result, fallback_idx)
+            if isinstance(result, dict) and result.get("status") == "failed":
+                zip_export_failures.append(
+                    f"候选 {candidate_id}: 流水线执行失败，无法导出"
+                )
+                continue
+
+            final_image_key, final_desc_key = find_final_stage_keys(
+                result,
+                task_name=task_name,
+                exp_mode=exp_mode,
+            )
+
+            exported_any = False
+            if final_image_key and final_image_key in result:
+                try:
+                    raw_bytes = _decode_image_bytes(result[final_image_key])
+                    image_ext = _infer_image_extension_from_bytes(raw_bytes, fallback="bin")
+                    zip_file.writestr(
+                        f"candidate_{candidate_id}.{image_ext}",
+                        raw_bytes,
+                    )
+                    exported_any = True
+                except Exception as export_err:
+                    zip_export_failures.append(
+                        f"候选 {candidate_id}: 图像导出失败 ({export_err})"
+                    )
+            else:
+                zip_export_failures.append(
+                    f"候选 {candidate_id}: 未找到最终图像"
+                )
+
+            if task_name == "plot" and final_desc_key:
+                final_code_key = (
+                    final_desc_key
+                    if final_desc_key == "vanilla_plot_code"
+                    else f"{final_desc_key}_code"
+                )
+                if result.get(final_code_key):
+                    zip_file.writestr(
+                        f"candidate_{candidate_id}.py",
+                        clean_text(result[final_code_key]).encode("utf-8"),
+                    )
+                    exported_any = True
+
+            if exported_any:
+                exported_count += 1
+
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue(), exported_count, zip_export_failures
+
+
+def build_full_process_zip(
+    results: list[dict],
+    *,
+    task_name: str,
+    exp_mode: str,
+    dataset_name: str,
+    timestamp: str,
+    source_label: str,
+    json_file_path: Path | None = None,
+    bundle_file_path: Path | None = None,
+) -> tuple[bytes, int, list[str]]:
+    import zipfile
+
+    normalized_task = normalize_task_name(task_name)
+    task_config = get_task_ui_config(normalized_task)
+    timestamp_token = _normalize_export_timestamp_token(timestamp)
+    root_dir = _sanitize_zip_component(
+        f"PaperBanana_全流程总览_{task_config['display_name_cn']}_{timestamp_token}",
+        fallback=f"PaperBanana_全流程总览_{timestamp_token}",
+    )
+
+    zip_buffer = BytesIO()
+    export_failures: list[str] = []
+    exported_count = 0
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        overview_dir = f"{root_dir}/00_运行总览"
+        overview_lines = [
+            f"任务类型：{task_config['display_name_cn']}",
+            f"数据集：{dataset_name}",
+            f"流水线：{exp_mode}",
+            f"结果来源：{source_label}",
+            f"导出时间：{timestamp or 'N/A'}",
+            f"候选总数：{len(results)}",
+        ]
+        _write_text_to_zip(
+            zip_file,
+            f"{overview_dir}/运行总览.txt",
+            "\n".join(overview_lines),
+        )
+        _write_text_to_zip(
+            zip_file,
+            f"{overview_dir}/如何查看本压缩包.txt",
+            (
+                "1. 先看 00_运行总览，快速了解本次任务配置。\n"
+                "2. 再进入 01_候选方案，每个候选都按“最终结果 -> 演化过程 -> 原始记录”组织。\n"
+                "3. 重点文件优先看每个候选目录下的 01_最终结果，以及 02_演化过程 中各阶段图片。"
+            ),
+        )
+        if json_file_path and json_file_path.exists():
+            zip_file.writestr(
+                f"{overview_dir}/原始结果.json",
+                json_file_path.read_bytes(),
+            )
+        if bundle_file_path and bundle_file_path.exists():
+            zip_file.writestr(
+                f"{overview_dir}/结果Bundle.bundle.json",
+                bundle_file_path.read_bytes(),
+            )
+
+        for fallback_idx, result in enumerate(results):
+            candidate_id = get_candidate_id(result, fallback_idx)
+            candidate_index = fallback_idx + 1
+            candidate_folder_name = _format_candidate_export_folder_name(
+                candidate_id,
+                candidate_index,
+                task_display_name_cn=task_config["display_name_cn"],
+            )
+            candidate_root = f"{root_dir}/01_候选方案/{candidate_folder_name}"
+
+            if isinstance(result, dict) and result.get("status") == "failed":
+                failed_dir = f"{root_dir}/02_失败候选"
+                _write_text_to_zip(
+                    zip_file,
+                    f"{failed_dir}/{candidate_folder_name}_失败信息.txt",
+                    (
+                        f"候选内部 ID：{candidate_id}\n"
+                        f"状态：failed\n"
+                        f"错误：{result.get('error', 'Unknown error')}\n\n"
+                        f"{clean_text(result.get('error_detail', ''))}"
+                    ),
+                )
+                export_failures.append(f"候选 {candidate_id}: 流水线执行失败，仅导出失败信息")
+                continue
+
+            final_image_key, final_desc_key = find_final_stage_keys(
+                result,
+                task_name=normalized_task,
+                exp_mode=exp_mode,
+            )
+            stages = build_evolution_stages(result, exp_mode, task_name=normalized_task)
+            _write_text_to_zip(
+                zip_file,
+                f"{candidate_root}/00_候选总览.txt",
+                _build_candidate_overview_text(
+                    candidate_id=candidate_id,
+                    candidate_index=candidate_index,
+                    task_display_name_cn=task_config["display_name_cn"],
+                    exp_mode=exp_mode,
+                    final_caption=task_config["final_caption"],
+                    final_desc_key=final_desc_key,
+                    stages=stages,
+                ),
+            )
+
+            exported_any = False
+            final_result_dir = f"{candidate_root}/01_最终结果"
+            if final_image_key and result.get(final_image_key):
+                try:
+                    final_bytes = _decode_image_bytes(result[final_image_key])
+                    final_ext = _infer_image_extension_from_bytes(final_bytes)
+                    zip_file.writestr(
+                        f"{final_result_dir}/01_{_sanitize_zip_component(task_config['final_caption'], fallback='最终结果')}.{final_ext}",
+                        final_bytes,
+                    )
+                    exported_any = True
+                except Exception as export_err:
+                    export_failures.append(
+                        f"候选 {candidate_id}: 最终图像导出失败 ({export_err})"
+                    )
+            else:
+                export_failures.append(f"候选 {candidate_id}: 未找到最终图像")
+
+            if final_desc_key and result.get(final_desc_key):
+                _write_text_to_zip(
+                    zip_file,
+                    f"{final_result_dir}/02_最终描述.md",
+                    result[final_desc_key],
+                )
+                exported_any = True
+
+            if normalized_task == "plot" and final_desc_key:
+                final_code_key = (
+                    final_desc_key
+                    if final_desc_key == "vanilla_plot_code"
+                    else f"{final_desc_key}_code"
+                )
+                if result.get(final_code_key):
+                    _write_text_to_zip(
+                        zip_file,
+                        f"{final_result_dir}/03_最终Matplotlib代码.py",
+                        result[final_code_key],
+                    )
+                    exported_any = True
+
+            process_dir = f"{candidate_root}/02_演化过程"
+            for stage_idx, stage in enumerate(stages, start=1):
+                stage_label = _normalize_stage_export_label(stage.get("name", ""), stage_index=stage_idx)
+                stage_dir = f"{process_dir}/{stage_idx:02d}_{stage_label}"
+                _write_text_to_zip(
+                    zip_file,
+                    f"{stage_dir}/00_阶段说明.txt",
+                    stage.get("description", ""),
+                )
+                stage_image_key = stage.get("image_key")
+                if stage_image_key and result.get(stage_image_key):
+                    try:
+                        stage_bytes = _decode_image_bytes(result[stage_image_key])
+                        stage_ext = _infer_image_extension_from_bytes(stage_bytes)
+                        zip_file.writestr(
+                            f"{stage_dir}/01_阶段图像.{stage_ext}",
+                            stage_bytes,
+                        )
+                        exported_any = True
+                    except Exception as export_err:
+                        export_failures.append(
+                            f"候选 {candidate_id}: 阶段 {stage_label} 图像导出失败 ({export_err})"
+                        )
+                if stage.get("desc_key") and result.get(stage["desc_key"]):
+                    _write_text_to_zip(
+                        zip_file,
+                        f"{stage_dir}/02_阶段描述.md",
+                        result[stage["desc_key"]],
+                    )
+                    exported_any = True
+                if stage.get("code_key") and result.get(stage["code_key"]):
+                    _write_text_to_zip(
+                        zip_file,
+                        f"{stage_dir}/03_阶段代码.py",
+                        result[stage["code_key"]],
+                    )
+                    exported_any = True
+                if stage.get("suggestions_key") and result.get(stage["suggestions_key"]):
+                    _write_text_to_zip(
+                        zip_file,
+                        f"{stage_dir}/04_评审建议.md",
+                        result[stage["suggestions_key"]],
+                    )
+                    exported_any = True
+
+            _write_text_to_zip(
+                zip_file,
+                f"{candidate_root}/99_原始记录/候选完整结果.json",
+                json.dumps(result, ensure_ascii=False, indent=2),
+            )
+            if exported_any:
+                exported_count += 1
+
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue(), exported_count, export_failures
+
+
 def _store_refine_job(job: RefineJobState) -> None:
     with REFINE_JOBS_LOCK:
         REFINE_JOBS[job.job_id] = job
@@ -3203,96 +3580,79 @@ def main():
             st.markdown("### 💾 批量下载")
 
             try:
-                import zipfile
+                final_zip_bytes, final_exported_count, final_zip_failures = build_final_results_zip(
+                    results,
+                    task_name=current_task_name,
+                    exp_mode=current_mode,
+                )
+                full_zip_bytes, full_exported_count, full_zip_failures = build_full_process_zip(
+                    results,
+                    task_name=current_task_name,
+                    exp_mode=current_mode,
+                    dataset_name=current_dataset_name,
+                    timestamp=timestamp,
+                    source_label=result_source_label,
+                    json_file_path=json_file_path,
+                    bundle_file_path=bundle_file_path,
+                )
 
-                zip_buffer = BytesIO()
-                zip_export_failures = []
-                exported_count = 0
-                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                    for fallback_idx, result in enumerate(results):
-                        candidate_id = get_candidate_id(result, fallback_idx)
-                        if isinstance(result, dict) and result.get("status") == "failed":
-                            zip_export_failures.append(
-                                f"候选 {candidate_id}: 流水线执行失败，无法导出"
-                            )
-                            continue
-
-                        final_image_key, final_desc_key = find_final_stage_keys(
-                            result,
-                            task_name=current_task_name,
-                            exp_mode=current_mode,
+                download_cols = st.columns(2)
+                if final_exported_count > 0:
+                    with download_cols[0]:
+                        st.download_button(
+                            label="[DOWN] 下载最终候选（ZIP）",
+                            data=final_zip_bytes,
+                            file_name=(
+                                f"paperbanana_{current_task_name}_candidates_"
+                                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                            ),
+                            mime="application/zip",
+                            use_container_width=True,
                         )
-
-                        exported_any = False
-                        if final_image_key and final_image_key in result:
-                            try:
-                                raw_bytes = base64.b64decode(result[final_image_key])
-                                img = Image.open(BytesIO(raw_bytes))
-                                image_format = (img.format or "").upper()
-                                ext_map = {
-                                    "JPEG": "jpg",
-                                    "JPG": "jpg",
-                                    "PNG": "png",
-                                    "WEBP": "webp",
-                                    "GIF": "gif",
-                                }
-                                image_ext = ext_map.get(image_format, "bin")
-                                zip_file.writestr(
-                                    f"candidate_{candidate_id}.{image_ext}",
-                                    raw_bytes
-                                )
-                                exported_any = True
-                            except Exception as export_err:
-                                zip_export_failures.append(
-                                    f"候选 {candidate_id}: 图像导出失败 ({export_err})"
-                                )
-                        else:
-                            zip_export_failures.append(
-                                f"候选 {candidate_id}: 未找到最终图像"
-                            )
-
-                        if current_task_name == "plot" and final_desc_key:
-                            final_code_key = (
-                                final_desc_key
-                                if final_desc_key == "vanilla_plot_code"
-                                else f"{final_desc_key}_code"
-                            )
-                            if result.get(final_code_key):
-                                zip_file.writestr(
-                                    f"candidate_{candidate_id}.py",
-                                    clean_text(result[final_code_key]).encode("utf-8"),
-                                )
-                                exported_any = True
-
-                        if exported_any:
-                            exported_count += 1
-
-                zip_buffer.seek(0)
-                if exported_count > 0:
-                    st.download_button(
-                        label="[DOWN] 下载 ZIP 压缩包",
-                        data=zip_buffer.getvalue(),
-                        file_name=(
-                            f"paperbanana_{current_task_name}_candidates_"
-                            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-                        ),
-                        mime="application/zip",
-                        use_container_width=True
-                    )
-                    if zip_export_failures:
-                        st.warning(
-                            f"ZIP 已准备好：成功导出 {exported_count} 个，失败 {len(zip_export_failures)} 个。"
-                        )
-                        with st.expander("查看 ZIP 导出失败详情", expanded=False):
-                            for item in zip_export_failures:
-                                st.write(item)
-                    else:
-                        st.success("ZIP 压缩包已准备好，可以下载！")
                 else:
-                    st.error("ZIP 压缩包创建失败：没有可导出的候选结果。")
-                    if zip_export_failures:
-                        with st.expander("查看 ZIP 导出失败详情", expanded=True):
-                            for item in zip_export_failures:
+                    with download_cols[0]:
+                        st.button(
+                            "[DOWN] 下载最终候选（ZIP）",
+                            disabled=True,
+                            use_container_width=True,
+                        )
+
+                if full_exported_count > 0:
+                    with download_cols[1]:
+                        st.download_button(
+                            label="[DOWN] 下载全流程总览（ZIP）",
+                            data=full_zip_bytes,
+                            file_name=(
+                                f"PaperBanana_全流程总览_{current_task_name}_"
+                                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                            ),
+                            mime="application/zip",
+                            use_container_width=True,
+                        )
+                else:
+                    with download_cols[1]:
+                        st.button(
+                            "[DOWN] 下载全流程总览（ZIP）",
+                            disabled=True,
+                            use_container_width=True,
+                        )
+
+                st.caption(
+                    f"最终候选 ZIP：成功导出 {final_exported_count} 个候选 | "
+                    f"全流程总览 ZIP：成功导出 {full_exported_count} 个候选。"
+                )
+                st.info(
+                    "全流程总览 ZIP 会按中文目录整理会话总览、每个候选的最终结果、阶段演化图、阶段描述、评审建议、绘图代码和原始结果 JSON。"
+                )
+                if final_zip_failures or full_zip_failures:
+                    with st.expander("查看 ZIP 导出详情", expanded=False):
+                        if final_zip_failures:
+                            st.markdown("**最终候选 ZIP**")
+                            for item in final_zip_failures:
+                                st.write(item)
+                        if full_zip_failures:
+                            st.markdown("**全流程总览 ZIP**")
+                            for item in full_zip_failures:
                                 st.write(item)
             except Exception as e:
                 st.error(f"创建 ZIP 压缩包失败：{e}")
