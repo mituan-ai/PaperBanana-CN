@@ -35,6 +35,8 @@ def _build_png_base64() -> str:
 class GenerationBackgroundJobTest(unittest.TestCase):
     def setUp(self):
         demo.st.session_state.clear()
+        with demo.DEMO_UI_STATE_LOCK:
+            demo.DEMO_UI_STATE.clear()
 
     def test_background_job_runtime_is_shared_resource(self):
         runtime_a = demo.get_background_job_runtime()
@@ -43,6 +45,42 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertIs(runtime_a, runtime_b)
         self.assertIs(runtime_a["generation_jobs"], demo.GENERATION_JOBS)
         self.assertIs(runtime_a["refine_jobs"], demo.REFINE_JOBS)
+        self.assertIs(runtime_a["demo_ui_state"], demo.DEMO_UI_STATE)
+
+    def test_background_job_runtime_hot_reload_normalizes_missing_keys(self):
+        stale_runtime = {
+            "generation_executor": object(),
+            "generation_jobs_lock": object(),
+            "generation_jobs": {},
+            "refine_executor": object(),
+            "refine_jobs_lock": object(),
+            "refine_jobs": {},
+        }
+
+        normalized = demo._normalize_background_job_runtime(stale_runtime)
+
+        self.assertIn("demo_ui_state_lock", normalized)
+        self.assertIn("demo_ui_state", normalized)
+
+    def test_demo_ui_state_round_trip_survives_session_reset(self):
+        demo.st.session_state["tab1_provider"] = "gemini"
+        demo.st.session_state["tab1_api_key"] = "runtime-key"
+        demo.st.session_state["tab1_model_name"] = "gemini-3.1-pro-preview"
+        demo.st.session_state["tab1_num_candidates"] = 8
+        demo.st.session_state["refine_staged_image_bytes"] = b"preview-bytes"
+        demo.st.session_state["active_generation_job_id"] = "generate_demo_running"
+
+        demo.persist_demo_ui_state()
+        demo.st.session_state.clear()
+
+        demo.restore_persisted_demo_ui_state()
+
+        self.assertEqual(demo.st.session_state["tab1_provider"], "gemini")
+        self.assertEqual(demo.st.session_state["tab1_api_key"], "runtime-key")
+        self.assertEqual(demo.st.session_state["tab1_model_name"], "gemini-3.1-pro-preview")
+        self.assertEqual(demo.st.session_state["tab1_num_candidates"], 8)
+        self.assertEqual(demo.st.session_state["refine_staged_image_bytes"], b"preview-bytes")
+        self.assertNotIn("active_generation_job_id", demo.st.session_state)
 
     def _wait_for_terminal_snapshot(self, job_id: str, timeout: float = 5.0) -> dict:
         deadline = time.time() + timeout
@@ -263,6 +301,92 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertTrue(
                 any("测试规划日志已同步" in line for line in snapshot["status_history"])
             )
+        finally:
+            demo.process_parallel_candidates = original_process
+            demo.save_demo_generation_artifacts = original_save
+            if job_id:
+                demo.clear_generation_job(job_id)
+
+    def test_generation_job_records_preview_events_for_live_stream(self):
+        original_process = demo.process_parallel_candidates
+        original_save = demo.save_demo_generation_artifacts
+
+        async def fake_process_parallel_candidates(
+            data_list,
+            progress_callback=None,
+            status_callback=None,
+            event_callback=None,
+            result_callback=None,
+            **kwargs,
+        ):
+            preview_b64 = _build_png_base64()
+            if progress_callback:
+                progress_callback(0, 1, 1)
+            if event_callback:
+                event_callback(
+                    {
+                        "candidate_id": 0,
+                        "kind": "preview_ready",
+                        "status": "running",
+                        "stage": "visualizer 首张预览已生成",
+                        "message": "候选 0: 首张预览已生成",
+                        "preview_image": preview_b64,
+                        "preview_mime_type": "image/png",
+                        "preview_label": "target_diagram_desc0",
+                    }
+                )
+            result = {
+                "candidate_id": 0,
+                "task_name": "diagram",
+                "dataset_name": "PaperBananaBench",
+                "exp_mode": "demo_planner_critic",
+                "eval_image_field": "target_diagram_desc0_base64_jpg",
+                "target_diagram_desc0_base64_jpg": preview_b64,
+            }
+            if result_callback:
+                result_callback(result)
+            if progress_callback:
+                progress_callback(1, 1, 1)
+            return [result], 1
+
+        def fake_save_demo_generation_artifacts(**kwargs):
+            return {
+                "summary": {"total_candidates": 1},
+                "failures": [],
+                "json_file": "D:/tmp/live_generation.json",
+                "bundle_file": "D:/tmp/live_generation.bundle.json",
+                "manifest": {},
+            }
+
+        demo.process_parallel_candidates = fake_process_parallel_candidates
+        demo.save_demo_generation_artifacts = fake_save_demo_generation_artifacts
+        job_id = None
+        try:
+            job_id = demo.start_generation_background_job(
+                dataset_name="PaperBananaBench",
+                task_name="diagram",
+                exp_mode="demo_planner_critic",
+                retrieval_setting="none",
+                curated_profile="default",
+                provider="gemini",
+                api_key="local-test-key",
+                model_name="gemini-3.1-flash-lite-preview",
+                image_model_name="gemini-3.1-flash-image-preview",
+                concurrency_mode="manual",
+                max_concurrent=1,
+                num_candidates=1,
+                max_critic_rounds=1,
+                aspect_ratio="16:9",
+                image_resolution="2K",
+                content="paper method",
+                visual_intent="draw a pipeline",
+            )
+            snapshot = self._wait_for_terminal_snapshot(job_id)
+
+            candidate_snapshot = snapshot["candidate_snapshots"]["0"]
+            self.assertEqual(candidate_snapshot["preview_label"], "target_diagram_desc0")
+            self.assertTrue(candidate_snapshot["preview_image"])
+            self.assertEqual(candidate_snapshot["status"], "completed")
         finally:
             demo.process_parallel_candidates = original_process
             demo.save_demo_generation_artifacts = original_save

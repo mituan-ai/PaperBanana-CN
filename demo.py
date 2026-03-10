@@ -118,6 +118,8 @@ st.set_page_config(
 
 GENERATION_STATUS_LINE_LIMIT = 200
 GENERATION_LOG_RENDER_LIMIT = 14
+GENERATION_EVENT_HISTORY_LIMIT = 400
+GENERATION_EVENT_RENDER_LIMIT = 40
 REFINE_STATUS_LINE_LIMIT = 120
 REFINE_LOG_RENDER_LIMIT = 12
 GENERATION_CANDIDATE_STATUS_RE = re.compile(r"^候选\s+(.+?):\s*(.+)$")
@@ -312,28 +314,45 @@ def _build_background_job_runtime() -> dict:
         "refine_executor": ThreadPoolExecutor(max_workers=2),
         "refine_jobs_lock": threading.Lock(),
         "refine_jobs": {},
+        "demo_ui_state_lock": threading.Lock(),
+        "demo_ui_state": {},
     }
+
+
+def _normalize_background_job_runtime(runtime: dict | None) -> dict:
+    safe_runtime = runtime if isinstance(runtime, dict) else {}
+    safe_runtime.setdefault("generation_executor", ThreadPoolExecutor(max_workers=1))
+    safe_runtime.setdefault("generation_jobs_lock", threading.Lock())
+    safe_runtime.setdefault("generation_jobs", {})
+    safe_runtime.setdefault("refine_executor", ThreadPoolExecutor(max_workers=2))
+    safe_runtime.setdefault("refine_jobs_lock", threading.Lock())
+    safe_runtime.setdefault("refine_jobs", {})
+    safe_runtime.setdefault("demo_ui_state_lock", threading.Lock())
+    safe_runtime.setdefault("demo_ui_state", {})
+    return safe_runtime
 
 
 if hasattr(st, "cache_resource"):
     @st.cache_resource(show_spinner=False)
     def get_background_job_runtime() -> dict:
-        return _build_background_job_runtime()
+        return _normalize_background_job_runtime(_build_background_job_runtime())
 else:
     def get_background_job_runtime() -> dict:
         global _BACKGROUND_JOB_RUNTIME_FALLBACK
         if _BACKGROUND_JOB_RUNTIME_FALLBACK is None:
             _BACKGROUND_JOB_RUNTIME_FALLBACK = _build_background_job_runtime()
-        return _BACKGROUND_JOB_RUNTIME_FALLBACK
+        return _normalize_background_job_runtime(_BACKGROUND_JOB_RUNTIME_FALLBACK)
 
 
-BACKGROUND_JOB_RUNTIME = get_background_job_runtime()
+BACKGROUND_JOB_RUNTIME = _normalize_background_job_runtime(get_background_job_runtime())
 GENERATION_JOB_EXECUTOR = BACKGROUND_JOB_RUNTIME["generation_executor"]
 GENERATION_JOBS_LOCK = BACKGROUND_JOB_RUNTIME["generation_jobs_lock"]
 GENERATION_JOBS = BACKGROUND_JOB_RUNTIME["generation_jobs"]
 REFINE_JOB_EXECUTOR = BACKGROUND_JOB_RUNTIME["refine_executor"]
 REFINE_JOBS_LOCK = BACKGROUND_JOB_RUNTIME["refine_jobs_lock"]
 REFINE_JOBS = BACKGROUND_JOB_RUNTIME["refine_jobs"]
+DEMO_UI_STATE_LOCK = BACKGROUND_JOB_RUNTIME["demo_ui_state_lock"]
+DEMO_UI_STATE = BACKGROUND_JOB_RUNTIME["demo_ui_state"]
 
 
 @dataclass
@@ -362,6 +381,8 @@ class GenerationJobState:
     estimated_batches: int = 0
     status_history: list[str] = field(default_factory=list)
     candidate_stage_map: dict[str, str] = field(default_factory=dict)
+    candidate_snapshots: dict[str, dict] = field(default_factory=dict)
+    event_timeline: list[dict] = field(default_factory=list)
     results: list[dict] = field(default_factory=list)
     summary: dict = field(default_factory=dict)
     failures: list[dict] = field(default_factory=list)
@@ -402,6 +423,14 @@ class GenerationJobState:
                 "estimated_batches": self.estimated_batches,
                 "status_history": list(self.status_history),
                 "candidate_stage_map": dict(self.candidate_stage_map),
+                "candidate_snapshots": {
+                    str(candidate_id): {
+                        **dict(snapshot),
+                        "result": dict(snapshot["result"]) if isinstance(snapshot.get("result"), dict) else snapshot.get("result"),
+                    }
+                    for candidate_id, snapshot in self.candidate_snapshots.items()
+                },
+                "event_timeline": [dict(item) for item in self.event_timeline],
                 "results": list(self.results),
                 "summary": dict(self.summary),
                 "failures": list(self.failures),
@@ -470,6 +499,136 @@ def get_demo_results_dir(task_name: str) -> Path:
     results_dir = get_demo_results_root() / normalize_task_name(task_name)
     results_dir.mkdir(parents=True, exist_ok=True)
     return results_dir
+
+
+PERSISTED_UI_STATE_KEYS = {
+    "tab1_task_name",
+    "tab1_dataset_name",
+    "tab1_exp_mode",
+    "tab1_retrieval_setting",
+    "tab1_curated_profile",
+    "tab1_num_candidates",
+    "tab1_concurrency_mode",
+    "tab1_max_concurrent",
+    "tab1_aspect_ratio",
+    "tab1_image_resolution",
+    "tab1_max_critic_rounds",
+    "tab1_provider",
+    "tab1_api_key",
+    "tab1_model_name",
+    "tab1_image_model_name",
+    "tab1_diagram_content",
+    "tab1_diagram_visual_intent",
+    "tab1_diagram_content_editor",
+    "tab1_diagram_visual_intent_editor",
+    "tab1_plot_content",
+    "tab1_plot_visual_intent",
+    "tab1_plot_content_editor",
+    "tab1_plot_visual_intent_editor",
+    "refine_resolution",
+    "refine_aspect_ratio",
+    "refine_num_images",
+    "refine_provider",
+    "refine_api_key",
+    "refine_image_model_name",
+    "edit_prompt",
+    "refine_input_source",
+    "refine_staged_input_mime_type",
+    "refine_staged_source_label",
+    "active_generation_job_id",
+    "last_generation_completed_job_id",
+    "active_refine_job_id",
+    "last_refine_completed_job_id",
+    "json_file",
+    "bundle_file",
+    "result_source_label",
+}
+PERSISTED_UI_STATE_BYTES_KEYS = {
+    "refine_staged_image_bytes",
+}
+
+
+def _serialize_ui_state_value(key: str, value):
+    if key in PERSISTED_UI_STATE_BYTES_KEYS:
+        raw_bytes = bytes(value or b"")
+        return {
+            "__type__": "bytes",
+            "data": base64.b64encode(raw_bytes).decode("utf-8"),
+        }
+    return value
+
+
+def _deserialize_ui_state_value(key: str, value):
+    if key in PERSISTED_UI_STATE_BYTES_KEYS and isinstance(value, dict) and value.get("__type__") == "bytes":
+        encoded = str(value.get("data", "") or "")
+        if encoded:
+            try:
+                return base64.b64decode(encoded)
+            except Exception:
+                return b""
+        return b""
+    return value
+
+
+def restore_persisted_demo_ui_state() -> None:
+    with DEMO_UI_STATE_LOCK:
+        payload = dict(DEMO_UI_STATE)
+    if not payload:
+        return
+
+    for key, raw_value in payload.items():
+        if key in st.session_state:
+            continue
+        st.session_state[key] = _deserialize_ui_state_value(key, raw_value)
+
+    restored_generation_job_id = st.session_state.get("active_generation_job_id")
+    if restored_generation_job_id and "results" not in st.session_state:
+        generation_snapshot = get_generation_job_snapshot(restored_generation_job_id)
+        if generation_snapshot:
+            if generation_snapshot.get("status") in {"completed", "cancelled"}:
+                persist_generation_job_results(
+                    generation_snapshot,
+                    source_label=st.session_state.get("result_source_label", "后台生成任务"),
+                )
+            elif generation_snapshot.get("status") == "failed":
+                st.session_state["generation_failures"] = generation_snapshot.get("failures", [])
+        else:
+            st.session_state.pop("active_generation_job_id", None)
+
+    bundle_file = st.session_state.get("bundle_file", "")
+    if bundle_file and "results" not in st.session_state:
+        bundle_path = Path(bundle_file)
+        if bundle_path.exists():
+            try:
+                snapshot = load_generation_history_snapshot(bundle_path)
+            except Exception:
+                snapshot = None
+            if snapshot:
+                persist_generation_job_results(
+                    snapshot,
+                    source_label=st.session_state.get("result_source_label", f"历史回放：{bundle_path.name}"),
+                )
+
+    restored_refine_job_id = st.session_state.get("active_refine_job_id")
+    if restored_refine_job_id and "refined_images" not in st.session_state:
+        refine_snapshot = get_refine_job_snapshot(restored_refine_job_id)
+        if refine_snapshot and refine_snapshot.get("status") in {"completed", "cancelled", "failed"}:
+            persist_refine_job_results(refine_snapshot)
+        elif refine_snapshot is None:
+            st.session_state.pop("active_refine_job_id", None)
+
+
+def persist_demo_ui_state() -> None:
+    state_payload = {}
+    for key in sorted(PERSISTED_UI_STATE_KEYS | PERSISTED_UI_STATE_BYTES_KEYS):
+        if key not in st.session_state:
+            continue
+        value = st.session_state.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None or key in PERSISTED_UI_STATE_BYTES_KEYS:
+            state_payload[key] = _serialize_ui_state_value(key, value)
+    with DEMO_UI_STATE_LOCK:
+        DEMO_UI_STATE.clear()
+        DEMO_UI_STATE.update(state_payload)
 
 
 def save_demo_generation_artifacts(
@@ -581,6 +740,23 @@ def append_generation_job_status(job_id: str, message: str) -> None:
         if candidate_stage:
             candidate_id, stage = candidate_stage
             job.candidate_stage_map[candidate_id] = stage
+            snapshot = job.candidate_snapshots.setdefault(
+                candidate_id,
+                {
+                    "candidate_id": candidate_id,
+                    "status": "running",
+                    "stage": stage,
+                    "preview_image": "",
+                    "preview_mime_type": "",
+                    "preview_label": "",
+                    "result": None,
+                    "error": "",
+                    "updated_at": datetime.now().strftime("%H:%M:%S"),
+                },
+            )
+            snapshot["status"] = "completed" if "完成" in stage else "running"
+            snapshot["stage"] = stage
+            snapshot["updated_at"] = datetime.now().strftime("%H:%M:%S")
         ts = datetime.now().strftime("%H:%M:%S")
         line = f"[{ts}] {message}"
         if job.status_history and job.status_history[-1] == line:
@@ -588,6 +764,111 @@ def append_generation_job_status(job_id: str, message: str) -> None:
         job.status_history.append(line)
         if len(job.status_history) > GENERATION_STATUS_LINE_LIMIT:
             job.status_history = job.status_history[-GENERATION_STATUS_LINE_LIMIT:]
+
+
+def record_generation_candidate_event(job_id: str, event: dict | None) -> None:
+    job = get_generation_job(job_id)
+    if job is None or not isinstance(event, dict):
+        return
+
+    candidate_id = str(event.get("candidate_id", "")).strip()
+    if not candidate_id:
+        return
+
+    with job.lock:
+        ts = datetime.now().strftime("%H:%M:%S")
+        snapshot = job.candidate_snapshots.setdefault(
+            candidate_id,
+            {
+                "candidate_id": candidate_id,
+                "status": "queued",
+                "stage": "等待开始",
+                "preview_image": "",
+                "preview_mime_type": "",
+                "preview_label": "",
+                "result": None,
+                "error": "",
+                "updated_at": ts,
+            },
+        )
+        kind = str(event.get("kind", "")).strip() or "event"
+        status_value = str(event.get("status", "")).strip()
+        stage_value = str(event.get("stage", "")).strip()
+        message = clean_text(event.get("message", "")) or f"候选 {candidate_id}: {kind}"
+
+        if status_value:
+            snapshot["status"] = status_value
+        if stage_value:
+            snapshot["stage"] = stage_value
+            job.candidate_stage_map[candidate_id] = stage_value
+        if event.get("preview_image"):
+            snapshot["preview_image"] = event["preview_image"]
+            snapshot["preview_mime_type"] = str(event.get("preview_mime_type", "image/png"))
+            snapshot["preview_label"] = str(event.get("preview_label", "") or stage_value or kind)
+        if event.get("error"):
+            snapshot["error"] = clean_text(event.get("error", ""))
+        if event.get("result") is not None:
+            snapshot["result"] = dict(event["result"])
+            snapshot["status"] = "completed"
+            if not snapshot.get("stage"):
+                snapshot["stage"] = "候选流程完成"
+        snapshot["updated_at"] = ts
+
+        timeline_event = {
+            "ts": ts,
+            "candidate_id": candidate_id,
+            "kind": kind,
+            "message": message,
+        }
+        if stage_value:
+            timeline_event["stage"] = stage_value
+        job.event_timeline.append(timeline_event)
+        if len(job.event_timeline) > GENERATION_EVENT_HISTORY_LIMIT:
+            job.event_timeline = job.event_timeline[-GENERATION_EVENT_HISTORY_LIMIT:]
+
+
+def append_generation_job_result(job_id: str, result_data: dict) -> None:
+    job = get_generation_job(job_id)
+    if job is None or not isinstance(result_data, dict):
+        return
+
+    candidate_id = str(get_candidate_id(result_data, len(job.results))).strip()
+    with job.lock:
+        remaining_results = [
+            existing
+            for existing in job.results
+            if str(get_candidate_id(existing, "")) != candidate_id
+        ]
+        remaining_results.append(dict(result_data))
+        job.results = sort_results_stably(remaining_results)
+        snapshot = job.candidate_snapshots.setdefault(
+            candidate_id,
+            {
+                "candidate_id": candidate_id,
+                "status": "completed",
+                "stage": "候选流程完成",
+                "preview_image": "",
+                "preview_mime_type": "",
+                "preview_label": "",
+                "result": None,
+                "error": "",
+                "updated_at": datetime.now().strftime("%H:%M:%S"),
+            },
+        )
+        snapshot["result"] = dict(result_data)
+        snapshot["status"] = "failed" if result_data.get("status") == "failed" else "completed"
+        snapshot["stage"] = "候选失败" if result_data.get("status") == "failed" else "候选流程完成"
+        if snapshot["status"] == "completed":
+            final_image_key, final_desc_key = find_final_stage_keys(
+                result_data,
+                task_name=result_data.get("task_name", job.task_name),
+                exp_mode=result_data.get("exp_mode", job.exp_mode),
+            )
+            if final_image_key and result_data.get(final_image_key):
+                snapshot["preview_image"] = result_data.get(final_image_key, "")
+                snapshot["preview_mime_type"] = "image/png"
+                snapshot["preview_label"] = final_desc_key or "final"
+        snapshot["updated_at"] = datetime.now().strftime("%H:%M:%S")
 
 
 def update_generation_job_progress(
@@ -995,6 +1276,12 @@ def start_generation_background_job(
                 def on_status(message: str):
                     append_generation_job_status(job_id, message)
 
+                def on_event(event: dict):
+                    record_generation_candidate_event(job_id, event)
+
+                def on_result(result_data: dict):
+                    append_generation_job_result(job_id, result_data)
+
                 results, used_concurrency = asyncio.run(
                     process_parallel_candidates(
                         input_data_list,
@@ -1011,6 +1298,8 @@ def start_generation_background_job(
                         max_concurrent=runtime_settings.max_concurrent,
                         progress_callback=on_progress,
                         status_callback=on_status,
+                        event_callback=on_event,
+                        result_callback=on_result,
                         cancel_check=job.cancel_event.is_set,
                     )
                 )
@@ -1091,6 +1380,8 @@ async def process_parallel_candidates(
     max_concurrent=20,
     progress_callback: Optional[Callable[[int, int, int], None]] = None,
     status_callback: Optional[Callable[[str], None]] = None,
+    event_callback: Optional[Callable[[dict], None]] = None,
+    result_callback: Optional[Callable[[dict], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
 ):
     """使用 PaperVizProcessor 并行处理多个候选方案。"""
@@ -1157,6 +1448,7 @@ async def process_parallel_candidates(
     runtime_context = build_runtime_context(
         runtime_settings,
         status_hook=status_callback,
+        cancel_check=cancel_check,
     )
     if not runtime_settings.api_key:
         print(f"[DEBUG] [WARN] 未提供 API Key，Provider 可能无法正常工作")
@@ -1212,9 +1504,15 @@ async def process_parallel_candidates(
                 max_concurrent=concurrent_num,
                 do_eval=False,
                 status_callback=status_callback,
+                event_callback=event_callback,
                 cancel_check=cancel_check,
             ):
                 results.append(result_data)
+                if result_callback:
+                    try:
+                        result_callback(result_data)
+                    except Exception as cb_error:
+                        print(f"[DEBUG] [WARN] 结果回调失败: {cb_error}")
                 if progress_callback:
                     try:
                         progress_callback(len(results), total_candidates, effective_concurrent)
@@ -1276,6 +1574,7 @@ async def refine_image_with_nanoviz(
     active_runtime_context = runtime_context or build_runtime_context(
         runtime_settings,
         status_hook=status_callback,
+        cancel_check=cancel_check,
     )
     owns_runtime_context = runtime_context is None
 
@@ -1294,74 +1593,55 @@ async def refine_image_with_nanoviz(
                 attempt += 1
                 try:
                     if provider == "gemini":
-                        # ====== Gemini 路径：多模态 API，直接传图片字节 ======
-                        gemini_client = generation_utils.get_gemini_client()
-                        if gemini_client is None:
-                            await asyncio.sleep(min(sleep_seconds, 10.0))
-                            sleep_seconds = min(sleep_seconds * 1.2, 15.0)
-                            continue
-
+                        # ====== Gemini 路径：复用统一的阶梯降级与可取消无限重试 ======
                         from google.genai import types
-
-                        contents = [
-                            types.Part.from_text(
-                                text=image_utils.build_gemini_image_prompt(
-                                    edit_prompt,
-                                    aspect_ratio=aspect_ratio,
-                                    image_size=image_size,
-                                )
-                            ),
-                            types.Part.from_bytes(mime_type=normalized_mime_type, data=image_bytes),
-                        ]
-                        config_kwargs = {
-                            "temperature": 1.0,
-                            "max_output_tokens": 8192,
-                            "response_modalities": ["IMAGE"],
-                        }
-                        config = types.GenerateContentConfig(
-                            **config_kwargs,
-                        )
-
-                        selected_model = runtime_settings.image_model_name
-                        gemini_model_sequence = [selected_model]
-                        if selected_model != "gemini-3.1-flash-image-preview":
-                            gemini_model_sequence.append("gemini-3.1-flash-image-preview")
-
-                        # 每 5 次失败切换一次模型（循环）
-                        model_index = ((attempt - 1) // 5) % len(gemini_model_sequence)
-                        image_model = gemini_model_sequence[model_index]
 
                         emit_refine_status(
                             status_callback,
-                            f"[精修][{task_prefix}] attempt={attempt} model={image_model} timeout={int(timeout_seconds)}s",
+                            f"[精修][{task_prefix}] start ladder-retry model={runtime_settings.image_model_name}",
                         )
-                        response = await asyncio.wait_for(
-                            gemini_client.aio.models.generate_content(
-                                model=image_model,
-                                contents=contents,
-                                config=config,
+                        response_list = await generation_utils.call_gemini_with_retry_async(
+                            model_name=runtime_settings.image_model_name,
+                            contents=[
+                                {
+                                    "type": "text",
+                                    "text": image_utils.build_gemini_image_prompt(
+                                        edit_prompt,
+                                        aspect_ratio=aspect_ratio,
+                                        image_size=image_size,
+                                    ),
+                                },
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": normalized_mime_type,
+                                        "data": base64.b64encode(image_bytes).decode("utf-8"),
+                                    },
+                                },
+                            ],
+                            config=types.GenerateContentConfig(
+                                temperature=1.0,
+                                max_output_tokens=8192,
+                                response_modalities=["IMAGE"],
                             ),
-                            timeout=timeout_seconds,
+                            max_attempts=max(2, int(max_attempts or 2)),
+                            retry_delay=5,
+                            error_context=f"refine-image[{task_prefix}]",
                         )
 
-                        if response and response.candidates and response.candidates[0].content.parts:
-                            for part in response.candidates[0].content.parts:
-                                if hasattr(part, "inline_data") and part.inline_data:
-                                    edited_image_data = part.inline_data.data
-                                    if isinstance(edited_image_data, bytes) and edited_image_data:
-                                        emit_refine_status(
-                                            status_callback,
-                                            f"[精修][{task_prefix}] success on attempt={attempt} model={image_model}",
-                                        )
-                                        return edited_image_data, f"✅ 图像精修成功！（第 {attempt} 次尝试）"
-                                    if isinstance(edited_image_data, str) and edited_image_data:
-                                        emit_refine_status(
-                                            status_callback,
-                                            f"[精修][{task_prefix}] success on attempt={attempt} model={image_model}",
-                                        )
-                                        return base64.b64decode(edited_image_data), f"✅ 图像精修成功！（第 {attempt} 次尝试）"
+                        if response_list and response_list[0] and response_list[0] != "Error":
+                            emit_refine_status(
+                                status_callback,
+                                f"[精修][{task_prefix}] success model={runtime_settings.image_model_name}",
+                            )
+                            return base64.b64decode(response_list[0]), "✅ 图像精修成功！"
 
-                        raise RuntimeError("Gemini 未返回有效图像数据")
+                        emit_refine_status(
+                            status_callback,
+                            f"[精修][{task_prefix}] encountered a non-retryable Gemini error",
+                        )
+                        return None, "❌ 图像精修失败：Gemini 返回不可恢复错误"
 
                     else:
                         # ====== Evolink 路径：上传图片获取 URL → image_urls ======
@@ -1508,6 +1788,7 @@ async def refine_images_with_count(
     runtime_context = build_runtime_context(
         runtime_settings,
         status_hook=status_callback,
+        cancel_check=cancel_check,
     )
     semaphore = asyncio.Semaphore(min(safe_count, 3 if provider == "gemini" else 2))
 
@@ -1940,6 +2221,7 @@ def render_generation_history_panel(task_name: str) -> None:
                     snapshot,
                     source_label=f"历史回放：{selected_path.name}",
                 )
+                persist_demo_ui_state()
                 st.rerun()
         with action_col2:
             if st.button("🧹 清除当前结果", use_container_width=True):
@@ -1961,6 +2243,7 @@ def render_generation_history_panel(task_name: str) -> None:
                     "result_source_label",
                 ):
                     st.session_state.pop(key, None)
+                persist_demo_ui_state()
                 st.rerun()
 
 
@@ -2076,6 +2359,71 @@ def render_generation_runtime_panel(snapshot: dict | None, *, requested_candidat
                 ):
                     return "refresh"
     return None
+
+
+def render_generation_live_stream(snapshot: dict | None) -> None:
+    """在按钮下方展示候选流式卡片和事件时间线。"""
+    if not snapshot:
+        return
+
+    candidate_snapshots = snapshot.get("candidate_snapshots", {}) or {}
+    event_timeline = snapshot.get("event_timeline", []) or []
+    if not candidate_snapshots and not event_timeline:
+        return
+
+    def _candidate_sort_key(item):
+        candidate_id = str(item[0])
+        try:
+            return (0, int(candidate_id))
+        except ValueError:
+            return (1, candidate_id)
+
+    st.markdown("### ⚡ 流式生成展示")
+    st.caption("任何阶段变化都会立即写入这里；只要首张预览图生成成功，就不必等整条候选完全结束。")
+
+    if candidate_snapshots:
+        candidate_items = sorted(candidate_snapshots.items(), key=_candidate_sort_key)
+        num_cols = min(3, max(1, len(candidate_items)))
+        for row_start in range(0, len(candidate_items), num_cols):
+            cols = st.columns(num_cols)
+            for col, (candidate_id, candidate_snapshot) in zip(cols, candidate_items[row_start: row_start + num_cols]):
+                with col:
+                    with st.container(border=True):
+                        st.caption(f"候选 {candidate_id}")
+                        st.markdown(f"**{candidate_snapshot.get('stage', '等待开始')}**")
+                        status_label = candidate_snapshot.get("status", "queued")
+                        updated_at = candidate_snapshot.get("updated_at", "")
+                        st.caption(f"状态：{status_label} | 更新时间：{updated_at}")
+                        preview_image = candidate_snapshot.get("preview_image", "")
+                        if preview_image:
+                            preview = base64_to_image(preview_image)
+                            if preview is not None:
+                                st.image(
+                                    preview,
+                                    use_container_width=True,
+                                    caption=candidate_snapshot.get("preview_label", "最新预览"),
+                                )
+                        else:
+                            st.info("当前候选还没有可展示的图像预览。")
+
+                        if candidate_snapshot.get("error"):
+                            st.error(candidate_snapshot["error"])
+
+    if event_timeline:
+        st.markdown("**事件时间线**")
+        latest_events = event_timeline[-GENERATION_EVENT_RENDER_LIMIT:]
+        timeline_lines = [
+            f"[{item.get('ts', '--:--:--')}] 候选 {item.get('candidate_id', '?')} | {item.get('message', '')}"
+            for item in latest_events
+        ]
+        st.code("\n".join(timeline_lines), language="text")
+        if len(event_timeline) > len(latest_events):
+            with st.expander(f"查看全部最近 {len(event_timeline)} 条事件", expanded=False):
+                all_lines = [
+                    f"[{item.get('ts', '--:--:--')}] 候选 {item.get('candidate_id', '?')} | {item.get('message', '')}"
+                    for item in event_timeline
+                ]
+                st.code("\n".join(all_lines), language="text")
 
 
 def render_refine_runtime_panel(snapshot: dict | None, *, requested_images: int) -> str | None:
@@ -2253,6 +2601,7 @@ def render_refine_results_section(
 
 
 def main():
+    restore_persisted_demo_ui_state()
     st.title("🍌 PaperBanana 演示")
     st.markdown("AI 驱动的科学图表生成与精修")
 
@@ -2426,6 +2775,10 @@ def main():
                 concurrency_mode=concurrency_mode,
                 max_concurrent=int(max_concurrent),
                 total_candidates=int(num_candidates),
+                task_name=task_name,
+                retrieval_setting=retrieval_setting,
+                exp_mode=exp_mode,
+                provider=st.session_state.get("tab1_provider", "gemini"),
             )
             estimated_batches_preview = math.ceil(
                 int(num_candidates) / max(1, effective_concurrency_preview)
@@ -2436,8 +2789,10 @@ def main():
                 c1.metric("有效并发", effective_concurrency_preview)
                 c2.metric("预计批次数", estimated_batches_preview)
                 st.caption(
-                    f"策略：{concurrency_mode} | 并发上限：{int(max_concurrent)} | 候选数：{int(num_candidates)}"
+                    f"策略：{concurrency_mode} | 并发上限：{int(max_concurrent)} | 候选数：{int(num_candidates)} | 实际调度：{effective_concurrency_preview}"
                 )
+                if concurrency_mode == "auto":
+                    st.caption("激进 auto：默认按你填写的候选数/并发上限直接放开，只保留候选总数与用户上限这两个硬约束。")
 
             if task_config["uses_render_controls"]:
                 aspect_ratio = st.selectbox(
@@ -2662,8 +3017,10 @@ def main():
         if runtime_panel_action == "cancel" and active_generation_snapshot:
             request_generation_job_cancel(active_generation_snapshot["job_id"])
             st.warning("已发送停止请求，当前进行中的候选会继续完成，未开始的候选将被跳过。")
+            persist_demo_ui_state()
             st.rerun()
         if runtime_panel_action == "refresh":
+            persist_demo_ui_state()
             st.rerun()
         generation_is_running = bool(
             active_generation_snapshot and active_generation_snapshot.get("status") == "running"
@@ -2708,7 +3065,10 @@ def main():
                 st.session_state["active_generation_job_id"] = job_id
                 st.session_state["last_generation_completed_job_id"] = None
                 st.info("已启动后台生成任务，页面会自动刷新显示进度。")
+                persist_demo_ui_state()
                 st.rerun()
+
+        render_generation_live_stream(active_generation_snapshot or finalized_generation_snapshot)
         if generation_is_running:
             time.sleep(1.0)
             st.rerun()
@@ -3112,8 +3472,10 @@ def main():
                 if refine_panel_action == "cancel" and active_refine_snapshot:
                     request_refine_job_cancel(active_refine_snapshot["job_id"])
                     st.warning("已发送停止请求，系统会在当前请求结束后停止后续重试。")
+                    persist_demo_ui_state()
                     st.rerun()
                 if refine_panel_action == "refresh":
+                    persist_demo_ui_state()
                     st.rerun()
                 refine_is_running = bool(
                     active_refine_snapshot and active_refine_snapshot.get("status") == "running"
@@ -3146,6 +3508,7 @@ def main():
                         st.session_state["active_refine_job_id"] = job_id
                         st.session_state["last_refine_completed_job_id"] = None
                         st.info("已启动后台精修任务，页面会自动刷新显示进度。")
+                        persist_demo_ui_state()
                         st.rerun()
 
                 if refine_is_running:
@@ -3170,6 +3533,8 @@ def main():
             fallback_provider=refine_provider,
             fallback_image_model_name=refine_image_model_name,
         )
+
+    persist_demo_ui_state()
 
 if __name__ == "__main__":
     main()

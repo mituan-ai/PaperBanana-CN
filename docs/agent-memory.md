@@ -240,6 +240,22 @@
   - fixed by moving the executor/lock/job-registry bundle behind `get_background_job_runtime()`, backed by `st.cache_resource` in real app runs and a process-local fallback in non-Streamlit unit tests
   - added regression coverage asserting the background runtime registry is a shared resource, so future refactors do not silently break live progress visibility again
 
+- 2026-03-10 Completed in Wave 18:
+  - switched demo candidate concurrency to an aggressive `auto` policy: the UI and runtime now both honor the user-requested candidate count / max-concurrent limit directly, instead of silently capping most Gemini runs to a much smaller heuristic
+  - extended generation jobs with structured candidate snapshots and an event timeline so the Streamlit page can stream `queued -> scheduled -> stage enter -> preview ready -> candidate ready` updates below the start button
+  - wired `PaperVizProcessor` stage transitions and preview-ready image emissions into the job timeline, so the first successful visualizer image appears in the live stream before the full run completes
+  - updated Gemini retry behavior to use a cost-aware fallback ladder (`gemini-3.1-pro-preview` -> `gemini-3.1-flash-lite-preview` -> `gemini-3-flash-preview` for text; `gemini-3-pro-image-preview` -> `gemini-3.1-flash-image-preview` for image), with cancellable infinite retry for transient/provider-side instability rather than eager terminal failure on flaky Pro calls
+  - changed demo UI-state persistence from a disk file in `results/demo/_ui_state/` to a shared in-process runtime store, so refresh restores config, staged refine inputs, and active job pointers without writing API keys to disk
+  - hardened cached runtime compatibility with `_normalize_background_job_runtime(...)`, allowing hot-reloaded Streamlit processes to backfill newly added runtime keys instead of crashing on stale cached dictionaries
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py utils tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_concurrency tests.test_generation_background tests.test_generation_utils_retry tests.test_refine_background tests.test_runtime_settings`
+  - live Playwright validation on `http://127.0.0.1:8503` confirmed:
+    - `候选数=8`, `并发上限=40`, `auto` now renders `有效并发=8`
+    - a real generation run shows the new `⚡ 流式生成展示` section with event timeline entries for slot wait, scheduling, planner, visualizer, preview-ready, and critic stages
+    - a hard browser refresh during an active run restores the configured models/API key/inputs and reconnects the page to the running job panel and live stream
+    - after refresh, the live stream continues forward and shows the first preview image before the full candidate finishes
+
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.
   - dependency versions are still not locked; environment reproduction is improved, but not yet fully pinned.

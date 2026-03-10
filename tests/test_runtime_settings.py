@@ -73,6 +73,7 @@ class RuntimeSettingsTest(unittest.TestCase):
             provider="gemini",
             api_key="runtime-key",
             status_hook=hook,
+            cancel_check=None,
         )
 
 

@@ -49,6 +49,10 @@ model_config = load_model_config(REPO_ROOT)
 runtime_status_hook: Optional[Callable[[str], None]] = None
 
 DEFAULT_GEMINI_IMAGE_FALLBACK_MODEL = "gemini-3.1-flash-image-preview"
+DEFAULT_GEMINI_TEXT_FALLBACK_MODELS = (
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3-flash-preview",
+)
 
 evolink_base_url = get_config_val(
     model_config,
@@ -66,6 +70,7 @@ class RuntimeContext:
     api_key: str = ""
     base_url: str = ""
     status_hook: Optional[Callable[[str], None]] = None
+    cancel_check: Optional[Callable[[], bool]] = None
     gemini_client: Any = None
     anthropic_client: Any = None
     openai_client: Any = None
@@ -149,6 +154,16 @@ def get_active_runtime_context() -> RuntimeContext | None:
     return _active_runtime_context.get() or _default_runtime_context
 
 
+def _runtime_cancel_requested() -> bool:
+    context = get_active_runtime_context()
+    if context is None or context.cancel_check is None:
+        return False
+    try:
+        return bool(context.cancel_check())
+    except Exception:
+        return False
+
+
 def get_evolink_provider():
     context = get_active_runtime_context()
     return context.evolink_provider if context else None
@@ -174,6 +189,7 @@ def create_runtime_context(
     provider: str = "",
     api_key: str = "",
     status_hook: Optional[Callable[[str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
     base_url: str = "",
 ) -> RuntimeContext:
     normalized_provider = str(provider or "").strip().lower()
@@ -183,6 +199,7 @@ def create_runtime_context(
         api_key=str(api_key or "").strip(),
         base_url=resolved_base_url,
         status_hook=status_hook,
+        cancel_check=cancel_check,
     )
 
     if normalized_provider == "evolink" and context.api_key:
@@ -522,14 +539,132 @@ def _is_gemini_image_request(model_name: str, config: Any) -> bool:
     return False
 
 
-def _choose_gemini_text_fallback(model_name: str) -> Optional[str]:
-    """为高风险文本模型选择兜底模型。"""
-    lower_model = (model_name or "").lower()
-    if "gemini-3.1-pro" in lower_model or "gemini-3-pro" in lower_model:
-        return "gemini-2.5-flash"
-    if "gemini-2.0-flash" in lower_model:
-        return "gemini-2.5-flash"
-    return None
+def _build_gemini_model_ladder(
+    model_name: str,
+    *,
+    is_image_request: bool,
+    image_fallback_model: str = DEFAULT_GEMINI_IMAGE_FALLBACK_MODEL,
+) -> List[str]:
+    """Build an ordered retry ladder from expensive/fragile models to cheaper/stabler ones."""
+    normalized = str(model_name or "").strip()
+    lower_model = normalized.lower()
+    ladder: List[str] = []
+
+    def _push(name: str) -> None:
+        candidate = str(name or "").strip()
+        if candidate and candidate not in ladder:
+            ladder.append(candidate)
+
+    _push(normalized)
+    if is_image_request:
+        if "pro-image" in lower_model:
+            _push(image_fallback_model)
+        elif "flash-image" not in lower_model:
+            _push(image_fallback_model)
+    else:
+        if "gemini-3.1-pro" in lower_model or "gemini-3-pro" in lower_model:
+            for fallback_model in DEFAULT_GEMINI_TEXT_FALLBACK_MODELS:
+                _push(fallback_model)
+        elif "flash-lite" in lower_model:
+            _push("gemini-3-flash-preview")
+
+    return ladder
+
+
+def _should_retry_gemini_forever(error_text: str) -> bool:
+    """Retry indefinitely only for provider instability and capacity issues."""
+    lower = str(error_text or "").lower()
+    retry_signals = [
+        "503 unavailable",
+        "high demand",
+        "resource_exhausted",
+        "quota exceeded",
+        "not found",
+        "empty candidates",
+        "empty text response",
+        "empty image candidates",
+        "empty image response",
+        "timed out",
+        "timeout",
+        "deadline exceeded",
+        "connection reset",
+        "internal",
+        "service unavailable",
+        "unavailable",
+        "too many requests",
+        "rate limit",
+    ]
+    return any(sig in lower for sig in retry_signals)
+
+
+def _is_gemini_non_retryable_error(error_text: str) -> bool:
+    """Avoid infinite loops on auth/config/safety/input failures."""
+    lower = str(error_text or "").lower()
+    non_retryable_signals = [
+        "api key not valid",
+        "invalid api key",
+        "permission denied",
+        "unauthenticated",
+        "forbidden",
+        "invalid argument",
+        "bad request",
+        "400 bad request",
+        "401 unauthorized",
+        "403 forbidden",
+        "safety",
+        "blocked",
+        "unsupported",
+    ]
+    return any(sig in lower for sig in non_retryable_signals)
+
+
+def _stage_retry_budget(
+    *,
+    stage_model_name: str,
+    primary_model_name: str,
+    is_image_request: bool,
+    cycle_index: int,
+    requested_attempts: int,
+) -> int:
+    """Balance persistence with API cost by demoting flaky pro models after the first cycle."""
+    safe_requested = max(1, int(requested_attempts or 1))
+    lower_stage = str(stage_model_name or "").lower()
+    lower_primary = str(primary_model_name or "").lower()
+    is_primary = lower_stage == lower_primary
+
+    if is_image_request:
+        if "pro-image" in lower_stage:
+            if cycle_index == 0:
+                return min(2, safe_requested)
+            return 1 if cycle_index % 4 == 0 else 0
+        if "flash-image" in lower_stage:
+            return min(max(2, safe_requested), 4)
+        return min(max(2, safe_requested), 3)
+
+    if "3.1-pro" in lower_stage or ("3-pro" in lower_stage and "image" not in lower_stage):
+        if cycle_index == 0:
+            return min(2, safe_requested)
+        return 1 if cycle_index % 3 == 0 else 0
+    if "flash-lite" in lower_stage:
+        return min(max(2, safe_requested), 3)
+    if "flash-preview" in lower_stage:
+        return min(max(2, safe_requested + 1), 4)
+
+    if is_primary:
+        return min(2, safe_requested)
+    return min(max(2, safe_requested), 3)
+
+
+def _compute_cycle_cooldown_seconds(last_error_text: str, retry_delay: float, cycle_index: int) -> float:
+    base_delay = _compute_retry_delay_seconds(
+        error_text=last_error_text,
+        retry_delay=retry_delay,
+        attempt=min(cycle_index, 4),
+    )
+    if _is_gemini_permanent_quota_block(last_error_text):
+        long_cooldown = min(300.0 * max(1, cycle_index + 1), 1800.0)
+        return float(max(base_delay, long_cooldown))
+    return float(min(max(base_delay, retry_delay), 60.0))
 
 
 def _should_try_text_fallback(error_text: str) -> bool:
@@ -697,7 +832,7 @@ async def call_gemini_with_retry_async(
     image_fallback_model: str = DEFAULT_GEMINI_IMAGE_FALLBACK_MODEL,
     image_fallback_max_attempts: int = 5,
 ):
-    """原始 Gemini API 异步调用（保留兼容性）"""
+    """Gemini 调用：激进并发场景下优先降级，再对可恢复错误做可取消的无限重试。"""
     if get_gemini_client() is None:
         raise RuntimeError("Gemini Client 未初始化，请检查 Google API Key。")
 
@@ -709,6 +844,11 @@ async def call_gemini_with_retry_async(
     current_contents = contents
     is_image_request = _is_gemini_image_request(model_name, config)
     request_timeout_seconds = _get_gemini_request_timeout_seconds(is_image_request)
+    model_ladder = _build_gemini_model_ladder(
+        model_name,
+        is_image_request=is_image_request,
+        image_fallback_model=image_fallback_model,
+    )
 
     async def _run_stage(
         stage_name: str,
@@ -721,6 +861,8 @@ async def call_gemini_with_retry_async(
         last_error_meta: Dict[str, Any] = {}
 
         for attempt_idx in range(stage_attempts):
+            if _runtime_cancel_requested():
+                raise asyncio.CancelledError()
             try:
                 client = get_gemini_client()
                 if client is None:
@@ -808,76 +950,88 @@ async def call_gemini_with_retry_async(
                 }
 
                 if attempt_idx < stage_attempts - 1:
+                    if _runtime_cancel_requested():
+                        raise asyncio.CancelledError()
                     await asyncio.sleep(current_delay)
                 else:
                     _emit_runtime_status(
-                        f"[FAIL] stage={stage_name} model={stage_model_name} exhausted {stage_attempts} attempts"
+                        f"[ROTATE] stage={stage_name} model={stage_model_name} exhausted {stage_attempts} attempts"
                     )
 
         return stage_results[:target_candidate_count], last_error_meta, len(stage_results) >= target_candidate_count
 
     final_error_meta: Dict[str, Any] = {}
-    # Stage 1: primary model
-    primary_results, primary_error_meta, primary_success = await _run_stage(
-        stage_name="primary",
-        stage_model_name=model_name,
-        stage_max_attempts=int(max_attempts),
-    )
-    if primary_success and primary_results:
-        result_list = primary_results
-    else:
-        if primary_error_meta:
-            final_error_meta = primary_error_meta
+    cycle_index = 0
 
-        # Stage 2 for image requests: fixed fallback model + fixed retries
-        if is_image_request:
-            fallback_image_model = (image_fallback_model or "").strip()
-            if fallback_image_model and fallback_image_model != model_name:
-                _emit_runtime_status(
-                    f"[FALLBACK] image model switch: {model_name} -> {fallback_image_model}"
-                )
-                fallback_results, fallback_error_meta, fallback_success = await _run_stage(
-                    stage_name="fallback",
-                    stage_model_name=fallback_image_model,
-                    stage_max_attempts=int(image_fallback_max_attempts),
-                )
-                if fallback_success and fallback_results:
-                    result_list = fallback_results
-                elif fallback_error_meta:
-                    final_error_meta = fallback_error_meta
-        else:
-            # Text requests fallback only when primary error indicates instability/quota.
-            fallback_text_model = _choose_gemini_text_fallback(model_name)
-            if (
-                fallback_text_model
-                and fallback_text_model != model_name
-                and _should_try_text_fallback(str(primary_error_meta.get("error_text", "")))
-            ):
-                _emit_runtime_status(
-                    f"[FALLBACK] text model switch: {model_name} -> {fallback_text_model}"
-                )
-                fallback_results, fallback_error_meta, fallback_success = await _run_stage(
-                    stage_name="fallback_text",
-                    stage_model_name=fallback_text_model,
-                    stage_max_attempts=int(max_attempts),
-                )
-                if fallback_success and fallback_results:
-                    result_list = fallback_results
-                elif fallback_error_meta:
-                    final_error_meta = fallback_error_meta
+    while True:
+        for ladder_index, stage_model_name in enumerate(model_ladder):
+            stage_requested_attempts = (
+                int(max_attempts)
+                if stage_model_name == model_name
+                else int(image_fallback_max_attempts if is_image_request else max_attempts)
+            )
+            stage_attempt_budget = _stage_retry_budget(
+                stage_model_name=stage_model_name,
+                primary_model_name=model_name,
+                is_image_request=is_image_request,
+                cycle_index=cycle_index,
+                requested_attempts=stage_requested_attempts,
+            )
+            if stage_attempt_budget <= 0:
+                continue
 
-    if len(result_list) < target_candidate_count:
-        if final_error_meta:
+            if stage_model_name != model_name or cycle_index > 0:
+                _emit_runtime_status(
+                    f"[FALLBACK] cycle={cycle_index + 1} step={ladder_index + 1}/{len(model_ladder)} "
+                    f"model={stage_model_name}"
+                )
+
+            stage_results, stage_error_meta, stage_success = await _run_stage(
+                stage_name=f"cycle{cycle_index + 1}_step{ladder_index + 1}",
+                stage_model_name=stage_model_name,
+                stage_max_attempts=stage_attempt_budget,
+            )
+            if stage_success and stage_results:
+                result_list = stage_results
+                return result_list[:target_candidate_count]
+            if stage_error_meta:
+                final_error_meta = stage_error_meta
+                error_text = str(stage_error_meta.get("error_text", ""))
+                if _is_gemini_non_retryable_error(error_text):
+                    _emit_runtime_status(
+                        f"[FAIL] non-retryable Gemini error: model={stage_model_name} "
+                        f"code={stage_error_meta.get('code')} status={stage_error_meta.get('status')}"
+                    )
+                    _safe_log(
+                        f"[Gemini] 非可恢复错误 ({error_context}): {stage_error_meta.get('error_text', '')}"
+                    )
+                    result_list.extend(["Error"] * (target_candidate_count - len(result_list)))
+                    return result_list
+
+        if _runtime_cancel_requested():
+            raise asyncio.CancelledError()
+
+        last_error_text = str(final_error_meta.get("error_text", ""))
+        if final_error_meta and not _should_retry_gemini_forever(last_error_text):
             _emit_runtime_status(
-                f"[FAIL] Gemini 全部阶段失败: "
-                f"last_stage={final_error_meta.get('stage')} model={final_error_meta.get('model')} "
-                f"code={final_error_meta.get('code')} status={final_error_meta.get('status')}"
+                f"[FAIL] Gemini retries stopped: "
+                f"last_stage={final_error_meta.get('stage')} model={final_error_meta.get('model')}"
             )
             _safe_log(
-                f"[Gemini] 全部阶段失败 ({error_context}): {final_error_meta.get('error_text', '')}"
+                f"[Gemini] 停止重试 ({error_context}): {final_error_meta.get('error_text', '')}"
             )
-        result_list.extend(["Error"] * (target_candidate_count - len(result_list)))
-    return result_list
+            result_list.extend(["Error"] * (target_candidate_count - len(result_list)))
+            return result_list
+
+        cycle_delay = _compute_cycle_cooldown_seconds(last_error_text, retry_delay, cycle_index)
+        _emit_runtime_status(
+            f"[CYCLE] Gemini 阶梯模型已轮询完成，{cycle_delay:.1f}s 后继续重试 "
+            f"(cycle={cycle_index + 1}, ladder={','.join(model_ladder)})"
+        )
+        if _runtime_cancel_requested():
+            raise asyncio.CancelledError()
+        await asyncio.sleep(cycle_delay)
+        cycle_index += 1
 
 
 # ==================== 原始 Claude/OpenAI 调用函数（保留兼容性） ====================

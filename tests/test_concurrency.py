@@ -18,32 +18,32 @@ class ConcurrencyHeuristicsTest(unittest.TestCase):
             7,
         )
 
-    def test_auto_mode_limits_heavy_diagram_pipeline(self):
+    def test_auto_mode_aggressively_uses_requested_limit(self):
         self.assertEqual(
             compute_effective_concurrency(
                 "auto",
                 12,
-                20,
+                8,
                 task_name="diagram",
                 retrieval_setting="auto-full",
                 exp_mode="demo_full",
                 provider="gemini",
             ),
-            2,
+            8,
         )
 
-    def test_auto_mode_allows_more_parallelism_for_plot_none_retrieval(self):
+    def test_auto_mode_never_exceeds_candidate_count(self):
         self.assertEqual(
             compute_effective_concurrency(
                 "auto",
                 12,
-                20,
+                5,
                 task_name="plot",
                 retrieval_setting="none",
                 exp_mode="vanilla",
                 provider="gemini",
             ),
-            6,
+            5,
         )
 
 

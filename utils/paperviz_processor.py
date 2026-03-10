@@ -134,22 +134,44 @@ class PaperVizProcessor:
         critic_source: str | None,
         candidate_id: Any,
         status_callback: Optional[Callable[[str], None]],
+        event_callback: Optional[Callable[[Dict[str, Any]], None]],
     ) -> Dict[str, Any]:
         state = PipelineState(data, task_name)
 
         if stage_name == "vanilla":
             logger.debug(f"[{candidate_id}] 流水线阶段: vanilla_agent")
             self._emit_status(status_callback, candidate_id, "vanilla 生成中")
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "stage",
+                "status": "running",
+                "stage": "vanilla 生成中",
+                "message": f"候选 {candidate_id}: vanilla 生成中",
+            })
             return await self.vanilla_agent.process(data)
 
         if stage_name == "retriever":
             self._emit_status(status_callback, candidate_id, "retriever 检索中")
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "stage",
+                "status": "running",
+                "stage": "retriever 检索中",
+                "message": f"候选 {candidate_id}: retriever 检索中",
+            })
             data = await self.retriever_agent.process(data, retrieval_setting=retrieval_setting)
             logger.debug(f"[{candidate_id}] ✅ retriever 完成")
             return data
 
         if stage_name == "planner":
             self._emit_status(status_callback, candidate_id, "planner 规划中")
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "stage",
+                "status": "running",
+                "stage": "planner 规划中",
+                "message": f"候选 {candidate_id}: planner 规划中",
+            })
             data = await self.planner_agent.process(data)
             state = PipelineState(data, task_name)
             logger.debug(f"[{candidate_id}] ✅ planner 完成, desc0 长度={len(data.get(state.planner_desc_key(), ''))}")
@@ -157,18 +179,43 @@ class PaperVizProcessor:
 
         if stage_name == "stylist":
             self._emit_status(status_callback, candidate_id, "stylist 风格优化中")
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "stage",
+                "status": "running",
+                "stage": "stylist 风格优化中",
+                "message": f"候选 {candidate_id}: stylist 风格优化中",
+            })
             data = await self.stylist_agent.process(data)
             logger.debug(f"[{candidate_id}] ✅ stylist 完成")
             return data
 
         if stage_name == "visualizer":
             self._emit_status(status_callback, candidate_id, "visualizer 生图中")
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "stage",
+                "status": "running",
+                "stage": "visualizer 生图中",
+                "message": f"候选 {candidate_id}: visualizer 生图中",
+            })
             data = await self.visualizer_agent.process(data)
             state = PipelineState(data, task_name)
             render_desc_key = self._resolve_render_desc_key(state)
             has_img = False
             if render_desc_key:
                 has_img = bool(data.get(state.image_key(render_desc_key)))
+            if has_img and render_desc_key:
+                self._emit_event(event_callback, {
+                    "candidate_id": candidate_id,
+                    "kind": "preview_ready",
+                    "status": "running",
+                    "stage": "visualizer 首张预览已生成",
+                    "message": f"候选 {candidate_id}: 首张预览已生成",
+                    "preview_image": data.get(state.image_key(render_desc_key), ""),
+                    "preview_mime_type": data.get(state.mime_key(render_desc_key), "image/png"),
+                    "preview_label": render_desc_key,
+                })
             logger.debug(f"[{candidate_id}] ✅ visualizer 完成, 图像生成={'成功' if has_img else '失败'}")
             return data
 
@@ -180,12 +227,20 @@ class PaperVizProcessor:
                 source=critic_source or "planner",
                 status_callback=status_callback,
                 candidate_id=candidate_id,
+                event_callback=event_callback,
             )
             logger.debug(f"[{candidate_id}] ✅ critic 迭代完成, eval_image_field={data.get('eval_image_field')}")
             return data
 
         if stage_name == "polish":
             self._emit_status(status_callback, candidate_id, "polish 精修中")
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "stage",
+                "status": "running",
+                "stage": "polish 精修中",
+                "message": f"候选 {candidate_id}: polish 精修中",
+            })
             return await self.polish_agent.process(data)
 
         raise ValueError(f"Unsupported pipeline stage: {stage_name}")
@@ -203,6 +258,18 @@ class PaperVizProcessor:
         except Exception as err:
             logger.warning(f"⚠️  status_callback 失败: {err}")
 
+    @staticmethod
+    def _emit_event(
+        event_callback: Optional[Callable[[Dict[str, Any]], None]],
+        payload: Dict[str, Any],
+    ) -> None:
+        if event_callback is None:
+            return
+        try:
+            event_callback(dict(payload))
+        except Exception as err:
+            logger.warning("⚠️  event_callback 失败: %s", err)
+
     async def _run_critic_iterations(
         self,
         data: Dict[str, Any],
@@ -211,6 +278,7 @@ class PaperVizProcessor:
         source: str = "stylist",
         status_callback: Optional[Callable[[str], None]] = None,
         candidate_id: Any = "N/A",
+        event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """
         Run multi-round critic iteration (up to max_rounds).
@@ -234,6 +302,13 @@ class PaperVizProcessor:
                 candidate_id,
                 f"critic 第 {round_idx + 1}/{max_rounds} 轮",
             )
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "stage",
+                "status": "running",
+                "stage": f"critic 第 {round_idx + 1}/{max_rounds} 轮",
+                "message": f"候选 {candidate_id}: critic 第 {round_idx + 1}/{max_rounds} 轮",
+            })
             state.current_critic_round = round_idx
             data = await self.critic_agent.process(data, source=source)
             state = PipelineState(data, task_name)
@@ -274,6 +349,16 @@ class PaperVizProcessor:
                     candidate_id,
                     f"critic 第 {round_idx + 1}/{max_rounds} 轮可视化成功",
                 )
+                self._emit_event(event_callback, {
+                    "candidate_id": candidate_id,
+                    "kind": "preview_ready",
+                    "status": "running",
+                    "stage": f"critic 第 {round_idx + 1}/{max_rounds} 轮可视化成功",
+                    "message": f"候选 {candidate_id}: critic 第 {round_idx + 1}/{max_rounds} 轮可视化成功",
+                    "preview_image": data.get(new_image_key, ""),
+                    "preview_mime_type": data.get(state.mime_key(state.critic_desc_key(round_idx)), "image/png"),
+                    "preview_label": state.critic_desc_key(round_idx),
+                })
             else:
                 logger.warning(f"⚠️  Critic 第 {round_idx} 轮可视化失败（无有效图像），回滚到: {current_best_image_key}")
                 self._emit_status(
@@ -295,6 +380,7 @@ class PaperVizProcessor:
         data: Dict[str, Any],
         do_eval=True,
         status_callback: Optional[Callable[[str], None]] = None,
+        event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """
         Complete processing pipeline for a single query
@@ -315,6 +401,13 @@ class PaperVizProcessor:
         logger.debug(f"   exp_mode={exp_mode}, task={task_name}, retrieval={retrieval_setting}, provider={self.exp_config.provider}")
         logger.debug(f"[{candidate_id}] 流水线: {self._format_stage_sequence(spec, max_rounds)}")
         self._emit_status(status_callback, candidate_id, "开始处理")
+        self._emit_event(event_callback, {
+            "candidate_id": candidate_id,
+            "kind": "stage",
+            "status": "running",
+            "stage": "开始处理",
+            "message": f"候选 {candidate_id}: 开始处理",
+        })
         effective_do_eval = do_eval and not spec.disable_eval
 
         for stage_name in spec.stages:
@@ -327,6 +420,7 @@ class PaperVizProcessor:
                 critic_source=spec.critic_source,
                 candidate_id=candidate_id,
                 status_callback=status_callback,
+                event_callback=event_callback,
             )
 
         if spec.eval_image_source:
@@ -349,6 +443,7 @@ class PaperVizProcessor:
         max_concurrent: int = 50,
         do_eval: bool = True,
         status_callback: Optional[Callable[[str], None]] = None,
+        event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -363,11 +458,19 @@ class PaperVizProcessor:
                 self._emit_status(status_callback, candidate_id, "任务已取消，跳过未开始的候选")
                 raise asyncio.CancelledError()
             self._emit_status(status_callback, candidate_id, "进入并发执行")
+            self._emit_event(event_callback, {
+                "candidate_id": candidate_id,
+                "kind": "scheduled",
+                "status": "running",
+                "stage": "进入并发执行",
+                "message": f"候选 {candidate_id}: 进入并发执行",
+            })
             try:
                 result = await self.process_single_query(
                     doc,
                     do_eval=do_eval,
                     status_callback=status_callback,
+                    event_callback=event_callback,
                 )
                 if isinstance(result, dict):
                     result.setdefault("input_index", input_index)
@@ -393,6 +496,14 @@ class PaperVizProcessor:
                     candidate_id,
                     f"候选失败: {err_summary}",
                 )
+                self._emit_event(event_callback, {
+                    "candidate_id": candidate_id,
+                    "kind": "candidate_failed",
+                    "status": "failed",
+                    "stage": "候选失败",
+                    "message": f"候选 {candidate_id}: 候选失败: {err_summary}",
+                    "error": err_summary,
+                })
                 try:
                     safe_detail = err_detail.encode("utf-8", errors="backslashreplace").decode("utf-8", errors="ignore")
                     logger.error(f"❌ candidate={candidate_id} 失败: {err_summary}\n{safe_detail}")
@@ -432,6 +543,13 @@ class PaperVizProcessor:
                 prepared_data = prepared_items[next_schedule_index]
                 candidate_id = prepared_data.get("candidate_id", next_schedule_index)
                 self._emit_status(status_callback, candidate_id, "等待并发槽位")
+                self._emit_event(event_callback, {
+                    "candidate_id": candidate_id,
+                    "kind": "queued",
+                    "status": "queued",
+                    "stage": "等待并发槽位",
+                    "message": f"候选 {candidate_id}: 等待并发槽位",
+                })
                 task = asyncio.create_task(process_one(prepared_data))
                 active_tasks[task] = next_schedule_index
                 next_schedule_index += 1
@@ -453,6 +571,20 @@ class PaperVizProcessor:
                         result_data = await future
                     except asyncio.CancelledError:
                         continue
+                    candidate_id = result_data.get("candidate_id", result_data.get("input_index", "?"))
+                    self._emit_event(event_callback, {
+                        "candidate_id": candidate_id,
+                        "kind": "candidate_result",
+                        "status": "failed" if result_data.get("status") == "failed" else "completed",
+                        "stage": "候选失败" if result_data.get("status") == "failed" else "候选流程完成",
+                        "message": (
+                            f"候选 {candidate_id}: 候选失败"
+                            if result_data.get("status") == "failed"
+                            else f"候选 {candidate_id}: 候选已完成并可展示"
+                        ),
+                        "result": result_data,
+                        "error": result_data.get("error", ""),
+                    })
                     completed_results.append(result_data)
                     result_index = int(result_data.get("input_index", next_yield_index) or 0)
                     buffered_results[result_index] = result_data
