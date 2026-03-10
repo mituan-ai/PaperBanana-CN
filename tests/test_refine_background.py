@@ -83,8 +83,12 @@ class RefineBackgroundJobTest(unittest.TestCase):
     def test_background_refine_job_records_results(self):
         original = demo.refine_images_with_count
 
-        async def fake_refine_images_with_count(**kwargs):
+        async def fake_refine_images_with_count(status_callback=None, progress_callback=None, **kwargs):
+            if status_callback:
+                status_callback("[精修][task#1] attempt=1 model=test-image-model")
             await asyncio.sleep(0.01)
+            if progress_callback:
+                progress_callback(1, 1)
             return [(b"image-bytes", "ok")]
 
         demo.refine_images_with_count = fake_refine_images_with_count
@@ -104,6 +108,9 @@ class RefineBackgroundJobTest(unittest.TestCase):
 
             self.assertEqual(snapshot["status"], "completed")
             self.assertEqual(len(snapshot["refined_images"]), 1)
+            self.assertTrue(
+                any("attempt=1 model=test-image-model" in line for line in snapshot["status_history"])
+            )
         finally:
             demo.refine_images_with_count = original
             demo.clear_refine_job(job_id)

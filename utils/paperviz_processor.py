@@ -437,7 +437,11 @@ class PaperVizProcessor:
                 next_schedule_index += 1
 
         schedule_more()
-        with tqdm(total=len(prepared_items), desc="Processing concurrently") as pbar:
+        with tqdm(
+            total=len(prepared_items),
+            desc="Processing concurrently",
+            disable=status_callback is not None,
+        ) as pbar:
             while active_tasks:
                 done, _ = await asyncio.wait(
                     active_tasks.keys(),

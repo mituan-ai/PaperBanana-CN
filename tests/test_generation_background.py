@@ -2,6 +2,7 @@ import asyncio
 import base64
 import importlib
 import json
+import logging
 import sys
 import tempfile
 import time
@@ -34,6 +35,14 @@ def _build_png_base64() -> str:
 class GenerationBackgroundJobTest(unittest.TestCase):
     def setUp(self):
         demo.st.session_state.clear()
+
+    def test_background_job_runtime_is_shared_resource(self):
+        runtime_a = demo.get_background_job_runtime()
+        runtime_b = demo.get_background_job_runtime()
+
+        self.assertIs(runtime_a, runtime_b)
+        self.assertIs(runtime_a["generation_jobs"], demo.GENERATION_JOBS)
+        self.assertIs(runtime_a["refine_jobs"], demo.REFINE_JOBS)
 
     def _wait_for_terminal_snapshot(self, job_id: str, timeout: float = 5.0) -> dict:
         deadline = time.time() + timeout
@@ -187,6 +196,73 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertEqual(snapshot["status"], "cancelled")
             self.assertTrue(snapshot["cancel_requested"])
             self.assertLess(len(snapshot["results"]), 3)
+        finally:
+            demo.process_parallel_candidates = original_process
+            demo.save_demo_generation_artifacts = original_save
+            if job_id:
+                demo.clear_generation_job(job_id)
+
+    def test_background_generation_job_captures_stage_updates_and_logger_output(self):
+        original_process = demo.process_parallel_candidates
+        original_save = demo.save_demo_generation_artifacts
+
+        async def fake_process_parallel_candidates(data_list, progress_callback=None, status_callback=None, **kwargs):
+            if progress_callback:
+                progress_callback(0, 1, 1)
+            if status_callback:
+                status_callback("候选 0: planner 规划中")
+            logging.getLogger("PlannerAgent").info("测试规划日志已同步")
+            await asyncio.sleep(0.01)
+            result = {
+                "candidate_id": 0,
+                "task_name": "diagram",
+                "dataset_name": "PaperBananaBench",
+                "exp_mode": "demo_planner_critic",
+                "eval_image_field": "target_diagram_desc0_base64_jpg",
+                "target_diagram_desc0_base64_jpg": _build_png_base64(),
+            }
+            if progress_callback:
+                progress_callback(1, 1, 1)
+            return [result], 1
+
+        def fake_save_demo_generation_artifacts(**kwargs):
+            return {
+                "summary": {"total_candidates": 1},
+                "failures": [],
+                "json_file": "D:/tmp/logged_generation.json",
+                "bundle_file": "D:/tmp/logged_generation.bundle.json",
+                "manifest": {},
+            }
+
+        demo.process_parallel_candidates = fake_process_parallel_candidates
+        demo.save_demo_generation_artifacts = fake_save_demo_generation_artifacts
+        job_id = None
+        try:
+            job_id = demo.start_generation_background_job(
+                dataset_name="PaperBananaBench",
+                task_name="diagram",
+                exp_mode="demo_planner_critic",
+                retrieval_setting="none",
+                curated_profile="default",
+                provider="gemini",
+                api_key="local-test-key",
+                model_name="gemini-3.1-flash-lite-preview",
+                image_model_name="gemini-3.1-flash-image-preview",
+                concurrency_mode="manual",
+                max_concurrent=1,
+                num_candidates=1,
+                max_critic_rounds=1,
+                aspect_ratio="16:9",
+                image_resolution="2K",
+                content="paper method",
+                visual_intent="draw a pipeline",
+            )
+            snapshot = self._wait_for_terminal_snapshot(job_id)
+
+            self.assertEqual(snapshot["candidate_stage_map"]["0"], "planner 规划中")
+            self.assertTrue(
+                any("测试规划日志已同步" in line for line in snapshot["status_history"])
+            )
         finally:
             demo.process_parallel_candidates = original_process
             demo.save_demo_generation_artifacts = original_save

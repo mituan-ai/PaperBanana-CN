@@ -25,8 +25,11 @@ import json
 import time
 import re
 import html
+import logging
 import threading
 import uuid
+from collections import Counter
+from contextlib import contextmanager
 from io import BytesIO
 from PIL import Image
 from pathlib import Path
@@ -113,6 +116,22 @@ st.set_page_config(
     page_icon="🍌"
 )
 
+GENERATION_STATUS_LINE_LIMIT = 200
+GENERATION_LOG_RENDER_LIMIT = 14
+REFINE_STATUS_LINE_LIMIT = 120
+REFINE_LOG_RENDER_LIMIT = 12
+GENERATION_CANDIDATE_STATUS_RE = re.compile(r"^候选\s+(.+?):\s*(.+)$")
+GENERATION_LOGGER_NAMES = {
+    "PaperVizProcessor",
+    "PlannerAgent",
+    "RetrieverAgent",
+    "VisualizerAgent",
+    "CriticAgent",
+    "PolishAgent",
+    "GenerationUtils",
+    "ImageUtils",
+}
+
 def clean_text(text):
     """清理文本，移除无效的 UTF-8 代理字符。"""
     if not text:
@@ -149,6 +168,33 @@ def safe_log_text(value, max_len=2000):
     if len(safe) > max_len:
         return safe[:max_len] + f"...(truncated {len(safe)-max_len} chars)"
     return safe
+
+
+def emit_generation_status(status_callback: Optional[Callable[[str], None]], message: str) -> None:
+    """向 UI 发送生成实时状态。"""
+    if not status_callback or not message:
+        return
+    try:
+        status_callback(message)
+    except Exception as cb_error:
+        try:
+            print(f"[DEBUG] [WARN] 生成状态回调失败: {safe_log_text(cb_error)}")
+        except Exception:
+            pass
+
+
+def extract_generation_candidate_stage(message: str) -> tuple[str, str] | None:
+    """从状态文本中提取候选当前阶段。"""
+    if not message:
+        return None
+    match = GENERATION_CANDIDATE_STATUS_RE.match(str(message).strip())
+    if not match:
+        return None
+    candidate_id = match.group(1).strip()
+    stage = match.group(2).strip()
+    if not candidate_id or not stage:
+        return None
+    return candidate_id, stage
 
 
 def get_refine_request_timeout_seconds(provider: str) -> float:
@@ -255,12 +301,39 @@ def build_provider_defaults():
 
 
 PROVIDER_DEFAULTS = build_provider_defaults()
-GENERATION_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=1)
-GENERATION_JOBS_LOCK = threading.Lock()
-GENERATION_JOBS: dict[str, "GenerationJobState"] = {}
-REFINE_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2)
-REFINE_JOBS_LOCK = threading.Lock()
-REFINE_JOBS: dict[str, "RefineJobState"] = {}
+_BACKGROUND_JOB_RUNTIME_FALLBACK = None
+
+
+def _build_background_job_runtime() -> dict:
+    return {
+        "generation_executor": ThreadPoolExecutor(max_workers=1),
+        "generation_jobs_lock": threading.Lock(),
+        "generation_jobs": {},
+        "refine_executor": ThreadPoolExecutor(max_workers=2),
+        "refine_jobs_lock": threading.Lock(),
+        "refine_jobs": {},
+    }
+
+
+if hasattr(st, "cache_resource"):
+    @st.cache_resource(show_spinner=False)
+    def get_background_job_runtime() -> dict:
+        return _build_background_job_runtime()
+else:
+    def get_background_job_runtime() -> dict:
+        global _BACKGROUND_JOB_RUNTIME_FALLBACK
+        if _BACKGROUND_JOB_RUNTIME_FALLBACK is None:
+            _BACKGROUND_JOB_RUNTIME_FALLBACK = _build_background_job_runtime()
+        return _BACKGROUND_JOB_RUNTIME_FALLBACK
+
+
+BACKGROUND_JOB_RUNTIME = get_background_job_runtime()
+GENERATION_JOB_EXECUTOR = BACKGROUND_JOB_RUNTIME["generation_executor"]
+GENERATION_JOBS_LOCK = BACKGROUND_JOB_RUNTIME["generation_jobs_lock"]
+GENERATION_JOBS = BACKGROUND_JOB_RUNTIME["generation_jobs"]
+REFINE_JOB_EXECUTOR = BACKGROUND_JOB_RUNTIME["refine_executor"]
+REFINE_JOBS_LOCK = BACKGROUND_JOB_RUNTIME["refine_jobs_lock"]
+REFINE_JOBS = BACKGROUND_JOB_RUNTIME["refine_jobs"]
 
 
 @dataclass
@@ -288,6 +361,7 @@ class GenerationJobState:
     effective_concurrent: int = 0
     estimated_batches: int = 0
     status_history: list[str] = field(default_factory=list)
+    candidate_stage_map: dict[str, str] = field(default_factory=dict)
     results: list[dict] = field(default_factory=list)
     summary: dict = field(default_factory=dict)
     failures: list[dict] = field(default_factory=list)
@@ -327,6 +401,7 @@ class GenerationJobState:
                 "effective_concurrent": self.effective_concurrent,
                 "estimated_batches": self.estimated_batches,
                 "status_history": list(self.status_history),
+                "candidate_stage_map": dict(self.candidate_stage_map),
                 "results": list(self.results),
                 "summary": dict(self.summary),
                 "failures": list(self.failures),
@@ -502,13 +577,17 @@ def append_generation_job_status(job_id: str, message: str) -> None:
     if job is None or not message:
         return
     with job.lock:
+        candidate_stage = extract_generation_candidate_stage(message)
+        if candidate_stage:
+            candidate_id, stage = candidate_stage
+            job.candidate_stage_map[candidate_id] = stage
         ts = datetime.now().strftime("%H:%M:%S")
         line = f"[{ts}] {message}"
         if job.status_history and job.status_history[-1] == line:
             return
         job.status_history.append(line)
-        if len(job.status_history) > 50:
-            job.status_history = job.status_history[-50:]
+        if len(job.status_history) > GENERATION_STATUS_LINE_LIMIT:
+            job.status_history = job.status_history[-GENERATION_STATUS_LINE_LIMIT:]
 
 
 def update_generation_job_progress(
@@ -535,6 +614,44 @@ def request_generation_job_cancel(job_id: str) -> None:
         job.cancel_requested = True
         job.cancel_event.set()
     append_generation_job_status(job_id, "[生成] 已收到停止请求，当前进行中的候选会继续完成，未开始的候选将被跳过。")
+
+
+class GenerationJobLogHandler(logging.Handler):
+    """将关键运行日志桥接到生成任务状态历史，便于页面同步展示。"""
+
+    def __init__(self, job_id: str):
+        super().__init__(level=logging.INFO)
+        self.job_id = job_id
+        self.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.name not in GENERATION_LOGGER_NAMES:
+            return
+        if record.levelno < logging.INFO:
+            return
+        try:
+            message = self.format(record)
+        except Exception:
+            message = f"[{record.name}] {record.getMessage()}"
+        append_generation_job_status(self.job_id, safe_log_text(message, max_len=400))
+
+
+@contextmanager
+def capture_generation_job_logs(job_id: str):
+    handler = GenerationJobLogHandler(job_id)
+    logger_objects = [logging.getLogger(name) for name in GENERATION_LOGGER_NAMES]
+    original_levels = {logger_obj: logger_obj.level for logger_obj in logger_objects}
+    for logger_obj in logger_objects:
+        logger_obj.addHandler(handler)
+        if logger_obj.getEffectiveLevel() > logging.INFO:
+            logger_obj.setLevel(logging.INFO)
+    try:
+        yield
+    finally:
+        for logger_obj in logger_objects:
+            logger_obj.removeHandler(handler)
+            logger_obj.setLevel(original_levels[logger_obj])
+        handler.close()
 
 
 def persist_generation_job_results(snapshot: dict, *, source_label: str = "后台生成任务") -> None:
@@ -745,8 +862,8 @@ def append_refine_job_status(job_id: str, message: str) -> None:
         if job.status_history and job.status_history[-1] == line:
             return
         job.status_history.append(line)
-        if len(job.status_history) > 20:
-            job.status_history = job.status_history[-20:]
+        if len(job.status_history) > REFINE_STATUS_LINE_LIMIT:
+            job.status_history = job.status_history[-REFINE_STATUS_LINE_LIMIT:]
 
 
 def update_refine_job_progress(job_id: str, done_count: int, total_count: int) -> None:
@@ -860,92 +977,100 @@ def start_generation_background_job(
 
     def worker():
         started_at = time.perf_counter()
-        try:
-            input_data_list = create_sample_inputs(
-                content=content,
-                visual_intent=visual_intent,
-                task_name=normalized_task_name,
-                aspect_ratio=aspect_ratio,
-                num_copies=requested_candidates,
-                max_critic_rounds=runtime_settings.max_critic_rounds,
-                image_resolution=image_resolution,
-            )
-
-            def on_progress(done_count: int, total_count: int, effective_count: int):
-                update_generation_job_progress(job_id, done_count, total_count, effective_count)
-
-            def on_status(message: str):
-                append_generation_job_status(job_id, message)
-
-            results, used_concurrency = asyncio.run(
-                process_parallel_candidates(
-                    input_data_list,
-                    dataset_name=dataset_name,
-                    task_name=normalized_task_name,
-                    exp_mode=exp_mode,
-                    retrieval_setting=retrieval_setting,
-                    curated_profile=curated_profile,
-                    model_name=runtime_settings.model_name,
-                    image_model_name=runtime_settings.image_model_name,
-                    provider=runtime_settings.provider,
-                    api_key=runtime_settings.api_key,
-                    concurrency_mode=runtime_settings.concurrency_mode,
-                    max_concurrent=runtime_settings.max_concurrent,
-                    progress_callback=on_progress,
-                    status_callback=on_status,
-                    cancel_check=job.cancel_event.is_set,
-                )
-            )
-            results = sort_results_stably(results)
-            run_status = "cancelled" if job.cancel_requested else "completed"
-            artifact_payload = {}
+        with capture_generation_job_logs(job_id):
             try:
-                artifact_payload = save_demo_generation_artifacts(
-                    results=results,
-                    dataset_name=dataset_name,
+                input_data_list = create_sample_inputs(
+                    content=content,
+                    visual_intent=visual_intent,
                     task_name=normalized_task_name,
-                    exp_mode=exp_mode,
-                    retrieval_setting=retrieval_setting,
-                    curated_profile=curated_profile,
-                    provider=runtime_settings.provider,
-                    model_name=runtime_settings.model_name,
-                    image_model_name=runtime_settings.image_model_name,
-                    concurrency_mode=runtime_settings.concurrency_mode,
-                    max_concurrent=runtime_settings.max_concurrent,
+                    aspect_ratio=aspect_ratio,
+                    num_copies=requested_candidates,
                     max_critic_rounds=runtime_settings.max_critic_rounds,
-                    requested_candidates=requested_candidates,
-                    effective_concurrent=used_concurrency,
-                    timestamp_str=job.created_at,
-                    run_status=run_status,
+                    image_resolution=image_resolution,
                 )
-            except Exception as save_err:
-                append_generation_job_status(job_id, f"[生成][WARN] 结果写盘失败: {save_err}")
 
-            with job.lock:
-                job.results = results
-                job.summary = artifact_payload.get("summary", build_result_summary(results))
-                job.failures = artifact_payload.get("failures", build_failure_manifest(results))
-                job.json_file = artifact_payload.get("json_file", "")
-                job.bundle_file = artifact_payload.get("bundle_file", "")
-                job.progress_done = len(results)
-                job.progress_total = requested_candidates
-                job.effective_concurrent = int(used_concurrency)
-                job.estimated_batches = math.ceil(requested_candidates / max(1, used_concurrency))
-                job.elapsed_seconds = time.perf_counter() - started_at
-                job.status = run_status
-            append_generation_job_status(
-                job_id,
-                (
-                    f"[生成] finished status={run_status} "
-                    f"completed={len(results)}/{requested_candidates}"
-                ),
-            )
-        except Exception as exc:
-            with job.lock:
-                job.status = "failed"
-                job.error = f"{type(exc).__name__}: {exc}"
-                job.elapsed_seconds = time.perf_counter() - started_at
-            append_generation_job_status(job_id, f"[生成] failed: {job.error}")
+                def on_progress(done_count: int, total_count: int, effective_count: int):
+                    update_generation_job_progress(job_id, done_count, total_count, effective_count)
+
+                def on_status(message: str):
+                    append_generation_job_status(job_id, message)
+
+                results, used_concurrency = asyncio.run(
+                    process_parallel_candidates(
+                        input_data_list,
+                        dataset_name=dataset_name,
+                        task_name=normalized_task_name,
+                        exp_mode=exp_mode,
+                        retrieval_setting=retrieval_setting,
+                        curated_profile=curated_profile,
+                        model_name=runtime_settings.model_name,
+                        image_model_name=runtime_settings.image_model_name,
+                        provider=runtime_settings.provider,
+                        api_key=runtime_settings.api_key,
+                        concurrency_mode=runtime_settings.concurrency_mode,
+                        max_concurrent=runtime_settings.max_concurrent,
+                        progress_callback=on_progress,
+                        status_callback=on_status,
+                        cancel_check=job.cancel_event.is_set,
+                    )
+                )
+                results = sort_results_stably(results)
+                run_status = "cancelled" if job.cancel_requested else "completed"
+                artifact_payload = {}
+                try:
+                    artifact_payload = save_demo_generation_artifacts(
+                        results=results,
+                        dataset_name=dataset_name,
+                        task_name=normalized_task_name,
+                        exp_mode=exp_mode,
+                        retrieval_setting=retrieval_setting,
+                        curated_profile=curated_profile,
+                        provider=runtime_settings.provider,
+                        model_name=runtime_settings.model_name,
+                        image_model_name=runtime_settings.image_model_name,
+                        concurrency_mode=runtime_settings.concurrency_mode,
+                        max_concurrent=runtime_settings.max_concurrent,
+                        max_critic_rounds=runtime_settings.max_critic_rounds,
+                        requested_candidates=requested_candidates,
+                        effective_concurrent=used_concurrency,
+                        timestamp_str=job.created_at,
+                        run_status=run_status,
+                    )
+                    append_generation_job_status(
+                        job_id,
+                        (
+                            f"[生成] 结果已保存：JSON={Path(artifact_payload.get('json_file', '')).name or 'N/A'} | "
+                            f"Bundle={Path(artifact_payload.get('bundle_file', '')).name or 'N/A'}"
+                        ),
+                    )
+                except Exception as save_err:
+                    append_generation_job_status(job_id, f"[生成][WARN] 结果写盘失败: {save_err}")
+
+                with job.lock:
+                    job.results = results
+                    job.summary = artifact_payload.get("summary", build_result_summary(results))
+                    job.failures = artifact_payload.get("failures", build_failure_manifest(results))
+                    job.json_file = artifact_payload.get("json_file", "")
+                    job.bundle_file = artifact_payload.get("bundle_file", "")
+                    job.progress_done = len(results)
+                    job.progress_total = requested_candidates
+                    job.effective_concurrent = int(used_concurrency)
+                    job.estimated_batches = math.ceil(requested_candidates / max(1, used_concurrency))
+                    job.elapsed_seconds = time.perf_counter() - started_at
+                    job.status = run_status
+                append_generation_job_status(
+                    job_id,
+                    (
+                        f"[生成] finished status={run_status} "
+                        f"completed={len(results)}/{requested_candidates}"
+                    ),
+                )
+            except Exception as exc:
+                with job.lock:
+                    job.status = "failed"
+                    job.error = f"{type(exc).__name__}: {exc}"
+                    job.elapsed_seconds = time.perf_counter() - started_at
+                append_generation_job_status(job_id, f"[生成] failed: {job.error}")
 
     job.future = GENERATION_JOB_EXECUTOR.submit(worker)
     return job_id
@@ -990,6 +1115,20 @@ async def process_parallel_candidates(
     print(f"[DEBUG]   concurrency_mode={concurrency_mode}, max_concurrent={max_concurrent}, effective={effective_concurrent}")
     print(f"[DEBUG]   api_key={'已设置 (' + api_key[:8] + '...)' if api_key else '未设置'}")
     print(f"{'='*60}")
+    emit_generation_status(
+        status_callback,
+        (
+            f"[生成] 已启动：task={task_name} | provider={provider} | "
+            f"流水线={exp_mode} | 检索={retrieval_setting} | 候选={total_candidates}"
+        ),
+    )
+    emit_generation_status(
+        status_callback,
+        (
+            f"[生成] 运行配置：文本模型={model_name or 'N/A'} | "
+            f"图像模型={image_model_name or 'N/A'} | 有效并发={effective_concurrent}"
+        ),
+    )
 
     if progress_callback:
         try:
@@ -1041,6 +1180,13 @@ async def process_parallel_candidates(
         f"[DEBUG] ExpConfig 已创建: task={exp_config.task_name}, provider={exp_config.provider}, "
         f"model={exp_config.model_name}, image_model={exp_config.image_model_name}"
     )
+    emit_generation_status(
+        status_callback,
+        (
+            f"[生成] ExpConfig 就绪：provider={exp_config.provider} | "
+            f"text={exp_config.model_name or 'N/A'} | image={exp_config.image_model_name or 'N/A'}"
+        ),
+    )
 
     # 初始化处理器及所有代理
     processor = PaperVizProcessor(
@@ -1060,6 +1206,7 @@ async def process_parallel_candidates(
 
     try:
         with generation_utils.use_runtime_context(runtime_context):
+            emit_generation_status(status_callback, "[生成] 处理器已就绪，开始并发调度候选")
             async for result_data in processor.process_queries_batch(
                 data_list,
                 max_concurrent=concurrent_num,
@@ -1458,6 +1605,14 @@ def start_refine_background_job(
     )
     _store_refine_job(job)
     append_refine_job_status(job_id, f"[精修] input mime={input_mime_type}, bytes={len(image_bytes)}")
+    append_refine_job_status(
+        job_id,
+        (
+            f"[精修] 已启动：provider={runtime_settings.provider} | "
+            f"model={runtime_settings.image_model_name} | 分辨率={image_size} | "
+            f"宽高比={aspect_ratio} | 目标张数={int(num_images)}"
+        ),
+    )
 
     def worker():
         started_at = time.perf_counter()
@@ -1807,6 +1962,191 @@ def render_generation_history_panel(task_name: str) -> None:
                 ):
                     st.session_state.pop(key, None)
                 st.rerun()
+
+
+def render_generation_runtime_panel(snapshot: dict | None, *, requested_candidates: int) -> str | None:
+    """在首屏展示后台生成任务的实时状态、候选阶段和最近日志。"""
+    if not snapshot:
+        return None
+
+    status = snapshot.get("status", "running")
+    status_titles = {
+        "running": "🚧 生成任务运行中",
+        "completed": "✅ 生成任务已完成",
+        "cancelled": "⛔ 生成任务已停止",
+        "failed": "❌ 生成任务失败",
+    }
+    status_labels = {
+        "running": "运行中",
+        "completed": "已完成",
+        "cancelled": "已停止",
+        "failed": "失败",
+    }
+    progress_done = int(snapshot.get("progress_done", 0) or 0)
+    progress_total = int(snapshot.get("progress_total", requested_candidates) or requested_candidates or 0)
+    progress_total = max(progress_total, 1)
+    ratio = min(progress_done / progress_total, 1.0)
+    candidate_stage_map = snapshot.get("candidate_stage_map", {}) or {}
+    stage_counter = Counter(candidate_stage_map.values())
+    status_lines = snapshot.get("status_history", []) or []
+    latest_lines = status_lines[-GENERATION_LOG_RENDER_LIMIT:]
+
+    def _candidate_sort_key(item):
+        candidate_id = str(item[0])
+        try:
+            return (0, int(candidate_id))
+        except ValueError:
+            return (1, candidate_id)
+
+    with st.container(border=True):
+        st.markdown(f"### {status_titles.get(status, '🧭 生成任务状态')}")
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("状态", status_labels.get(status, status))
+        metric_cols[1].metric("进度", f"{progress_done}/{progress_total}")
+        metric_cols[2].metric("有效并发", int(snapshot.get("effective_concurrent", 0) or 0))
+        metric_cols[3].metric("最近日志", len(status_lines))
+
+        st.caption(
+            f"Provider: {snapshot.get('provider')} | 文本模型: {snapshot.get('model_name') or 'N/A'} | "
+            f"图像模型: {snapshot.get('image_model_name') or 'N/A'} | "
+            f"流水线: {snapshot.get('exp_mode')} | 检索: {snapshot.get('retrieval_setting')}"
+        )
+        st.progress(
+            ratio,
+            text=(
+                f"总体进度：已完成 {progress_done}/{progress_total} 个候选 | "
+                f"预计批次 {int(snapshot.get('estimated_batches', 0) or 0)}"
+            ),
+        )
+
+        if stage_counter:
+            summary_text = " | ".join(
+                f"{stage} ×{count}"
+                for stage, count in stage_counter.most_common()
+            )
+            st.caption(f"候选阶段汇总：{summary_text}")
+
+        if candidate_stage_map:
+            st.markdown("**候选实时阶段**")
+            candidate_items = sorted(candidate_stage_map.items(), key=_candidate_sort_key)
+            num_cols = min(3, len(candidate_items))
+            for row_start in range(0, len(candidate_items), num_cols):
+                cols = st.columns(num_cols)
+                for col, (candidate_id, stage) in zip(cols, candidate_items[row_start: row_start + num_cols]):
+                    with col:
+                        with st.container(border=True):
+                            st.caption(f"候选 {candidate_id}")
+                            st.write(stage)
+
+        if latest_lines:
+            st.markdown("**实时日志**")
+            st.code("\n".join(latest_lines), language="text")
+            if len(status_lines) > len(latest_lines):
+                with st.expander(f"查看全部最近 {len(status_lines)} 条日志", expanded=False):
+                    st.code("\n".join(status_lines), language="text")
+
+        if status == "failed" and snapshot.get("error"):
+            st.error(f"后台任务报错：{snapshot.get('error')}")
+
+        if status in {"completed", "cancelled"}:
+            file_bits = []
+            json_file = snapshot.get("json_file")
+            bundle_file = snapshot.get("bundle_file")
+            if json_file:
+                file_bits.append(f"JSON: {Path(json_file).name}")
+            if bundle_file:
+                file_bits.append(f"Bundle: {Path(bundle_file).name}")
+            if file_bits:
+                st.caption("结果文件：" + " | ".join(file_bits))
+
+        if status == "running":
+            action_col1, action_col2 = st.columns(2)
+            with action_col1:
+                if st.button(
+                    "🛑 停止生成",
+                    key=f"stop_generation_panel_{snapshot.get('job_id', 'active')}",
+                    use_container_width=True,
+                ):
+                    return "cancel"
+            with action_col2:
+                if st.button(
+                    "🔄 刷新状态",
+                    key=f"refresh_generation_panel_{snapshot.get('job_id', 'active')}",
+                    use_container_width=True,
+                ):
+                    return "refresh"
+    return None
+
+
+def render_refine_runtime_panel(snapshot: dict | None, *, requested_images: int) -> str | None:
+    """在精修页首屏展示后台精修任务的实时状态和日志。"""
+    if not snapshot:
+        return None
+
+    status = snapshot.get("status", "running")
+    status_titles = {
+        "running": "✨ 精修任务运行中",
+        "completed": "✅ 精修任务已完成",
+        "cancelled": "⛔ 精修任务已停止",
+        "failed": "❌ 精修任务失败",
+    }
+    status_labels = {
+        "running": "运行中",
+        "completed": "已完成",
+        "cancelled": "已停止",
+        "failed": "失败",
+    }
+    progress_done = int(snapshot.get("progress_done", 0) or 0)
+    progress_total = int(snapshot.get("progress_total", requested_images) or requested_images or 0)
+    progress_total = max(progress_total, 1)
+    ratio = min(progress_done / progress_total, 1.0)
+    status_lines = snapshot.get("status_history", []) or []
+    latest_lines = status_lines[-REFINE_LOG_RENDER_LIMIT:]
+    success_count = len(snapshot.get("refined_images", []))
+    failed_count = len(snapshot.get("failed_results", []))
+
+    with st.container(border=True):
+        st.markdown(f"### {status_titles.get(status, '🧭 精修任务状态')}")
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("状态", status_labels.get(status, status))
+        metric_cols[1].metric("进度", f"{progress_done}/{progress_total}")
+        metric_cols[2].metric("成功", success_count)
+        metric_cols[3].metric("失败", failed_count)
+
+        st.caption(
+            f"Provider: {snapshot.get('provider')} | 模型: {snapshot.get('image_model_name') or 'N/A'} | "
+            f"分辨率: {snapshot.get('resolution')} | 宽高比: {snapshot.get('aspect_ratio')} | "
+            f"输入格式: {snapshot.get('input_mime_type')}"
+        )
+        st.progress(ratio, text=f"总体进度：已完成 {progress_done}/{progress_total} 张精修图")
+
+        if latest_lines:
+            st.markdown("**实时日志**")
+            st.code("\n".join(latest_lines), language="text")
+            if len(status_lines) > len(latest_lines):
+                with st.expander(f"查看全部最近 {len(status_lines)} 条日志", expanded=False):
+                    st.code("\n".join(status_lines), language="text")
+
+        if status == "failed" and snapshot.get("error"):
+            st.error(f"后台精修报错：{snapshot.get('error')}")
+
+        if status == "running":
+            action_col1, action_col2 = st.columns(2)
+            with action_col1:
+                if st.button(
+                    "🛑 停止精修",
+                    key=f"stop_refine_panel_{snapshot.get('job_id', 'active')}",
+                    use_container_width=True,
+                ):
+                    return "cancel"
+            with action_col2:
+                if st.button(
+                    "🔄 刷新状态",
+                    key=f"refresh_refine_panel_{snapshot.get('job_id', 'active')}",
+                    use_container_width=True,
+                ):
+                    return "refresh"
+    return None
 
 
 def render_refine_results_section(
@@ -2291,7 +2631,6 @@ def main():
                     help="仅在你的数据不是 JSON、CSV 或 Markdown 表格时使用。",
                 )
 
-        render_generation_history_panel(task_name)
         if task_name == "plot":
             render_plot_rerender_workspace()
 
@@ -2299,15 +2638,50 @@ def main():
         active_generation_snapshot = (
             get_generation_job_snapshot(active_generation_job_id) if active_generation_job_id else None
         )
+        finalized_generation_snapshot = None
+        if active_generation_snapshot and active_generation_snapshot.get("status") in {"completed", "cancelled", "failed"}:
+            finalized_generation_snapshot = active_generation_snapshot
+            if st.session_state.get("last_generation_completed_job_id") != active_generation_job_id:
+                if active_generation_snapshot.get("status") in {"completed", "cancelled"}:
+                    source_label = "后台生成任务"
+                    if active_generation_snapshot.get("status") == "cancelled":
+                        source_label = "后台生成任务（已停止）"
+                    persist_generation_job_results(
+                        active_generation_snapshot,
+                        source_label=source_label,
+                    )
+                st.session_state["last_generation_completed_job_id"] = active_generation_job_id
+            st.session_state.pop("active_generation_job_id", None)
+            clear_generation_job(active_generation_job_id)
+            active_generation_snapshot = None
 
-        if st.button("🚀 生成候选方案", type="primary", use_container_width=True):
+        runtime_panel_action = render_generation_runtime_panel(
+            active_generation_snapshot or finalized_generation_snapshot,
+            requested_candidates=int(num_candidates),
+        )
+        if runtime_panel_action == "cancel" and active_generation_snapshot:
+            request_generation_job_cancel(active_generation_snapshot["job_id"])
+            st.warning("已发送停止请求，当前进行中的候选会继续完成，未开始的候选将被跳过。")
+            st.rerun()
+        if runtime_panel_action == "refresh":
+            st.rerun()
+        generation_is_running = bool(
+            active_generation_snapshot and active_generation_snapshot.get("status") == "running"
+        )
+
+        if st.button(
+            "🚀 生成候选方案",
+            type="primary",
+            use_container_width=True,
+            disabled=generation_is_running,
+        ):
             if not input_content or not visual_intent:
                 st.error(
                     f"请同时提供{task_config['content_input_name']}和{task_config['visual_input_name']}！"
                 )
             elif task_name == "plot" and not allow_raw_plot_input and content_for_generation == input_content:
                 st.error("当前 plot 输入无法解析为结构化数据。请修正格式，或勾选“按原始文本继续”。")
-            elif active_generation_snapshot and active_generation_snapshot.get("status") == "running":
+            elif generation_is_running:
                 st.warning("当前已有生成任务在后台运行，请先等待完成或停止当前任务。")
             else:
                 st.session_state[content_state_key] = input_content
@@ -2335,70 +2709,7 @@ def main():
                 st.session_state["last_generation_completed_job_id"] = None
                 st.info("已启动后台生成任务，页面会自动刷新显示进度。")
                 st.rerun()
-
-        finalized_generation_snapshot = None
-        active_generation_job_id = st.session_state.get("active_generation_job_id")
-        active_generation_snapshot = (
-            get_generation_job_snapshot(active_generation_job_id) if active_generation_job_id else None
-        )
-        if active_generation_snapshot and active_generation_snapshot.get("status") in {"completed", "cancelled", "failed"}:
-            finalized_generation_snapshot = active_generation_snapshot
-            if st.session_state.get("last_generation_completed_job_id") != active_generation_job_id:
-                if active_generation_snapshot.get("status") in {"completed", "cancelled"}:
-                    source_label = "后台生成任务"
-                    if active_generation_snapshot.get("status") == "cancelled":
-                        source_label = "后台生成任务（已停止）"
-                    persist_generation_job_results(
-                        active_generation_snapshot,
-                        source_label=source_label,
-                    )
-                st.session_state["last_generation_completed_job_id"] = active_generation_job_id
-            st.session_state.pop("active_generation_job_id", None)
-            clear_generation_job(active_generation_job_id)
-            active_generation_snapshot = None
-
-        if active_generation_snapshot and active_generation_snapshot.get("status") == "running":
-            progress_done = active_generation_snapshot.get("progress_done", 0)
-            progress_total = max(active_generation_snapshot.get("progress_total", int(num_candidates)), 1)
-            ratio = min(progress_done / progress_total, 1.0)
-            st.progress(
-                ratio,
-                text=(
-                    f"后台生成进度：已完成 {progress_done}/{progress_total} | "
-                    f"并发 {active_generation_snapshot.get('effective_concurrent', 0)}"
-                ),
-            )
-            st.caption(
-                f"Provider: {active_generation_snapshot.get('provider')} | "
-                f"文本模型: {active_generation_snapshot.get('model_name')} | "
-                f"图像模型: {active_generation_snapshot.get('image_model_name') or 'N/A'} | "
-                f"停止请求: {'已发送' if active_generation_snapshot.get('cancel_requested') else '未发送'}"
-            )
-            status_lines = active_generation_snapshot.get("status_history", [])
-            if status_lines:
-                html_lines = "<br>".join(html.escape(x) for x in status_lines[-12:])
-                st.markdown(
-                    (
-                        "**生成实时状态（最近12条）**\n"
-                        f"<div style='max-height:260px; overflow-y:auto; "
-                        f"border:1px solid rgba(255,255,255,0.12); border-radius:8px; "
-                        f"padding:8px 10px; line-height:1.6;'>"
-                        f"{html_lines}"
-                        "</div>"
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-            action_col1, action_col2 = st.columns(2)
-            with action_col1:
-                if st.button("🛑 停止生成", use_container_width=True):
-                    request_generation_job_cancel(active_generation_snapshot["job_id"])
-                    st.warning("已发送停止请求，当前进行中的候选会继续完成，未开始的候选将被跳过。")
-                    st.rerun()
-            with action_col2:
-                if st.button("🔄 刷新状态", use_container_width=True):
-                    st.rerun()
-
+        if generation_is_running:
             time.sleep(1.0)
             st.rerun()
 
@@ -2626,6 +2937,8 @@ def main():
             except Exception as e:
                 st.error(f"创建 ZIP 压缩包失败：{e}")
 
+        render_generation_history_panel(task_name)
+
     # ==================== 选项卡 2：精修图像 ====================
     with tab2:
         st.markdown("### 精修并放大您的图表至高分辨率（2K/4K）")
@@ -2782,11 +3095,39 @@ def main():
                 active_refine_snapshot = (
                     get_refine_job_snapshot(active_refine_job_id) if active_refine_job_id else None
                 )
+                finalized_refine_snapshot = None
+                if active_refine_snapshot and active_refine_snapshot.get("status") in {"completed", "cancelled", "failed"}:
+                    finalized_refine_snapshot = active_refine_snapshot
+                    if st.session_state.get("last_refine_completed_job_id") != active_refine_job_id:
+                        persist_refine_job_results(active_refine_snapshot)
+                        st.session_state["last_refine_completed_job_id"] = active_refine_job_id
+                    st.session_state.pop("active_refine_job_id", None)
+                    clear_refine_job(active_refine_job_id)
+                    active_refine_snapshot = None
 
-                if st.button("✨ 精修图像", type="primary", use_container_width=True):
+                refine_panel_action = render_refine_runtime_panel(
+                    active_refine_snapshot or finalized_refine_snapshot,
+                    requested_images=int(refine_num_images),
+                )
+                if refine_panel_action == "cancel" and active_refine_snapshot:
+                    request_refine_job_cancel(active_refine_snapshot["job_id"])
+                    st.warning("已发送停止请求，系统会在当前请求结束后停止后续重试。")
+                    st.rerun()
+                if refine_panel_action == "refresh":
+                    st.rerun()
+                refine_is_running = bool(
+                    active_refine_snapshot and active_refine_snapshot.get("status") == "running"
+                )
+
+                if st.button(
+                    "✨ 精修图像",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=refine_is_running,
+                ):
                     if not edit_prompt:
                         st.error("请提供编辑指令！")
-                    elif active_refine_snapshot and active_refine_snapshot.get("status") == "running":
+                    elif refine_is_running:
                         st.warning("当前已有精修任务在后台运行，请先等待完成或停止当前任务。")
                     else:
                         job_id = start_refine_background_job(
@@ -2807,59 +3148,7 @@ def main():
                         st.info("已启动后台精修任务，页面会自动刷新显示进度。")
                         st.rerun()
 
-                finalized_refine_snapshot = None
-                active_refine_job_id = st.session_state.get("active_refine_job_id")
-                active_refine_snapshot = (
-                    get_refine_job_snapshot(active_refine_job_id) if active_refine_job_id else None
-                )
-                if active_refine_snapshot and active_refine_snapshot.get("status") in {"completed", "cancelled", "failed"}:
-                    finalized_refine_snapshot = active_refine_snapshot
-                    if st.session_state.get("last_refine_completed_job_id") != active_refine_job_id:
-                        persist_refine_job_results(active_refine_snapshot)
-                        st.session_state["last_refine_completed_job_id"] = active_refine_job_id
-                    st.session_state.pop("active_refine_job_id", None)
-                    clear_refine_job(active_refine_job_id)
-                    active_refine_snapshot = None
-
-                if active_refine_snapshot and active_refine_snapshot.get("status") == "running":
-                    progress_done = active_refine_snapshot.get("progress_done", 0)
-                    progress_total = max(active_refine_snapshot.get("progress_total", int(refine_num_images)), 1)
-                    ratio = min(progress_done / progress_total, 1.0)
-                    st.progress(
-                        ratio,
-                        text=f"后台精修进度：已完成 {progress_done}/{progress_total}",
-                    )
-                    st.caption(
-                        f"Provider: {active_refine_snapshot.get('provider')} | "
-                        f"模型: {active_refine_snapshot.get('image_model_name')} | "
-                        f"分辨率: {active_refine_snapshot.get('resolution')} | "
-                        f"停止请求: {'已发送' if active_refine_snapshot.get('cancel_requested') else '未发送'}"
-                    )
-                    status_lines = active_refine_snapshot.get("status_history", [])
-                    if status_lines:
-                        html_lines = "<br>".join(html.escape(x) for x in status_lines[-10:])
-                        st.markdown(
-                            (
-                                "**精修实时状态（最近10条）**\n"
-                                f"<div style='max-height:220px; overflow-y:auto; "
-                                f"border:1px solid rgba(255,255,255,0.12); border-radius:8px; "
-                                f"padding:8px 10px; line-height:1.6;'>"
-                                f"{html_lines}"
-                                "</div>"
-                            ),
-                            unsafe_allow_html=True,
-                        )
-
-                    action_col1, action_col2 = st.columns(2)
-                    with action_col1:
-                        if st.button("🛑 停止精修", use_container_width=True):
-                            request_refine_job_cancel(active_refine_snapshot["job_id"])
-                            st.warning("已发送停止请求，系统会在当前请求结束后停止后续重试。")
-                            st.rerun()
-                    with action_col2:
-                        if st.button("🔄 刷新状态", use_container_width=True):
-                            st.rerun()
-
+                if refine_is_running:
                     time.sleep(1.0)
                     st.rerun()
 

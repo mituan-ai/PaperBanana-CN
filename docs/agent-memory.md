@@ -223,6 +223,23 @@
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
     - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`75` tests passed)
 
+- 2026-03-10 Completed in Wave 16:
+  - moved the demo generation runtime panel ahead of the start button flow so background-job progress is visible in the main viewport instead of being hidden below the fold
+  - added candidate-stage tracking to `GenerationJobState`, letting the UI show per-candidate live stages even before a full candidate finishes
+  - bridged key generation loggers (`PaperVizProcessor`, agents, runtime helpers) into generation job `status_history`, so the Streamlit page can display synchronized runtime logs instead of relying on the external console
+  - applied the same foreground-status pattern to refine jobs, including a first-screen runtime card, longer status history retention, clearer startup logging, and disabled duplicate submits while a refine task is already running
+  - reduced duplicate terminal-only progress noise in demo runs by disabling `tqdm` when a UI status callback is present
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py utils tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_generation_background`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_refine_background`
+
+- 2026-03-10 Completed in Wave 17:
+  - manual Playwright validation against a fresh Streamlit instance on `http://localhost:8502` exposed a deeper issue: generation/refine runtime cards still disappeared after click because background job registries lived in `demo.py` module globals
+  - root cause is Streamlit rerun semantics: each rerun re-executes `demo.py`, so plain module-level `GENERATION_JOBS` / `REFINE_JOBS` dicts are not a reliable cross-rerun state channel for background threads
+  - fixed by moving the executor/lock/job-registry bundle behind `get_background_job_runtime()`, backed by `st.cache_resource` in real app runs and a process-local fallback in non-Streamlit unit tests
+  - added regression coverage asserting the background runtime registry is a shared resource, so future refactors do not silently break live progress visibility again
+
 - 2026-03-09 Deferred detail:
   - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.
   - dependency versions are still not locked; environment reproduction is improved, but not yet fully pinned.
