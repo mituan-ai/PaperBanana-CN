@@ -13,13 +13,16 @@
 # limitations under the License.
 
 """
-PaperBanana CLI — global entry point.
+PaperBanana-Pro CLI — global entry point.
 
-Usage:
-    paperbanana              Launch the Streamlit GUI (default)
-    paperbanana gui          Same as above
-    paperbanana run [args]   Run CLI batch processing (main.py)
-    paperbanana --help       Show help
+Primary command:
+    paperbanana-pro              Launch the Streamlit GUI (default)
+    paperbanana-pro gui          Same as above
+    paperbanana-pro run [args]   Run CLI batch processing (main.py)
+    paperbanana-pro --help       Show help
+
+Compatibility alias:
+    paperbanana                  Same as `paperbanana-pro`
 """
 
 import os
@@ -35,7 +38,7 @@ def _launch_gui(extra_args: list[str]) -> int:
     """Start the Streamlit interactive demo."""
     demo_path = PROJECT_ROOT / "demo.py"
     if not demo_path.exists():
-        print(f"[PaperBanana] Error: demo.py not found at {demo_path}")
+        print(f"[PaperBanana-Pro] Error: demo.py not found at {demo_path}")
         return 1
 
     cmd = [
@@ -44,7 +47,7 @@ def _launch_gui(extra_args: list[str]) -> int:
         "--server.port", "8501",
         *extra_args,
     ]
-    print(f"[PaperBanana] Starting Streamlit GUI ...")
+    print(f"[PaperBanana-Pro] Starting Streamlit GUI ...")
     return subprocess.call(cmd, cwd=str(PROJECT_ROOT))
 
 
@@ -52,28 +55,31 @@ def _launch_cli(extra_args: list[str]) -> int:
     """Run the CLI batch-processing pipeline (main.py)."""
     main_path = PROJECT_ROOT / "main.py"
     if not main_path.exists():
-        print(f"[PaperBanana] Error: main.py not found at {main_path}")
+        print(f"[PaperBanana-Pro] Error: main.py not found at {main_path}")
         return 1
 
     cmd = [sys.executable, str(main_path), *extra_args]
-    print(f"[PaperBanana] Running CLI mode ...")
+    print(f"[PaperBanana-Pro] Running CLI mode ...")
     return subprocess.call(cmd, cwd=str(PROJECT_ROOT))
 
 
 def _print_help() -> None:
     print("""
-PaperBanana 🍌  —  Automated Academic Illustration Generator
+PaperBanana-Pro 🍌  —  Academic Illustration Workbench
 
-Usage:
-    paperbanana              Launch the Streamlit GUI (default)
-    paperbanana gui [args]   Same as above (extra args forwarded to Streamlit)
-    paperbanana run [args]   Run CLI batch processing (main.py args)
-    paperbanana --help       Show this help message
+Primary command:
+    paperbanana-pro              Launch the Streamlit GUI (default)
+    paperbanana-pro gui [args]   Same as above (extra args forwarded to Streamlit)
+    paperbanana-pro run [args]   Run CLI batch processing (main.py args)
+    paperbanana-pro --help       Show this help message
+
+Compatibility alias:
+    paperbanana                  Same as `paperbanana-pro`
 
 Examples:
-    paperbanana
-    paperbanana gui --server.port 9000
-    paperbanana run --exp_mode dev_full --task_name diagram
+    paperbanana-pro
+    paperbanana-pro gui --server.port 9000
+    paperbanana-pro run --exp_mode dev_full --task_name diagram
     paperbanana run --exp_mode demo_full --retrieval_setting auto
 """)
 
@@ -96,7 +102,7 @@ def main() -> None:
         return
 
     # Unknown command — show help
-    print(f"[PaperBanana] Unknown command: {args[0]}\n")
+    print(f"[PaperBanana-Pro] Unknown command: {args[0]}\n")
     _print_help()
     raise SystemExit(1)
 

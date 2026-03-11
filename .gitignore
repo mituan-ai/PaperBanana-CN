@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.streamlit/credentials.toml
+AGENTS.md
 data/
 results/
 logs/

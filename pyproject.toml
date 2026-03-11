@@ -3,12 +3,22 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "paperbanana"
+name = "paperbanana-pro"
 version = "0.1.0"
-description = "Reference-driven multi-agent framework for automated academic illustration generation"
+description = "Production-ready multi-agent academic illustration system with Chinese GUI, background generation, plot workbench, and portable result bundles. Extended from PaperBanana."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
+authors = [
+    { name = "Yuxuan Chen", email = "yxchen5522@mails.jlu.edu.cn" },
+]
+keywords = ["academic", "illustration", "multi-agent", "diagram", "plot", "scientific-visualization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
 dependencies = [
     "google-genai",
     "streamlit",
@@ -26,7 +36,12 @@ dependencies = [
 ]
 
 [project.scripts]
+paperbanana-pro = "cli:main"
 paperbanana = "cli:main"
+
+[project.urls]
+Homepage = "https://github.com/elpsykongloo/PaperBanana-Pro"
+Repository = "https://github.com/elpsykongloo/PaperBanana-Pro"
 
 [tool.hatch.build.targets.wheel]
 packages = [
