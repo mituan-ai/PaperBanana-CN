@@ -62,7 +62,7 @@ try:
     from agents.vanilla_agent import VanillaAgent
     from agents.polish_agent import PolishAgent
     from utils import config, generation_utils
-    from utils.config_loader import load_model_config
+    from utils.config_loader import load_model_config, write_provider_api_key
     from utils.dataset_paths import DEFAULT_DATASET_NAME, get_reference_file_path
     from utils.demo_task_utils import (
         build_evolution_stages,
@@ -110,18 +110,18 @@ except Exception:
 
 st.set_page_config(
     layout="wide",
-    page_title="PaperBanana 并行演示",
+    page_title="PaperBanana-Pro 科研插图工作台",
     page_icon="🍌"
 )
 
 GENERATION_STATUS_LINE_LIMIT = 200
 GENERATION_LOG_RENDER_LIMIT = 14
 GENERATION_EVENT_HISTORY_LIMIT = 400
-GENERATION_EVENT_RENDER_LIMIT = 40
+GENERATION_EVENT_RENDER_LIMIT = 10
 REFINE_STATUS_LINE_LIMIT = 120
 REFINE_LOG_RENDER_LIMIT = 12
 REFINE_EVENT_HISTORY_LIMIT = 240
-REFINE_EVENT_RENDER_LIMIT = 30
+REFINE_EVENT_RENDER_LIMIT = 10
 GENERATION_CANDIDATE_STATUS_RE = re.compile(r"^候选\s+(.+?):\s*(.+)$")
 GENERATION_LOGGER_NAMES = {
     "PaperVizProcessor",
@@ -378,6 +378,31 @@ GEMINI_IMAGE_MODELS = [
     "gemini-3.1-flash-image-preview",
 ]
 
+CUSTOM_MODEL_OPTION = "自定义"
+TASK_OPTION_LABELS = {
+    "diagram": "学术图解",
+    "plot": "统计图表",
+}
+PIPELINE_OPTION_LABELS = {
+    "demo_planner_critic": "标准流程（推荐）",
+    "demo_full": "增强风格流程",
+}
+RETRIEVAL_NOTICE_LEVELS = {
+    "auto": "info",
+    "auto-full": "warning",
+    "curated": "info",
+    "random": "info",
+    "none": "success",
+}
+RETRIEVAL_NOTICE_TEXT = {
+    "auto": "默认推荐。只依据你的图注或可视化目标来匹配参考，成本低、速度快，适合大多数试跑。",
+    "auto-full": "高精度模式。会把候选参考的完整内容交给模型判断，命中率更稳，但耗时和成本都会明显增加。",
+    "curated": "固定参考集模式。使用你指定的 few-shot 配置，适合做复现实验、A/B 对照和开发调试。",
+    "random": "随机样本模式。直接从参考池抽取示例，不额外调用检索推理，适合快速试跑。",
+    "none": "纯生成模式。不加载任何参考样例，成本最低，适合先看基础出图效果。",
+}
+
+
 def build_provider_defaults():
     return build_all_provider_ui_defaults(
         base_dir=REPO_ROOT,
@@ -385,8 +410,128 @@ def build_provider_defaults():
     )
 
 
-PROVIDER_DEFAULTS = build_provider_defaults()
 _BACKGROUND_JOB_RUNTIME_FALLBACK = None
+
+
+def render_preset_or_custom_model_input(
+    label: str,
+    preset_options: list[str],
+    *,
+    value_key: str,
+    selector_key: str,
+    custom_value_key: str,
+    default_value: str,
+    select_help: str,
+    custom_help: str | None = None,
+) -> str:
+    normalized_options: list[str] = []
+    seen_options: set[str] = set()
+    for option in preset_options:
+        normalized_option = str(option or "").strip()
+        if (
+            not normalized_option
+            or normalized_option == CUSTOM_MODEL_OPTION
+            or normalized_option in seen_options
+        ):
+            continue
+        seen_options.add(normalized_option)
+        normalized_options.append(normalized_option)
+
+    default_model_name = str(default_value or "").strip()
+    current_model_name = str(st.session_state.get(value_key, default_model_name) or "").strip()
+    if value_key not in st.session_state:
+        st.session_state[value_key] = current_model_name
+
+    if custom_value_key not in st.session_state:
+        st.session_state[custom_value_key] = (
+            current_model_name if current_model_name and current_model_name not in normalized_options else ""
+        )
+
+    selector_options = [*normalized_options, CUSTOM_MODEL_OPTION]
+    current_selector_value = st.session_state.get(selector_key)
+    if current_selector_value not in selector_options:
+        if current_model_name and current_model_name not in normalized_options:
+            st.session_state[selector_key] = CUSTOM_MODEL_OPTION
+        elif current_model_name in normalized_options:
+            st.session_state[selector_key] = current_model_name
+        elif default_model_name in normalized_options:
+            st.session_state[selector_key] = default_model_name
+        elif normalized_options:
+            st.session_state[selector_key] = normalized_options[0]
+        else:
+            st.session_state[selector_key] = CUSTOM_MODEL_OPTION
+
+    selected_option = st.selectbox(
+        label,
+        selector_options,
+        index=selector_options.index(st.session_state[selector_key]),
+        key=selector_key,
+        help=select_help,
+    )
+
+    if selected_option == CUSTOM_MODEL_OPTION:
+        if current_model_name and current_model_name not in normalized_options:
+            st.session_state[custom_value_key] = current_model_name
+        custom_model_name = st.text_input(
+            f"{label}（自定义）",
+            key=custom_value_key,
+            help=custom_help or select_help,
+        )
+        resolved_model_name = str(custom_model_name or "").strip()
+    else:
+        resolved_model_name = selected_option
+
+    st.session_state[value_key] = resolved_model_name
+    return resolved_model_name
+
+
+def get_provider_ui_defaults(provider: str) -> dict[str, str]:
+    provider_defaults = build_provider_defaults()
+    normalized_provider = str(provider or "gemini").strip().lower() or "gemini"
+    return provider_defaults.get(normalized_provider, provider_defaults["gemini"])
+
+
+def hydrate_api_key_session_state(
+    *,
+    session_key: str,
+    provider_defaults: dict[str, str],
+) -> str:
+    current_value = str(st.session_state.get(session_key, "") or "").strip()
+    fallback_value = str(provider_defaults.get("api_key_default", "") or "").strip()
+    if not current_value and fallback_value:
+        st.session_state[session_key] = fallback_value
+        return fallback_value
+    return current_value
+
+
+def persist_provider_api_key_input(provider: str, api_key: str) -> None:
+    normalized_value = str(api_key or "").strip()
+    if not normalized_value:
+        return
+    write_provider_api_key(provider, normalized_value, base_dir=REPO_ROOT)
+
+
+def initialize_curated_profile_state(
+    *,
+    profile_key: str,
+    input_key: str,
+    default_value: str = DEFAULT_CURATED_PROFILE,
+) -> str:
+    normalized_profile = normalize_curated_profile_name(
+        st.session_state.get(profile_key, default_value)
+    )
+    if st.session_state.get(profile_key) != normalized_profile:
+        st.session_state[profile_key] = normalized_profile
+    if input_key not in st.session_state:
+        st.session_state[input_key] = normalized_profile
+    return normalized_profile
+
+
+def resolve_curated_profile_input(raw_value: str, *, profile_key: str) -> str:
+    normalized_profile = normalize_curated_profile_name(raw_value)
+    if st.session_state.get(profile_key) != normalized_profile:
+        st.session_state[profile_key] = normalized_profile
+    return normalized_profile
 
 
 def _build_background_job_runtime() -> dict:
@@ -593,6 +738,7 @@ PERSISTED_UI_STATE_KEYS = {
     "tab1_exp_mode",
     "tab1_retrieval_setting",
     "tab1_curated_profile",
+    "tab1_curated_profile_input",
     "tab1_num_candidates",
     "tab1_concurrency_mode",
     "tab1_max_concurrent",
@@ -602,7 +748,11 @@ PERSISTED_UI_STATE_KEYS = {
     "tab1_provider",
     "tab1_api_key",
     "tab1_model_name",
+    "tab1_model_name_selector",
+    "tab1_model_name_custom",
     "tab1_image_model_name",
+    "tab1_image_model_name_selector",
+    "tab1_image_model_name_custom",
     "tab1_diagram_content",
     "tab1_diagram_visual_intent",
     "tab1_diagram_content_editor",
@@ -617,6 +767,8 @@ PERSISTED_UI_STATE_KEYS = {
     "refine_provider",
     "refine_api_key",
     "refine_image_model_name",
+    "refine_image_model_name_selector",
+    "refine_image_model_name_custom",
     "edit_prompt",
     "refine_input_source",
     "refine_staged_input_mime_type",
@@ -874,6 +1026,28 @@ def _ensure_generation_candidate_snapshot(
             "updated_at": ts,
         },
     )
+
+
+def _render_collapsible_event_timeline(
+    event_history: list[dict],
+    *,
+    limit: int,
+    label: str = "事件时间线",
+) -> None:
+    if not event_history:
+        return
+
+    safe_limit = max(1, int(limit or 1))
+    latest_events = event_history[-safe_limit:]
+    latest_lines = [_render_event_status_line(item) for item in latest_events]
+    expander_label = f"{label}（最近 {len(latest_events)} / 共 {len(event_history)} 条）"
+
+    with st.expander(expander_label, expanded=False):
+        st.code("\n".join(latest_lines), language="text")
+        if len(event_history) > len(latest_events):
+            with st.expander(f"查看全部 {len(event_history)} 条事件", expanded=False):
+                all_lines = [_render_event_status_line(item) for item in event_history]
+                st.code("\n".join(all_lines), language="text")
 
 
 def record_generation_job_event(job_id: str, event: dict | None) -> None:
@@ -2738,7 +2912,7 @@ def display_candidate_result(result, candidate_id, exp_mode, task_name="diagram"
             buffered = BytesIO()
             img.save(buffered, format="PNG")
             st.download_button(
-                label="[DOWN] 下载",
+                label="📥 下载图片",
                 data=buffered.getvalue(),
                 file_name=f"candidate_{candidate_id}.png",
                 mime="image/png",
@@ -2762,7 +2936,7 @@ def display_candidate_result(result, candidate_id, exp_mode, task_name="diagram"
         with st.expander("🧪 查看最终 Matplotlib 代码", expanded=False):
             st.code(code_text, language="python")
             st.download_button(
-                label="[DOWN] 下载代码",
+                label="📥 下载代码",
                 data=code_text.encode("utf-8"),
                 file_name=f"candidate_{candidate_id}.py",
                 mime="text/x-python",
@@ -2860,7 +3034,7 @@ def render_plot_rerender_workspace() -> None:
 
     candidate_id = st.session_state.get("plot_rerender_candidate_id", "N/A")
     st.divider()
-    st.markdown("## 🧪 Plot 代码重渲染工作台")
+    st.markdown("## 🧪 绘图代码重渲染工作台")
     st.caption(f"来源：候选方案 {candidate_id}。你可以直接编辑 Matplotlib 代码并本地预览。")
 
     if "plot_rerender_code_editor" not in st.session_state:
@@ -2914,7 +3088,7 @@ def render_plot_rerender_workspace() -> None:
         if preview_image is not None:
             st.image(preview_image, width="stretch", caption="重渲染预览")
             st.download_button(
-                label="[DOWN] 下载预览 JPEG",
+                label="📥 下载预览 JPEG",
                 data=base64.b64decode(preview["base64_jpg"]),
                 file_name=f"plot_rerender_preview_{candidate_id}.jpg",
                 mime="image/jpeg",
@@ -3148,14 +3322,11 @@ def render_generation_live_stream(snapshot: dict | None) -> None:
                             st.error(candidate_snapshot["error"])
 
     if event_timeline:
-        st.markdown("**事件时间线**")
-        latest_events = event_timeline[-GENERATION_EVENT_RENDER_LIMIT:]
-        timeline_lines = [_render_event_status_line(item) for item in latest_events]
-        st.code("\n".join(timeline_lines), language="text")
-        if len(event_timeline) > len(latest_events):
-            with st.expander(f"查看全部最近 {len(event_timeline)} 条事件", expanded=False):
-                all_lines = [_render_event_status_line(item) for item in event_timeline]
-                st.code("\n".join(all_lines), language="text")
+        _render_collapsible_event_timeline(
+            event_timeline,
+            limit=GENERATION_EVENT_RENDER_LIMIT,
+            label="事件时间线",
+        )
 
 
 def render_refine_runtime_panel(snapshot: dict | None, *, requested_images: int) -> str | None:
@@ -3208,14 +3379,11 @@ def render_refine_runtime_panel(snapshot: dict | None, *, requested_images: int)
                 with st.expander(f"查看全部最近 {len(status_lines)} 条日志", expanded=False):
                     st.code("\n".join(status_lines), language="text")
         if event_history:
-            latest_events = event_history[-REFINE_EVENT_RENDER_LIMIT:]
-            event_lines = [_render_event_status_line(item) for item in latest_events]
-            st.markdown("**最近事件**")
-            st.code("\n".join(event_lines), language="text")
-            if len(event_history) > len(latest_events):
-                with st.expander(f"查看完整事件时间线（共 {len(event_history)} 条）", expanded=False):
-                    all_event_lines = [_render_event_status_line(item) for item in event_history]
-                    st.code("\n".join(all_event_lines), language="text")
+            _render_collapsible_event_timeline(
+                event_history,
+                limit=REFINE_EVENT_RENDER_LIMIT,
+                label="事件时间线",
+            )
 
         if status == "failed" and snapshot.get("error"):
             st.error(f"后台精修报错：{snapshot.get('error')}")
@@ -3323,7 +3491,7 @@ def render_refine_results_section(
 
                 file_name = f"refined_{final_resolution}_{idx}.png"
                 st.download_button(
-                    label=f"[DOWN] 下载结果 {idx}",
+                    label=f"📥 下载结果 {idx}",
                     data=img_bytes,
                     file_name=file_name,
                     mime="image/png",
@@ -3333,7 +3501,7 @@ def render_refine_results_section(
 
     zip_buffer.seek(0)
     st.download_button(
-        label="[DOWN] 一键下载全部结果（ZIP）",
+        label="📥 一键下载全部结果（ZIP）",
         data=zip_buffer.getvalue(),
         file_name=zip_name,
         mime="application/zip",
@@ -3344,7 +3512,7 @@ def render_refine_results_section(
 
 def main():
     restore_persisted_demo_ui_state()
-    st.title("🍌 PaperBanana 演示")
+    st.title("🍌 PaperBanana-Pro 工作台")
     st.markdown("AI 驱动的科学图表生成与精修")
 
     # 创建选项卡
@@ -3358,43 +3526,41 @@ def main():
 
         # 侧边栏配置（选项卡 1）
         with st.sidebar:
-            st.title("[SET] 生成设置")
+            st.title("生成参数")
 
             task_name = st.selectbox(
-                "任务类型",
+                "生成任务",
                 ["diagram", "plot"],
                 index=0 if task_name == "diagram" else 1,
                 key="tab1_task_name",
-                format_func=lambda x: {
-                    "diagram": "diagram - 学术图解",
-                    "plot": "plot - 统计图",
-                }[x],
-                help="选择生成方法图解还是统计图",
+                format_func=lambda x: TASK_OPTION_LABELS[x],
+                help="选择当前要生成的是论文方法图解，还是统计图表。",
             )
             task_config = get_task_ui_config(task_name)
             st.info(f"**当前任务：** {task_config['display_name_cn']}")
             if "tab1_dataset_name" not in st.session_state:
                 st.session_state["tab1_dataset_name"] = DEFAULT_DATASET_NAME
             dataset_name = st.text_input(
-                "参考数据集",
+                "数据集名称",
                 key="tab1_dataset_name",
-                help="用于检索参考样例以及解析数据集内的相对资源路径。",
+                help="用于定位参考样例、GT 资源和数据集内的相对路径。",
             ).strip() or DEFAULT_DATASET_NAME
-            st.caption(f"当前数据集资源：`{dataset_name}`")
+            st.caption(f"当前参考资源目录：`{dataset_name}`")
 
             exp_mode = st.selectbox(
-                "流水线模式",
+                "生成流程",
                 ["demo_planner_critic", "demo_full"],
                 index=0,
                 key="tab1_exp_mode",
-                help="选择使用哪种代理流水线",
+                format_func=lambda x: PIPELINE_OPTION_LABELS[x],
+                help="选择本次生成采用的多 Agent 流程。",
             )
 
             mode_info = {
-                "demo_planner_critic": "规划器 → 可视化器 → 评审器 → 可视化器",
-                "demo_full": "检索器 → 规划器 → 风格化器 → 可视化器 → 评审器 → 可视化器。（风格化器能让图表更具美感，但可能过度简化。建议两种模式都尝试并选择最佳结果）",
+                "demo_planner_critic": "标准流程：规划 → 首轮出图 → 评审 → 修正出图。速度更快、语义更稳，建议默认使用。",
+                "demo_full": "增强风格流程：在标准流程基础上加入风格化阶段；当开启参考检索时，也会利用参考样例辅助生成。视觉表现更强，但耗时和不确定性也更高。",
             }
-            st.info(f"**流水线：** {mode_info[exp_mode]}")
+            st.info(mode_info[exp_mode])
 
             retrieval_setting_key = "tab1_retrieval_setting"
             retrieval_options = ["auto", "auto-full", "curated", "random", "none"]
@@ -3405,11 +3571,11 @@ def main():
                 st.session_state[retrieval_setting_key] = current_retrieval_setting
 
             retrieval_setting = st.selectbox(
-                "检索设置",
+                "参考样例策略",
                 retrieval_options,
                 index=retrieval_options.index(current_retrieval_setting),
                 key=retrieval_setting_key,
-                help="如何检索参考图表",
+                help="决定系统如何选择用于 few-shot 提示的参考样例。",
                 format_func=get_retrieval_setting_label,
             )
 
@@ -3419,36 +3585,37 @@ def main():
                 task_name,
                 work_dir=REPO_ROOT,
             )
-            _retrieval_cost_info = {
-                "auto": f"💡 轻量 auto：仅发送{retrieval_target_label}给 LLM 做匹配，适合大多数试跑。",
-                "auto-full": "[WARN] 完整 auto：会把候选参考的完整内容发给 LLM 做匹配，成本显著更高，仅在需要高精度检索时使用。",
-                "curated": "📌 curated：使用固定 few-shot profile，适合低成本复现、A/B 对照和开发调试。",
-                "random": "✅ 随机从参考集中抽样，不调用额外检索推理。",
-                "none": "✅ 跳过检索，不使用参考图表。",
-            }
-            st.info(_retrieval_cost_info[retrieval_setting])
+            retrieval_notice = RETRIEVAL_NOTICE_TEXT[retrieval_setting]
+            if retrieval_setting == "auto":
+                retrieval_notice = (
+                    f"默认推荐。只把你的{retrieval_target_label}发给模型做参考匹配，成本低、速度快，适合大多数试跑。"
+                )
+            getattr(st, RETRIEVAL_NOTICE_LEVELS[retrieval_setting])(retrieval_notice)
 
             curated_profile_key = "tab1_curated_profile"
-            current_curated_profile = normalize_curated_profile_name(
-                st.session_state.get(curated_profile_key, DEFAULT_CURATED_PROFILE)
+            curated_profile_input_key = "tab1_curated_profile_input"
+            current_curated_profile = initialize_curated_profile_state(
+                profile_key=curated_profile_key,
+                input_key=curated_profile_input_key,
             )
-            if st.session_state.get(curated_profile_key) != current_curated_profile:
-                st.session_state[curated_profile_key] = current_curated_profile
 
-            curated_profile = DEFAULT_CURATED_PROFILE
+            curated_profile = current_curated_profile
             if retrieval_setting == "curated":
-                curated_profile = normalize_curated_profile_name(
-                    st.text_input(
-                        "Curated Profile",
-                        key=curated_profile_key,
-                        help=(
-                            "固定 few-shot profile 名称。默认优先读取 "
-                            "`manual_profiles/<profile>.json`，`default` 也兼容旧的 "
-                            "`agent_selected_12.json`。"
-                        ),
-                    )
+                curated_profile_input = st.text_input(
+                    "固定参考集名称",
+                    key=curated_profile_input_key,
+                    help=(
+                        "填写要使用的固定参考集名称。系统优先读取 "
+                        "`manual_profiles/<name>.json`；当名称为 `default` 时，也兼容旧的 "
+                        "`agent_selected_12.json`。"
+                    ),
                 )
-                st.session_state[curated_profile_key] = curated_profile
+                curated_profile = resolve_curated_profile_input(
+                    curated_profile_input,
+                    profile_key=curated_profile_key,
+                )
+                if curated_profile != str(curated_profile_input or "").strip():
+                    st.caption(f"运行时会使用规范化名称：`{curated_profile}`")
                 resolved_profile_path = find_curated_profile_path(
                     dataset_name,
                     task_name,
@@ -3458,8 +3625,8 @@ def main():
                 if resolved_profile_path is not None:
                     source_note = ""
                     if resolved_profile_path.name == "agent_selected_12.json":
-                        source_note = "（兼容 legacy agent_selected_12.json）"
-                    st.caption(f"当前 curated profile：`{resolved_profile_path}`{source_note}")
+                        source_note = "（兼容旧版 agent_selected_12.json）"
+                    st.caption(f"当前固定参考集文件：`{resolved_profile_path}`{source_note}")
                 else:
                     expected_profile_path = get_curated_profile_path(
                         dataset_name,
@@ -3474,16 +3641,16 @@ def main():
                             work_dir=REPO_ROOT,
                         )
                         st.warning(
-                            "当前未发现固定 few-shot profile。默认会优先查找 "
+                            "当前未发现默认固定参考集。系统会优先查找 "
                             f"`{expected_profile_path}`，并兼容旧路径 `{legacy_profile_path}`。"
                         )
                     else:
                         st.warning(
-                            f"当前未发现 curated profile：`{expected_profile_path}`。运行时会自动回退到 `none`。"
+                            f"当前未找到固定参考集：`{expected_profile_path}`。运行时会自动回退到“不使用参考”。"
                         )
             if retrieval_setting in {"auto", "auto-full", "random"} and not retrieval_ref_path.exists():
                 st.warning(
-                    f"当前仓库未发现数据集 `{dataset_name}` 的 `{task_name}/ref.json`，运行时会自动回退到 `none`。"
+                    f"当前仓库未发现数据集 `{dataset_name}` 的 `{task_name}/ref.json`，运行时会自动回退到“不使用参考”。"
                 )
 
             num_candidates = st.number_input(
@@ -3526,7 +3693,7 @@ def main():
                 int(num_candidates) / max(1, effective_concurrency_preview)
             )
 
-            with st.expander("📈 并发可视化调节", expanded=True):
+            with st.expander("📈 并发可视化调节", expanded=False):
                 c1, c2 = st.columns(2)
                 c1.metric("有效并发", effective_concurrency_preview)
                 c2.metric("预计批次数", estimated_batches_preview)
@@ -3579,20 +3746,28 @@ def main():
                 help="gemini：Google 官方 API（需翻墙）| evolink：国内代理",
             )
 
-            provider_defaults = PROVIDER_DEFAULTS[provider]
+            provider_defaults = get_provider_ui_defaults(provider)
             if "tab1_api_key" not in st.session_state:
                 st.session_state["tab1_api_key"] = provider_defaults["api_key_default"]
             if "tab1_model_name" not in st.session_state:
                 st.session_state["tab1_model_name"] = provider_defaults["model_name"]
             if "tab1_image_model_name" not in st.session_state:
                 st.session_state["tab1_image_model_name"] = provider_defaults["image_model_name"]
+            hydrate_api_key_session_state(
+                session_key="tab1_api_key",
+                provider_defaults=provider_defaults,
+            )
 
             if "prev_provider" not in st.session_state:
                 st.session_state["prev_provider"] = provider
             if st.session_state["prev_provider"] != provider:
                 st.session_state["prev_provider"] = provider
                 st.session_state["tab1_model_name"] = provider_defaults["model_name"]
+                st.session_state["tab1_model_name_selector"] = provider_defaults["model_name"]
+                st.session_state["tab1_model_name_custom"] = ""
                 st.session_state["tab1_image_model_name"] = provider_defaults["image_model_name"]
+                st.session_state["tab1_image_model_name_selector"] = provider_defaults["image_model_name"]
+                st.session_state["tab1_image_model_name_custom"] = ""
                 st.session_state["tab1_api_key"] = provider_defaults["api_key_default"]
                 new_resolution_options = ["1K", "2K", "4K"] if provider == "gemini" else ["2K", "4K"]
                 if st.session_state.get("tab1_image_resolution") not in new_resolution_options:
@@ -3607,18 +3782,18 @@ def main():
                 key="tab1_api_key",
                 help=provider_defaults["api_key_help"],
             )
+            persist_provider_api_key_input(provider, api_key)
 
             if provider == "gemini":
-                current_gemini_text_model = st.session_state.get("tab1_model_name", GEMINI_TEXT_MODELS[0])
-                if current_gemini_text_model not in GEMINI_TEXT_MODELS:
-                    current_gemini_text_model = GEMINI_TEXT_MODELS[0]
-
-                model_name = st.selectbox(
+                model_name = render_preset_or_custom_model_input(
                     "文本模型",
                     GEMINI_TEXT_MODELS,
-                    index=GEMINI_TEXT_MODELS.index(current_gemini_text_model),
-                    key="tab1_model_name",
-                    help="用于推理/规划/评审的模型名称（可展开选择）",
+                    value_key="tab1_model_name",
+                    selector_key="tab1_model_name_selector",
+                    custom_value_key="tab1_model_name_custom",
+                    default_value=provider_defaults["model_name"],
+                    select_help="用于推理/规划/评审的模型名称。可选择预设模型，或选“自定义”后手动输入。",
+                    custom_help="请输入用于推理/规划/评审的自定义文本模型名称。",
                 )
             else:
                 model_name = st.text_input(
@@ -3629,19 +3804,15 @@ def main():
 
             if task_config["uses_image_model"]:
                 if provider == "gemini":
-                    current_gemini_image_model = st.session_state.get(
-                        "tab1_image_model_name",
-                        "gemini-3-pro-image-preview",
-                    )
-                    if current_gemini_image_model not in GEMINI_IMAGE_MODELS:
-                        current_gemini_image_model = "gemini-3-pro-image-preview"
-
-                    image_model_name = st.selectbox(
+                    image_model_name = render_preset_or_custom_model_input(
                         "图像模型",
                         GEMINI_IMAGE_MODELS,
-                        index=GEMINI_IMAGE_MODELS.index(current_gemini_image_model),
-                        key="tab1_image_model_name",
-                        help="用于图像生成的模型名称（可展开选择）",
+                        value_key="tab1_image_model_name",
+                        selector_key="tab1_image_model_name_selector",
+                        custom_value_key="tab1_image_model_name_custom",
+                        default_value=provider_defaults["image_model_name"],
+                        select_help="用于图像生成的模型名称。可选择预设模型，或选“自定义”后手动输入。",
+                        custom_help="请输入用于图像生成的自定义模型名称。",
                     )
                 else:
                     image_model_name = st.text_input(
@@ -3902,7 +4073,7 @@ def main():
                         with open(json_file_path, "r", encoding="utf-8") as f:
                             json_data = f.read()
                         st.download_button(
-                            label="[DOWN] 下载 JSON",
+                            label="📥 下载结果 JSON",
                             data=json_data,
                             file_name=json_file_path.name,
                             mime="application/json",
@@ -3914,7 +4085,7 @@ def main():
                         with open(bundle_file_path, "r", encoding="utf-8") as f:
                             bundle_data = f.read()
                         st.download_button(
-                            label="[DOWN] 下载 Bundle",
+                            label="📥 下载结果 Bundle",
                             data=bundle_data,
                             file_name=bundle_file_path.name,
                             mime="application/json",
@@ -3965,7 +4136,7 @@ def main():
                 if final_exported_count > 0:
                     with download_cols[0]:
                         st.download_button(
-                            label="[DOWN] 下载最终候选（ZIP）",
+                            label="📥 下载最终候选（ZIP）",
                             data=final_zip_bytes,
                             file_name=(
                                 f"paperbanana_{current_task_name}_candidates_"
@@ -3977,7 +4148,7 @@ def main():
                 else:
                     with download_cols[0]:
                         st.button(
-                            "[DOWN] 下载最终候选（ZIP）",
+                            "📥 下载最终候选（ZIP）",
                             disabled=True,
                             width="stretch",
                         )
@@ -3985,7 +4156,7 @@ def main():
                 if full_exported_count > 0:
                     with download_cols[1]:
                         st.download_button(
-                            label="[DOWN] 下载全流程总览（ZIP）",
+                            label="📥 下载全流程总览（ZIP）",
                             data=full_zip_bytes,
                             file_name=(
                                 f"PaperBanana_全流程总览_{current_task_name}_"
@@ -3997,7 +4168,7 @@ def main():
                 else:
                     with download_cols[1]:
                         st.button(
-                            "[DOWN] 下载全流程总览（ZIP）",
+                            "📥 下载全流程总览（ZIP）",
                             disabled=True,
                             width="stretch",
                         )
@@ -4066,7 +4237,7 @@ def main():
                 key="refine_provider",
                 help="为精修单独选择 Provider，不依赖生成页设置"
             )
-            refine_provider_defaults = PROVIDER_DEFAULTS[refine_provider]
+            refine_provider_defaults = get_provider_ui_defaults(refine_provider)
 
             if "refine_api_key" not in st.session_state:
                 st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
@@ -4078,7 +4249,13 @@ def main():
                 st.session_state["refine_prev_provider"] = refine_provider
                 st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
                 st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
+                st.session_state["refine_image_model_name_selector"] = refine_provider_defaults["image_model_name"]
+                st.session_state["refine_image_model_name_custom"] = ""
                 st.rerun()
+            hydrate_api_key_session_state(
+                session_key="refine_api_key",
+                provider_defaults=refine_provider_defaults,
+            )
 
             refine_api_key = st.text_input(
                 refine_provider_defaults["api_key_label"],
@@ -4086,21 +4263,18 @@ def main():
                 key="refine_api_key",
                 help=refine_provider_defaults["api_key_help"]
             )
+            persist_provider_api_key_input(refine_provider, refine_api_key)
 
             if refine_provider == "gemini":
-                current_refine_gemini_image_model = st.session_state.get(
-                    "refine_image_model_name",
-                    PROVIDER_DEFAULTS["gemini"]["image_model_name"],
-                )
-                if current_refine_gemini_image_model not in GEMINI_IMAGE_MODELS:
-                    current_refine_gemini_image_model = PROVIDER_DEFAULTS["gemini"]["image_model_name"]
-
-                refine_image_model_name = st.selectbox(
+                refine_image_model_name = render_preset_or_custom_model_input(
                     "精修图像模型",
                     GEMINI_IMAGE_MODELS,
-                    index=GEMINI_IMAGE_MODELS.index(current_refine_gemini_image_model),
-                    key="refine_image_model_name",
-                    help="精修流程使用的图像模型"
+                    value_key="refine_image_model_name",
+                    selector_key="refine_image_model_name_selector",
+                    custom_value_key="refine_image_model_name_custom",
+                    default_value=refine_provider_defaults["image_model_name"],
+                    select_help="精修流程使用的图像模型。可选择预设模型，或选“自定义”后手动输入。",
+                    custom_help="请输入精修流程使用的自定义图像模型名称。",
                 )
             else:
                 refine_image_model_name = st.text_input(

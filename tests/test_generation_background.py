@@ -67,6 +67,10 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         demo.st.session_state["tab1_provider"] = "gemini"
         demo.st.session_state["tab1_api_key"] = "runtime-key"
         demo.st.session_state["tab1_model_name"] = "gemini-3.1-pro-preview"
+        demo.st.session_state["tab1_model_name_selector"] = demo.CUSTOM_MODEL_OPTION
+        demo.st.session_state["tab1_model_name_custom"] = "custom-text-model"
+        demo.st.session_state["tab1_curated_profile"] = "paper-profile"
+        demo.st.session_state["tab1_curated_profile_input"] = "paper-profile"
         demo.st.session_state["tab1_num_candidates"] = 8
         demo.st.session_state["refine_staged_image_bytes"] = b"preview-bytes"
         demo.st.session_state["active_generation_job_id"] = "generate_demo_running"
@@ -79,6 +83,10 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertEqual(demo.st.session_state["tab1_provider"], "gemini")
         self.assertEqual(demo.st.session_state["tab1_api_key"], "runtime-key")
         self.assertEqual(demo.st.session_state["tab1_model_name"], "gemini-3.1-pro-preview")
+        self.assertEqual(demo.st.session_state["tab1_model_name_selector"], demo.CUSTOM_MODEL_OPTION)
+        self.assertEqual(demo.st.session_state["tab1_model_name_custom"], "custom-text-model")
+        self.assertEqual(demo.st.session_state["tab1_curated_profile"], "paper-profile")
+        self.assertEqual(demo.st.session_state["tab1_curated_profile_input"], "paper-profile")
         self.assertEqual(demo.st.session_state["tab1_num_candidates"], 8)
         self.assertEqual(demo.st.session_state["refine_staged_image_bytes"], b"preview-bytes")
         self.assertNotIn("active_generation_job_id", demo.st.session_state)

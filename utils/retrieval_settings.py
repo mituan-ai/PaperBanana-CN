@@ -46,11 +46,10 @@ def normalize_curated_profile_name(
 def get_retrieval_setting_label(value: str) -> str:
     normalized = normalize_retrieval_setting(value)
     labels = {
-        "auto": "auto — LLM 智能选参考，轻量模式",
-        "auto-full": "auto-full — LLM 智能选参考，完整上下文",
-        "curated": "curated — 固定 few-shot profile（兼容旧 manual）",
-        "random": "random — 随机选 10 个参考（免费）",
-        "none": "none — 不检索参考（免费）",
+        "auto": "智能检索（轻量）",
+        "auto-full": "智能检索（高精度）",
+        "curated": "固定参考集",
+        "random": "随机参考样本",
+        "none": "不使用参考",
     }
     return labels[normalized]
-

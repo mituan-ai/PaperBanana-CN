@@ -37,7 +37,7 @@ from utils.pipeline_state import (
 from utils.result_bundle import load_result_bundle
 from utils.result_paths import resolve_gt_image_path
 
-st.set_page_config(layout="wide", page_title="PaperBanana Pipeline Evolution", page_icon="🍌")
+st.set_page_config(layout="wide", page_title="PaperBanana 演化查看器", page_icon="🍌")
 
 
 
@@ -49,7 +49,7 @@ def load_data(path):
     try:
         return load_result_bundle(path)
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"读取结果文件失败：{e}")
         return {"manifest": {}, "summary": {}, "failures": [], "results": []}
 
 def base64_to_image(b64_str):
@@ -68,7 +68,7 @@ def detect_task_type(item):
     return detect_task_type_from_result(item)
 def display_stage_comparison(item, results_path):
     """Display 2x2 grid comparison: Ground Truth + three pipeline stages."""
-    st.markdown("### 📊 Pipeline Evolution Comparison")
+    st.markdown("### 📊 流水线演化对比")
     
     task_type = detect_task_type(item)
     
@@ -77,7 +77,7 @@ def display_stage_comparison(item, results_path):
     
     # Human (Ground Truth) - always first
     available_stages.append({
-        "title": "🎯 Human (Ground Truth)",
+        "title": "🎯 人工参考图",
         "desc_key": None,
         "img_key": "annotation_info",
         "color": "orange",
@@ -144,13 +144,13 @@ def display_stage_comparison(item, results_path):
                             img = Image.open(resolved_human_path)
                             st.image(img, width="stretch")
                         except Exception as e:
-                            st.error(f"Failed to load Human image: {e}")
+                            st.error(f"加载人工参考图失败：{e}")
                     else:
-                        st.info("No Human image available")
+                        st.info("暂无人工参考图")
                     
                     # Show caption instead of description
-                    caption = item.get("brief_desc", "No caption available")
-                    with st.expander("View Caption", expanded=False):
+                    caption = item.get("brief_desc", "暂无图注")
+                    with st.expander("查看图注", expanded=False):
                         st.write(caption)
                 else:
                     # Handle pipeline stage images
@@ -160,13 +160,13 @@ def display_stage_comparison(item, results_path):
                         if img:
                             st.image(img, width="stretch")
                         else:
-                            st.error("Failed to decode image")
+                            st.error("图像解码失败")
                     else:
-                        st.info("No image available")
+                        st.info("暂无图像")
                     
                     # Display description in expander
-                    desc = item.get(stage["desc_key"], "No description available")
-                    with st.expander("View Description", expanded=False):
+                    desc = item.get(stage["desc_key"], "暂无描述")
+                    with st.expander("查看描述", expanded=False):
                         if task_type == "plot" and desc:
                              # Try to format as code if it looks like code, or just text
                              st.code(desc, language="python") # Plots are usually python code
@@ -177,14 +177,14 @@ def display_stage_comparison(item, results_path):
                     if "suggestions_key" in stage:
                         suggestions = item.get(stage["suggestions_key"], "")
                         if suggestions and suggestions.strip() != "No changes needed.":
-                            with st.expander("💬 Critic Suggestions", expanded=False):
+                            with st.expander("💬 评审建议", expanded=False):
                                 st.write(suggestions)
 
 def display_critique(item):
     """Display the critique if available."""
     if "critique0" in item and item["critique0"]:
-        st.markdown("### 💬 Critic's Feedback")
-        with st.expander("View Critique", expanded=False):
+        st.markdown("### 💬 评审反馈")
+        with st.expander("查看评审内容", expanded=False):
             st.write(item["critique0"])
 
 def display_evaluation_results(item):
@@ -194,7 +194,7 @@ def display_evaluation_results(item):
     has_eval = any(f"{dim.lower()}_outcome" in item for dim in dimensions)
     
     if has_eval:
-        st.markdown("### 📈 Evaluation Results")
+        st.markdown("### 📈 评估结果")
         cols = st.columns(len(dimensions))
         
         for i, dim in enumerate(dimensions):
@@ -214,68 +214,68 @@ def display_evaluation_results(item):
                 else:
                     st.text(outcome)
                 
-                with st.expander("View Reasoning", expanded=False):
+                with st.expander("查看理由", expanded=False):
                     st.write(reasoning)
 
 def main():
-    st.sidebar.title("🍌 Pipeline Evolution Viewer")
-    file_path = st.sidebar.text_input("Results File Path", placeholder="Enter path to results file...")
+    st.sidebar.title("🍌 流水线演化查看器")
+    file_path = st.sidebar.text_input("结果文件路径", placeholder="请输入结果文件路径...")
     
-    if st.sidebar.button("🔄 Refresh Data"):
+    if st.sidebar.button("🔄 刷新数据"):
         load_data.clear()
         st.rerun()
     
     if not file_path:
-        st.info("👆 Please enter a file path to begin")
+        st.info("👆 请输入结果文件路径")
         st.stop()
     
     if not os.path.exists(file_path):
-        st.error(f"File not found: {file_path}")
+        st.error(f"未找到文件：{file_path}")
         st.stop()
     
     bundle = load_data(file_path)
     data = bundle.get("results", [])
     manifest = bundle.get("manifest", {})
 
-    with st.sidebar.expander("🧾 Run Manifest", expanded=False):
+    with st.sidebar.expander("🧾 运行清单", expanded=False):
         manifest_fields = [
-            ("Producer", "producer"),
-            ("Dataset", "dataset_name"),
-            ("Task", "task_name"),
-            ("Split", "split_name"),
-            ("Mode", "exp_mode"),
+            ("来源", "producer"),
+            ("数据集", "dataset_name"),
+            ("任务", "task_name"),
+            ("切分", "split_name"),
+            ("模式", "exp_mode"),
             ("Provider", "provider"),
-            ("Text Model", "model_name"),
-            ("Image Model", "image_model_name"),
+            ("文本模型", "model_name"),
+            ("图像模型", "image_model_name"),
         ]
         for label, key in manifest_fields:
             value = manifest.get(key)
             if value:
                 st.write(f"**{label}:** {value}")
-        st.write(f"**Results:** {manifest.get('result_count', len(data))}")
+        st.write(f"**结果数：** {manifest.get('result_count', len(data))}")
     
     # --- Search Functionality ---
-    search_query = st.sidebar.text_input("🔍 Search ID", value="", help="Filter by ID (case-insensitive)")
+    search_query = st.sidebar.text_input("🔍 搜索 ID", value="", help="按 ID 过滤（不区分大小写）")
     if search_query:
         data = [item for item in data if search_query.lower() in item.get("id", "").lower()]
-        st.sidebar.caption(f"Found {len(data)} matching cases")
+        st.sidebar.caption(f"找到 {len(data)} 条匹配结果")
     
     total_items = len(data)
     
     if total_items == 0:
         if search_query:
-            st.warning(f"No samples found matching '{search_query}'.")
+            st.warning(f"没有找到匹配 “{search_query}” 的样本。")
         else:
-            st.warning("Data is empty or format is incorrect.")
+            st.warning("结果为空，或文件格式不正确。")
         return
     
-    st.title("🍌 PaperBanana Pipeline Evolution Viewer")
-    st.markdown("Visualizing the progression through the pipeline render stages")
+    st.title("🍌 流水线演化查看器")
+    st.markdown("查看候选在不同渲染阶段中的演化过程。")
     
     st.divider()
     
     # --- Global Statistics ---
-    with st.expander("📊 Global Statistics", expanded=False):
+    with st.expander("📊 全局统计", expanded=False):
         total = len(data)
         multi_stage_cases = sum(
             1
@@ -291,9 +291,9 @@ def main():
         )
         
         col1, col2, col3 = st.columns(3)
-        col1.metric("Total Samples", total)
-        col2.metric("Multi-stage Cases", multi_stage_cases)
-        col3.metric("Coverage", f"{multi_stage_cases/total*100:.1f}%")
+        col1.metric("样本总数", total)
+        col2.metric("多阶段样本", multi_stage_cases)
+        col3.metric("覆盖率", f"{multi_stage_cases/total*100:.1f}%")
     
     st.divider()
     
@@ -308,7 +308,7 @@ def main():
     col_left, col_center, col_right = st.columns([1, 2, 1])
     
     with col_left:
-        if st.button("⬅️ Previous Page", disabled=(st.session_state.page == 0)):
+        if st.button("⬅️ 上一页", disabled=(st.session_state.page == 0)):
             st.session_state.page -= 1
             st.rerun()
     
@@ -323,10 +323,10 @@ def main():
         if page_input != st.session_state.page + 1:
             st.session_state.page = page_input - 1
             st.rerun()
-        st.caption(f"Page {st.session_state.page + 1} of {total_pages}")
+        st.caption(f"第 {st.session_state.page + 1} / {total_pages} 页")
     
     with col_right:
-        if st.button("Next Page ➡️", disabled=(st.session_state.page >= total_pages - 1)):
+        if st.button("下一页 ➡️", disabled=(st.session_state.page >= total_pages - 1)):
             st.session_state.page += 1
             st.rerun()
     
@@ -334,7 +334,7 @@ def main():
     end_idx = min(start_idx + PAGE_SIZE, total_items)
     batch = data[start_idx:end_idx]
     
-    st.markdown(f"**Displaying {start_idx + 1} - {end_idx} of {total_items}**")
+    st.markdown(f"**正在显示第 {start_idx + 1} - {end_idx} 条，共 {total_items} 条**")
     
     # --- Display Samples ---
     for i, item in enumerate(batch):
@@ -348,7 +348,7 @@ def main():
             
             # Method/Data section
             task_type = detect_task_type(item)
-            label = "📚 Raw Data" if task_type == "plot" else "📚 Method Section"
+            label = "📚 原始数据" if task_type == "plot" else "📚 方法章节"
             
             with st.expander(label, expanded=False):
                 if task_type == "plot":

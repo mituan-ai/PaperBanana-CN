@@ -65,6 +65,29 @@ def read_local_secret(section: str, key: str, base_dir: Path | None = None) -> s
     return secret_path.read_text(encoding="utf-8").strip()
 
 
+def write_local_secret(
+    section: str,
+    key: str,
+    value: str,
+    base_dir: Path | None = None,
+) -> Path | None:
+    secret_path = get_local_secret_path(section, key, base_dir=base_dir)
+    if secret_path is None:
+        return None
+
+    normalized_value = str(value or "").strip()
+    if not normalized_value:
+        return secret_path if secret_path.exists() else None
+
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    current_value = ""
+    if secret_path.exists():
+        current_value = secret_path.read_text(encoding="utf-8").strip()
+    if current_value != normalized_value:
+        secret_path.write_text(normalized_value + "\n", encoding="utf-8")
+    return secret_path
+
+
 def load_model_config(base_dir: Path | None = None) -> dict[str, Any]:
     config_path = get_config_dir(base_dir) / "model_config.yaml"
     if not config_path.exists():
@@ -142,3 +165,17 @@ def load_provider_defaults(
         base_dir=base_dir,
     )
     return defaults
+
+
+def write_provider_api_key(
+    provider: str,
+    api_key: str,
+    base_dir: Path | None = None,
+) -> Path | None:
+    provider_config = PROVIDER_CONFIG_MAP.get(provider, PROVIDER_CONFIG_MAP["gemini"])
+    return write_local_secret(
+        provider_config["api_section"],
+        provider_config["api_key"],
+        api_key,
+        base_dir=base_dir,
+    )

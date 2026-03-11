@@ -72,6 +72,7 @@ class RuntimeSettingsTest(unittest.TestCase):
         mocked_create.assert_called_once_with(
             provider="gemini",
             api_key="runtime-key",
+            event_hook=None,
             status_hook=hook,
             cancel_check=None,
         )

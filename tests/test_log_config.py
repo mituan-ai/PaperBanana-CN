@@ -114,6 +114,16 @@ class LoggingSourceRegressionTest(unittest.TestCase):
         text = Path("demo.py").read_text(encoding="utf-8")
         self.assertNotRegex(text, re.compile(r"\bprint\s*\("))
 
+    def test_demo_has_no_placeholder_ui_icon_tokens(self):
+        for path in (
+            Path("demo.py"),
+            Path("visualize/show_pipeline_evolution.py"),
+            Path("visualize/show_referenced_eval.py"),
+        ):
+            text = path.read_text(encoding="utf-8")
+            for token in ("[DOWN]", "[SET]", "[WARN]"):
+                self.assertNotIn(token, text, str(path))
+
     def test_streamlit_width_api_is_updated(self):
         for path in (
             Path("demo.py"),
