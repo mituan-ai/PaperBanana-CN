@@ -40,6 +40,8 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, Optional
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 # 将项目根目录添加到路径
 sys.path.insert(0, str(Path(__file__).parent))
@@ -53,6 +55,65 @@ from utils.runtime_events import (
 
 setup_logging("INFO", mode="streamlit")
 logger = get_logger("PaperBananaDemo")
+
+
+def _looks_like_paperbanana_workspace(path_value: str | Path | None) -> bool:
+    if not path_value:
+        return False
+    candidate = Path(path_value)
+    return (
+        candidate.exists()
+        and (candidate / "demo.py").exists()
+        and (candidate / "agents").exists()
+        and (candidate / "utils").exists()
+        and (
+            (candidate / "data").exists()
+            or (candidate / "configs").exists()
+            or (candidate / "pyproject.toml").exists()
+        )
+    )
+
+
+def _load_direct_url_workspace_root(install_root: Path) -> Path | None:
+    direct_url_candidates = sorted(install_root.glob("paperbanana_pro-*.dist-info/direct_url.json"))
+    for direct_url_path in direct_url_candidates:
+        try:
+            payload = json.loads(direct_url_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        parsed_url = urlparse(str(payload.get("url", "") or ""))
+        if parsed_url.scheme != "file":
+            continue
+        candidate_text = url2pathname(parsed_url.path or "")
+        if parsed_url.netloc:
+            candidate_text = f"//{parsed_url.netloc}{candidate_text}"
+        candidate = Path(candidate_text)
+        if _looks_like_paperbanana_workspace(candidate):
+            return candidate.resolve(strict=False)
+    return None
+
+
+def resolve_demo_base_dir(
+    install_root: Path | None = None,
+    *,
+    cwd: Path | None = None,
+) -> Path:
+    install_root = Path(install_root or Path(__file__).resolve().parent).resolve(strict=False)
+
+    env_candidate = os.getenv("PAPERBANANA_HOME", "").strip()
+    if _looks_like_paperbanana_workspace(env_candidate):
+        return Path(env_candidate).resolve(strict=False)
+
+    current_dir = Path(cwd or Path.cwd()).resolve(strict=False)
+    for candidate in (current_dir, *current_dir.parents):
+        if _looks_like_paperbanana_workspace(candidate):
+            return candidate.resolve(strict=False)
+
+    direct_url_root = _load_direct_url_workspace_root(install_root)
+    if direct_url_root is not None:
+        return direct_url_root
+
+    return install_root
 
 try:
     from agents.planner_agent import PlannerAgent
@@ -121,7 +182,7 @@ try:
     from utils.plot_input_utils import parse_plot_input_text
     from utils.plot_executor import execute_plot_code_with_details
 
-    REPO_ROOT = Path(__file__).parent
+    REPO_ROOT = resolve_demo_base_dir(Path(__file__).parent)
     model_config_data = load_model_config(REPO_ROOT)
 except Exception:
     logger.exception("demo.py 初始化导入失败")
@@ -149,26 +210,6 @@ WORKSPACE_MODE_OPTIONS = [
     "📊 生成候选方案",
     "✨ 精修图像",
 ]
-GENERATION_QUALITY_PRESETS = {
-    "快速试跑": {
-        "exp_mode": "demo_planner_critic",
-        "retrieval_setting": "none",
-        "max_critic_rounds": 0,
-        "image_resolution": "2K",
-    },
-    "标准质量": {
-        "exp_mode": "demo_planner_critic",
-        "retrieval_setting": "auto",
-        "max_critic_rounds": 1,
-        "image_resolution": "2K",
-    },
-    "高质量": {
-        "exp_mode": "demo_full",
-        "retrieval_setting": "auto-full",
-        "max_critic_rounds": 3,
-        "image_resolution": "4K",
-    },
-}
 GENERATION_MODE_INFO = {
     "demo_planner_critic": "标准流程：规划 → 首轮出图 → 评审 → 修正出图。速度更快、语义更稳，建议默认使用。",
     "demo_full": "增强风格流程：在标准流程基础上加入风格化阶段；当开启参考检索时，也会利用参考样例辅助生成。视觉表现更强，但耗时和不确定性也更高。",
@@ -642,6 +683,47 @@ def format_repo_relative_path(path_value: str | Path | None, *, base_dir: Path |
     return path_obj.as_posix()
 
 
+def ensure_session_choice_state(
+    key: str,
+    options: list[str],
+    default_value: str,
+) -> str:
+    normalized_options = [option for option in options if option is not None]
+    if not normalized_options:
+        raise ValueError(f"{key} 缺少可用选项。")
+
+    current_value = st.session_state.get(key, default_value)
+    if current_value not in normalized_options:
+        current_value = default_value if default_value in normalized_options else normalized_options[0]
+
+    if st.session_state.get(key) != current_value:
+        st.session_state[key] = current_value
+    return str(current_value)
+
+
+def ensure_session_int_state(
+    key: str,
+    default_value: int,
+    *,
+    min_value: int | None = None,
+    max_value: int | None = None,
+) -> int:
+    raw_value = st.session_state.get(key, default_value)
+    try:
+        normalized_value = int(raw_value)
+    except (TypeError, ValueError):
+        normalized_value = int(default_value)
+
+    if min_value is not None:
+        normalized_value = max(int(min_value), normalized_value)
+    if max_value is not None:
+        normalized_value = min(int(max_value), normalized_value)
+
+    if st.session_state.get(key) != normalized_value:
+        st.session_state[key] = normalized_value
+    return normalized_value
+
+
 def render_provider_api_key_controls(
     *,
     provider: str,
@@ -1015,7 +1097,7 @@ class RefineJobState:
 
 
 def get_demo_results_root() -> Path:
-    return Path(__file__).parent / "results" / "demo"
+    return REPO_ROOT / "results" / "demo"
 
 
 def get_demo_results_dir(task_name: str) -> Path:
@@ -1055,7 +1137,6 @@ def _persist_demo_ui_state_payload(state_payload: dict) -> None:
 PERSISTED_UI_STATE_KEYS = {
     "workspace_mode",
     "tab1_task_name",
-    "tab1_quality_profile",
     "tab1_dataset_name",
     "tab1_exp_mode",
     "tab1_retrieval_setting",
@@ -2956,7 +3037,7 @@ async def process_parallel_candidates(
         model_name=runtime_settings.model_name,
         image_model_name=runtime_settings.image_model_name,
         provider=runtime_settings.provider,
-        work_dir=Path(__file__).parent,
+        work_dir=REPO_ROOT,
     )
     emit_generation_event(
         message=(
@@ -3896,7 +3977,7 @@ def render_generation_history_panel(task_name: str) -> None:
             key=f"history_bundle_select_{normalize_task_name(task_name)}",
         )
         selected_path = Path(options[selected_label])
-        st.caption(f"文件：`{selected_path.relative_to(Path.cwd())}`")
+        st.caption(f"文件：`{format_repo_relative_path(selected_path)}`")
 
         action_col1, action_col2 = st.columns(2)
         with action_col1:
@@ -4423,30 +4504,30 @@ def render_refine_results_section(
 
 
 def _build_generation_effective_settings(
-    quality_profile: str,
     advanced_settings: dict,
     *,
     task_name: str,
 ) -> dict:
     effective_settings = dict(advanced_settings)
-    preset = GENERATION_QUALITY_PRESETS.get(
-        quality_profile,
-        GENERATION_QUALITY_PRESETS["标准质量"],
-    )
-    effective_settings["exp_mode"] = preset["exp_mode"]
-    effective_settings["retrieval_setting"] = preset["retrieval_setting"]
-    effective_settings["max_critic_rounds"] = preset["max_critic_rounds"]
-    if get_task_ui_config(task_name)["uses_render_controls"]:
-        effective_settings["image_resolution"] = preset["image_resolution"]
+    if not get_task_ui_config(task_name)["uses_render_controls"]:
+        effective_settings["image_resolution"] = ""
     return effective_settings
 
 
-def _apply_generation_effective_settings_to_session(effective_settings: dict) -> None:
-    st.session_state["tab1_exp_mode"] = effective_settings["exp_mode"]
-    st.session_state["tab1_retrieval_setting"] = effective_settings["retrieval_setting"]
-    st.session_state["tab1_max_critic_rounds"] = int(effective_settings["max_critic_rounds"])
-    if effective_settings.get("image_resolution"):
-        st.session_state["tab1_image_resolution"] = effective_settings["image_resolution"]
+def _queue_generation_widget_state_updates(updates: dict) -> None:
+    pending_updates = st.session_state.get("_pending_generation_widget_updates", {})
+    if not isinstance(pending_updates, dict):
+        pending_updates = {}
+    pending_updates.update({str(key): value for key, value in dict(updates or {}).items()})
+    st.session_state["_pending_generation_widget_updates"] = pending_updates
+
+
+def _apply_pending_generation_widget_state_updates() -> None:
+    pending_updates = st.session_state.pop("_pending_generation_widget_updates", None)
+    if not isinstance(pending_updates, dict):
+        return
+    for key, value in pending_updates.items():
+        st.session_state[str(key)] = value
 
 
 def _infer_generation_cost_label(
@@ -4469,7 +4550,6 @@ def build_generation_preflight_report(
     content_for_generation: str,
     allow_raw_plot_input: bool,
     num_candidates: int,
-    quality_profile: str,
     effective_settings: dict,
     retrieval_ref_path: Path,
     resolved_profile_path: Path | None,
@@ -4479,10 +4559,6 @@ def build_generation_preflight_report(
     warnings: list[str] = []
     notes: list[str] = []
 
-    if not str(input_content or "").strip():
-        errors.append("缺少主体输入内容，请先填写方法章节或结构化数据。")
-    if not str(visual_intent or "").strip():
-        errors.append("缺少可视化目标，请明确说明想表达的图意。")
     if generation_is_running:
         errors.append("当前已有后台生成任务运行中，请先等待完成或停止当前任务。")
     if task_name == "plot" and not allow_raw_plot_input and content_for_generation == input_content:
@@ -4492,15 +4568,13 @@ def build_generation_preflight_report(
     if not str(effective_settings.get("api_key", "") or "").strip():
         warnings.append("当前没有可用的 API Key，任务可能无法正常发起。")
     if retrieval_setting in {"auto", "auto-full", "random"} and not retrieval_ref_path.exists():
-        warnings.append(
-            f"未找到 `{format_repo_relative_path(retrieval_ref_path)}`，本次会自动回退到“不使用参考”。"
-        )
+        warnings.append("当前运行环境未找到参考样例库，本次会自动回退到“不使用参考”。")
     if retrieval_setting == "curated" and resolved_profile_path is None:
         warnings.append("当前固定参考集不存在，本次会自动回退到“不使用参考”。")
 
     notes.append(
-        "本次请求："
-        f"档位={quality_profile} | 流水线={effective_settings['exp_mode']} | "
+        "当前参数："
+        f"流水线={effective_settings['exp_mode']} | "
         f"检索={retrieval_setting} | 评审轮次={int(effective_settings['max_critic_rounds'])} | "
         f"候选数={int(num_candidates)}"
     )
@@ -4530,261 +4604,320 @@ def render_preflight_summary(report: dict) -> None:
             st.caption(message)
 
 
-def render_generation_sidebar_controls(task_name: str) -> dict:
-    task_config = get_task_ui_config(task_name)
+def render_generation_sidebar_controls() -> dict:
     with st.sidebar:
-        st.title("高级生成设置")
-        st.caption("基础输入和启动按钮放在主内容区；这里只有在需要时才展开调整的工程级参数。")
-        with st.expander("查看 / 调整高级参数", expanded=False):
-            if "tab1_dataset_name" not in st.session_state:
-                st.session_state["tab1_dataset_name"] = DEFAULT_DATASET_NAME
-            dataset_name = st.text_input(
-                "数据集名称",
-                key="tab1_dataset_name",
-                help="用于定位参考样例、GT 资源和数据集内的相对路径。",
-            ).strip() or DEFAULT_DATASET_NAME
-            st.caption(f"当前参考资源目录：`{dataset_name}`")
+        ensure_session_choice_state(
+            "tab1_task_name",
+            ["diagram", "plot"],
+            normalize_task_name(st.session_state.get("tab1_task_name", "diagram")),
+        )
+        task_name = st.selectbox(
+            "生成任务",
+            ["diagram", "plot"],
+            key="tab1_task_name",
+            format_func=lambda x: TASK_OPTION_LABELS[x],
+            help="选择当前要生成的是论文方法图解，还是统计图表。",
+        )
+        task_config = get_task_ui_config(task_name)
 
-            exp_mode = st.selectbox(
-                "生成流程",
-                ["demo_planner_critic", "demo_full"],
-                key="tab1_exp_mode",
-                format_func=lambda x: PIPELINE_OPTION_LABELS[x],
-                help="选择本次生成采用的多 Agent 流程。",
+        ensure_session_int_state(
+            "tab1_num_candidates",
+            5,
+            min_value=1,
+            max_value=20,
+        )
+        num_candidates = int(
+            st.number_input(
+                "候选方案数量",
+                min_value=1,
+                max_value=20,
+                key="tab1_num_candidates",
+                help="要并行生成多少个候选方案。",
             )
-            st.info(GENERATION_MODE_INFO[exp_mode])
+        )
+        st.divider()
 
-            retrieval_setting_key = "tab1_retrieval_setting"
-            retrieval_options = ["auto", "auto-full", "curated", "random", "none"]
-            current_retrieval_setting = normalize_retrieval_setting(
-                st.session_state.get(retrieval_setting_key, "auto")
-            )
-            if st.session_state.get(retrieval_setting_key) != current_retrieval_setting:
-                st.session_state[retrieval_setting_key] = current_retrieval_setting
-            retrieval_setting = st.selectbox(
-                "参考样例策略",
-                retrieval_options,
-                index=retrieval_options.index(current_retrieval_setting),
-                key=retrieval_setting_key,
-                help="决定系统如何选择用于 few-shot 提示的参考样例。",
-                format_func=get_retrieval_setting_label,
-            )
+        if "tab1_dataset_name" not in st.session_state:
+            st.session_state["tab1_dataset_name"] = DEFAULT_DATASET_NAME
+        dataset_name = st.text_input(
+            "数据集名称",
+            key="tab1_dataset_name",
+            help="用于定位参考样例、GT 资源和数据集内的相对路径。",
+        ).strip() or DEFAULT_DATASET_NAME
+        st.caption(f"当前参考资源目录：`{dataset_name}`")
 
-            retrieval_target_label = "可视化意图" if task_name == "plot" else "图注"
-            retrieval_ref_path = get_reference_file_path(
+        exp_mode = st.selectbox(
+            "生成流程",
+            ["demo_planner_critic", "demo_full"],
+            key="tab1_exp_mode",
+            format_func=lambda x: PIPELINE_OPTION_LABELS[x],
+            help="选择本次生成采用的多 Agent 流程。",
+        )
+        st.info(GENERATION_MODE_INFO[exp_mode])
+
+        retrieval_setting_key = "tab1_retrieval_setting"
+        retrieval_options = ["auto", "auto-full", "curated", "random", "none"]
+        ensure_session_choice_state(
+            retrieval_setting_key,
+            retrieval_options,
+            normalize_retrieval_setting(st.session_state.get(retrieval_setting_key, "auto")),
+        )
+        retrieval_setting = st.selectbox(
+            "参考样例策略",
+            retrieval_options,
+            key=retrieval_setting_key,
+            help="决定系统如何选择用于 few-shot 提示的参考样例。",
+            format_func=get_retrieval_setting_label,
+        )
+
+        retrieval_target_label = "可视化意图" if task_name == "plot" else "图注"
+        retrieval_ref_path = get_reference_file_path(
+            dataset_name,
+            task_name,
+            work_dir=REPO_ROOT,
+        )
+        retrieval_notice = RETRIEVAL_NOTICE_TEXT[retrieval_setting]
+        if retrieval_setting == "auto":
+            retrieval_notice = (
+                f"默认推荐。只把你的{retrieval_target_label}发给模型做参考匹配，成本低、速度快，适合大多数试跑。"
+            )
+        getattr(st, RETRIEVAL_NOTICE_LEVELS[retrieval_setting])(retrieval_notice)
+
+        curated_profile_key = "tab1_curated_profile"
+        curated_profile_input_key = "tab1_curated_profile_input"
+        current_curated_profile = initialize_curated_profile_state(
+            profile_key=curated_profile_key,
+            input_key=curated_profile_input_key,
+        )
+        curated_profile = current_curated_profile
+        resolved_profile_path = None
+        if retrieval_setting == "curated":
+            curated_profile_input = st.text_input(
+                "固定参考集名称",
+                key=curated_profile_input_key,
+                help=(
+                    "填写要使用的固定参考集名称。系统优先读取 "
+                    "`manual_profiles/<name>.json`；当名称为 `default` 时，也兼容旧的 "
+                    "`agent_selected_12.json`。"
+                ),
+            )
+            curated_profile = resolve_curated_profile_input(
+                curated_profile_input,
+                profile_key=curated_profile_key,
+            )
+            if curated_profile != str(curated_profile_input or "").strip():
+                st.caption(f"运行时会使用规范化名称：`{curated_profile}`")
+            resolved_profile_path = find_curated_profile_path(
                 dataset_name,
                 task_name,
+                profile_name=curated_profile,
                 work_dir=REPO_ROOT,
             )
-            retrieval_notice = RETRIEVAL_NOTICE_TEXT[retrieval_setting]
-            if retrieval_setting == "auto":
-                retrieval_notice = (
-                    f"默认推荐。只把你的{retrieval_target_label}发给模型做参考匹配，成本低、速度快，适合大多数试跑。"
+            if resolved_profile_path is not None:
+                source_note = ""
+                if resolved_profile_path.name == "agent_selected_12.json":
+                    source_note = "（兼容旧版 agent_selected_12.json）"
+                st.caption(
+                    f"当前固定参考集文件：`{format_repo_relative_path(resolved_profile_path)}`{source_note}"
                 )
-            getattr(st, RETRIEVAL_NOTICE_LEVELS[retrieval_setting])(retrieval_notice)
-
-            curated_profile_key = "tab1_curated_profile"
-            curated_profile_input_key = "tab1_curated_profile_input"
-            current_curated_profile = initialize_curated_profile_state(
-                profile_key=curated_profile_key,
-                input_key=curated_profile_input_key,
-            )
-            curated_profile = current_curated_profile
-            resolved_profile_path = None
-            if retrieval_setting == "curated":
-                curated_profile_input = st.text_input(
-                    "固定参考集名称",
-                    key=curated_profile_input_key,
-                    help=(
-                        "填写要使用的固定参考集名称。系统优先读取 "
-                        "`manual_profiles/<name>.json`；当名称为 `default` 时，也兼容旧的 "
-                        "`agent_selected_12.json`。"
-                    ),
-                )
-                curated_profile = resolve_curated_profile_input(
-                    curated_profile_input,
-                    profile_key=curated_profile_key,
-                )
-                if curated_profile != str(curated_profile_input or "").strip():
-                    st.caption(f"运行时会使用规范化名称：`{curated_profile}`")
-                resolved_profile_path = find_curated_profile_path(
+            else:
+                expected_profile_path = get_curated_profile_path(
                     dataset_name,
                     task_name,
                     profile_name=curated_profile,
                     work_dir=REPO_ROOT,
                 )
-                if resolved_profile_path is not None:
-                    source_note = ""
-                    if resolved_profile_path.name == "agent_selected_12.json":
-                        source_note = "（兼容旧版 agent_selected_12.json）"
-                    st.caption(
-                        f"当前固定参考集文件：`{format_repo_relative_path(resolved_profile_path)}`{source_note}"
-                    )
-                else:
-                    expected_profile_path = get_curated_profile_path(
+                if curated_profile == DEFAULT_CURATED_PROFILE:
+                    legacy_profile_path = get_legacy_manual_reference_path(
                         dataset_name,
                         task_name,
-                        profile_name=curated_profile,
                         work_dir=REPO_ROOT,
                     )
-                    if curated_profile == DEFAULT_CURATED_PROFILE:
-                        legacy_profile_path = get_legacy_manual_reference_path(
-                            dataset_name,
-                            task_name,
-                            work_dir=REPO_ROOT,
-                        )
-                        st.warning(
-                            "当前未发现默认固定参考集。系统会优先查找 "
-                            f"`{format_repo_relative_path(expected_profile_path)}`，并兼容旧路径 "
-                            f"`{format_repo_relative_path(legacy_profile_path)}`。"
-                        )
-                    else:
-                        st.warning(
-                            f"当前未找到固定参考集：`{format_repo_relative_path(expected_profile_path)}`。运行时会自动回退到“不使用参考”。"
-                        )
-
-            num_candidates = int(st.session_state.get("tab1_num_candidates", 5) or 5)
-            concurrency_mode = st.selectbox(
-                "并发策略",
-                ["auto", "manual"],
-                index=0,
-                key="tab1_concurrency_mode",
-                help="auto：自动并发（默认）| manual：使用固定并发上限",
-            )
-            max_concurrent = st.number_input(
-                "并发上限",
-                min_value=1,
-                max_value=100,
-                value=int(st.session_state.get("tab1_max_concurrent", 20) or 20),
-                step=1,
-                key="tab1_max_concurrent",
-                help="候选任务并发上限，默认 20",
-            )
-            effective_concurrency_preview = compute_effective_concurrency(
-                concurrency_mode=concurrency_mode,
-                max_concurrent=int(max_concurrent),
-                total_candidates=num_candidates,
-                task_name=task_name,
-                retrieval_setting=retrieval_setting,
-                exp_mode=exp_mode,
-                provider=st.session_state.get("tab1_provider", "gemini"),
-            )
-            estimated_batches_preview = math.ceil(
-                max(1, num_candidates) / max(1, effective_concurrency_preview)
-            )
-            st.caption(f"预计并发：{effective_concurrency_preview} | 批次：{estimated_batches_preview}")
-
-            if task_config["uses_render_controls"]:
-                aspect_ratio = st.selectbox(
-                    "宽高比",
-                    COMMON_ASPECT_RATIOS,
-                    key="tab1_aspect_ratio",
-                    help="生成图表的宽高比",
-                )
-                provider_for_resolution = st.session_state.get("tab1_provider", "gemini")
-                resolution_options = ["1K", "2K", "4K"] if provider_for_resolution == "gemini" else ["2K", "4K"]
-                default_resolution = st.session_state.get("tab1_image_resolution", "2K")
-                if default_resolution not in resolution_options:
-                    default_resolution = "2K" if "2K" in resolution_options else resolution_options[0]
-                image_resolution = st.selectbox(
-                    "图像分辨率",
-                    resolution_options,
-                    index=resolution_options.index(default_resolution),
-                    key="tab1_image_resolution",
-                    help=f"生成图像的分辨率（当前 Provider 支持：{', '.join(resolution_options)}）",
-                )
-            else:
-                aspect_ratio = "16:9"
-                image_resolution = "2K"
-                st.info("当前任务使用 Matplotlib 代码渲染，宽高比和图像分辨率控件暂不生效。")
-
-            max_critic_rounds = st.number_input(
-                "最大评审轮次",
-                min_value=0,
-                max_value=5,
-                value=int(st.session_state.get("tab1_max_critic_rounds", 3) or 3),
-                key="tab1_max_critic_rounds",
-                help="评审优化迭代的最大轮次；设为 0 可做低成本试跑。",
-            )
-            provider = st.selectbox(
-                "生成 Provider",
-                ["gemini", "evolink"],
-                index=0,
-                key="tab1_provider",
-                help="gemini：官方 Google AI Studio 路径；evolink：国内代理路径。",
-            )
-
-            provider_defaults = get_provider_ui_defaults(provider)
-            if "tab1_api_key" not in st.session_state:
-                st.session_state["tab1_api_key"] = provider_defaults["api_key_default"]
-            if "tab1_model_name" not in st.session_state:
-                st.session_state["tab1_model_name"] = provider_defaults["model_name"]
-            if "tab1_image_model_name" not in st.session_state:
-                st.session_state["tab1_image_model_name"] = provider_defaults["image_model_name"]
-            if "prev_provider" not in st.session_state:
-                st.session_state["prev_provider"] = provider
-            if st.session_state["prev_provider"] != provider:
-                st.session_state["prev_provider"] = provider
-                st.session_state["tab1_model_name"] = provider_defaults["model_name"]
-                st.session_state["tab1_model_name_selector"] = provider_defaults["model_name"]
-                st.session_state["tab1_model_name_custom"] = ""
-                st.session_state["tab1_image_model_name"] = provider_defaults["image_model_name"]
-                st.session_state["tab1_image_model_name_selector"] = provider_defaults["image_model_name"]
-                st.session_state["tab1_image_model_name_custom"] = ""
-                st.session_state["tab1_api_key"] = provider_defaults["api_key_default"]
-                new_resolution_options = ["1K", "2K", "4K"] if provider == "gemini" else ["2K", "4K"]
-                if st.session_state.get("tab1_image_resolution") not in new_resolution_options:
-                    st.session_state["tab1_image_resolution"] = "2K" if "2K" in new_resolution_options else new_resolution_options[0]
-                st.rerun()
-
-            api_key = render_provider_api_key_controls(
-                provider=provider,
-                provider_defaults=provider_defaults,
-                session_key="tab1_api_key",
-                clear_request_key="tab1_api_key_clear_requested",
-                clear_button_key="tab1_clear_provider_api_key",
-            )
-            if provider == "gemini":
-                model_name = render_preset_or_custom_model_input(
-                    "文本模型",
-                    GEMINI_TEXT_MODELS,
-                    value_key="tab1_model_name",
-                    selector_key="tab1_model_name_selector",
-                    custom_value_key="tab1_model_name_custom",
-                    default_value=provider_defaults["model_name"],
-                    select_help="用于推理/规划/评审的模型名称。可选择预设模型，或选“自定义”后手动输入。",
-                    custom_help="请输入用于推理/规划/评审的自定义文本模型名称。",
-                )
-            else:
-                model_name = st.text_input(
-                    "文本模型",
-                    key="tab1_model_name",
-                    help="用于推理/规划/评审的模型名称",
-                )
-
-            if task_config["uses_image_model"]:
-                if provider == "gemini":
-                    image_model_name = render_preset_or_custom_model_input(
-                        "图像模型",
-                        GEMINI_IMAGE_MODELS,
-                        value_key="tab1_image_model_name",
-                        selector_key="tab1_image_model_name_selector",
-                        custom_value_key="tab1_image_model_name_custom",
-                        default_value=provider_defaults["image_model_name"],
-                        select_help="用于图像生成的模型名称。可选择预设模型，或选“自定义”后手动输入。",
-                        custom_help="请输入用于图像生成的自定义模型名称。",
+                    st.warning(
+                        "当前未发现默认固定参考集。系统会优先查找 "
+                        f"`{format_repo_relative_path(expected_profile_path)}`，并兼容旧路径 "
+                        f"`{format_repo_relative_path(legacy_profile_path)}`。"
                     )
                 else:
-                    image_model_name = st.text_input(
-                        "图像模型",
-                        key="tab1_image_model_name",
-                        help="用于图像生成的模型名称",
+                    st.warning(
+                        f"当前未找到固定参考集：`{format_repo_relative_path(expected_profile_path)}`。运行时会自动回退到“不使用参考”。"
                     )
+
+        ensure_session_choice_state(
+            "tab1_concurrency_mode",
+            ["auto", "manual"],
+            str(st.session_state.get("tab1_concurrency_mode", "auto") or "auto"),
+        )
+        concurrency_mode = st.selectbox(
+            "并发策略",
+            ["auto", "manual"],
+            key="tab1_concurrency_mode",
+            help="auto：自动并发（默认）| manual：使用固定并发上限",
+        )
+        ensure_session_int_state(
+            "tab1_max_concurrent",
+            20,
+            min_value=1,
+            max_value=100,
+        )
+        max_concurrent = st.number_input(
+            "并发上限",
+            min_value=1,
+            max_value=100,
+            step=1,
+            key="tab1_max_concurrent",
+            help="候选任务并发上限，默认 20",
+        )
+        effective_concurrency_preview = compute_effective_concurrency(
+            concurrency_mode=concurrency_mode,
+            max_concurrent=int(max_concurrent),
+            total_candidates=num_candidates,
+            task_name=task_name,
+            retrieval_setting=retrieval_setting,
+            exp_mode=exp_mode,
+            provider=st.session_state.get("tab1_provider", "gemini"),
+        )
+        estimated_batches_preview = math.ceil(
+            max(1, num_candidates) / max(1, effective_concurrency_preview)
+        )
+        st.caption(f"预计并发：{effective_concurrency_preview} | 批次：{estimated_batches_preview}")
+
+        if task_config["uses_render_controls"]:
+            ensure_session_choice_state(
+                "tab1_aspect_ratio",
+                COMMON_ASPECT_RATIOS,
+                str(st.session_state.get("tab1_aspect_ratio", "16:9") or "16:9"),
+            )
+            aspect_ratio = st.selectbox(
+                "宽高比",
+                COMMON_ASPECT_RATIOS,
+                key="tab1_aspect_ratio",
+                help="生成图表的宽高比",
+            )
+            provider_for_resolution = st.session_state.get("tab1_provider", "gemini")
+            resolution_options = ["1K", "2K", "4K"] if provider_for_resolution == "gemini" else ["2K", "4K"]
+            default_resolution = st.session_state.get("tab1_image_resolution", "2K")
+            if default_resolution not in resolution_options:
+                default_resolution = "2K" if "2K" in resolution_options else resolution_options[0]
+            ensure_session_choice_state(
+                "tab1_image_resolution",
+                resolution_options,
+                str(default_resolution),
+            )
+            image_resolution = st.selectbox(
+                "图像分辨率",
+                resolution_options,
+                key="tab1_image_resolution",
+                help=f"生成图像的分辨率（当前 Provider 支持：{', '.join(resolution_options)}）",
+            )
+        else:
+            aspect_ratio = "16:9"
+            image_resolution = "2K"
+            st.info("当前任务使用 Matplotlib 代码渲染，宽高比和图像分辨率控件暂不生效。")
+
+        ensure_session_int_state(
+            "tab1_max_critic_rounds",
+            3,
+            min_value=0,
+            max_value=5,
+        )
+        max_critic_rounds = st.number_input(
+            "最大评审轮次",
+            min_value=0,
+            max_value=5,
+            key="tab1_max_critic_rounds",
+            help="评审优化迭代的最大轮次；设为 0 可做低成本试跑。",
+        )
+        ensure_session_choice_state(
+            "tab1_provider",
+            ["gemini", "evolink"],
+            str(st.session_state.get("tab1_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
+        )
+        provider = st.selectbox(
+            "生成 Provider",
+            ["gemini", "evolink"],
+            key="tab1_provider",
+            help="gemini：官方 Google AI Studio 路径；evolink：国内代理路径。",
+        )
+
+        provider_defaults = get_provider_ui_defaults(provider)
+        if "tab1_api_key" not in st.session_state:
+            st.session_state["tab1_api_key"] = provider_defaults["api_key_default"]
+        if "tab1_model_name" not in st.session_state:
+            st.session_state["tab1_model_name"] = provider_defaults["model_name"]
+        if "tab1_image_model_name" not in st.session_state:
+            st.session_state["tab1_image_model_name"] = provider_defaults["image_model_name"]
+        if "prev_provider" not in st.session_state:
+            st.session_state["prev_provider"] = provider
+        if st.session_state["prev_provider"] != provider:
+            st.session_state["prev_provider"] = provider
+            pending_provider_updates = {
+                "tab1_model_name": provider_defaults["model_name"],
+                "tab1_model_name_selector": provider_defaults["model_name"],
+                "tab1_model_name_custom": "",
+                "tab1_image_model_name": provider_defaults["image_model_name"],
+                "tab1_image_model_name_selector": provider_defaults["image_model_name"],
+                "tab1_image_model_name_custom": "",
+                "tab1_api_key": provider_defaults["api_key_default"],
+            }
+            new_resolution_options = ["1K", "2K", "4K"] if provider == "gemini" else ["2K", "4K"]
+            if st.session_state.get("tab1_image_resolution") not in new_resolution_options:
+                pending_provider_updates["tab1_image_resolution"] = (
+                    "2K" if "2K" in new_resolution_options else new_resolution_options[0]
+                )
+            _queue_generation_widget_state_updates(pending_provider_updates)
+            st.rerun()
+
+        api_key = render_provider_api_key_controls(
+            provider=provider,
+            provider_defaults=provider_defaults,
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            clear_button_key="tab1_clear_provider_api_key",
+        )
+        if provider == "gemini":
+            model_name = render_preset_or_custom_model_input(
+                "文本模型",
+                GEMINI_TEXT_MODELS,
+                value_key="tab1_model_name",
+                selector_key="tab1_model_name_selector",
+                custom_value_key="tab1_model_name_custom",
+                default_value=provider_defaults["model_name"],
+                select_help="用于推理/规划/评审的模型名称。可选择预设模型，或选“自定义”后手动输入。",
+                custom_help="请输入用于推理/规划/评审的自定义文本模型名称。",
+            )
+        else:
+            model_name = st.text_input(
+                "文本模型",
+                key="tab1_model_name",
+                help="用于推理/规划/评审的模型名称",
+            )
+
+        if task_config["uses_image_model"]:
+            if provider == "gemini":
+                image_model_name = render_preset_or_custom_model_input(
+                    "图像模型",
+                    GEMINI_IMAGE_MODELS,
+                    value_key="tab1_image_model_name",
+                    selector_key="tab1_image_model_name_selector",
+                    custom_value_key="tab1_image_model_name_custom",
+                    default_value=provider_defaults["image_model_name"],
+                    select_help="用于图像生成的模型名称。可选择预设模型，或选“自定义”后手动输入。",
+                    custom_help="请输入用于图像生成的自定义模型名称。",
+                )
             else:
-                image_model_name = ""
-                st.caption("当前任务不会调用图像生成模型，最终图像由文本模型生成的 Matplotlib 代码渲染。")
+                image_model_name = st.text_input(
+                    "图像模型",
+                    key="tab1_image_model_name",
+                    help="用于图像生成的模型名称",
+                )
+        else:
+            image_model_name = ""
+            st.caption("当前任务不会调用图像生成模型，最终图像由文本模型生成的 Matplotlib 代码渲染。")
 
     return {
+        "task_name": task_name,
+        "num_candidates": int(num_candidates),
         "dataset_name": dataset_name,
         "exp_mode": exp_mode,
         "retrieval_setting": retrieval_setting,
@@ -4918,11 +5051,11 @@ def render_generation_results_panel(default_task_name: str) -> None:
         with columns[0]:
             file_label = ""
             if json_file_path and json_file_path.exists():
-                file_label = f"📄 结果已保存至：`{json_file_path.relative_to(Path.cwd())}`"
+                file_label = f"📄 结果已保存至：`{format_repo_relative_path(json_file_path)}`"
             if bundle_file_path and bundle_file_path.exists():
                 if file_label:
                     file_label += "\n\n"
-                file_label += f"🧾 Bundle：`{bundle_file_path.relative_to(Path.cwd())}`"
+                file_label += f"🧾 Bundle：`{format_repo_relative_path(bundle_file_path)}`"
             st.info(file_label)
         if json_file_path and json_file_path.exists():
             with columns[1]:
@@ -5163,9 +5296,7 @@ def render_refine_activity_fragment(
 
 
 def render_generation_workspace() -> None:
-    current_task_name = normalize_task_name(st.session_state.get("tab1_task_name", "diagram"))
-    current_task_config = get_task_ui_config(current_task_name)
-    st.markdown(f"### {current_task_config['intro']}")
+    _apply_pending_generation_widget_state_updates()
 
     active_generation_job_id = st.session_state.get("active_generation_job_id")
     active_generation_snapshot = hydrate_persisted_job_snapshot(
@@ -5176,38 +5307,13 @@ def render_generation_workspace() -> None:
         active_generation_snapshot and active_generation_snapshot.get("status") == "running"
     )
 
-    basic_cols = st.columns(3)
-    with basic_cols[0]:
-        task_name = st.selectbox(
-            "生成任务",
-            ["diagram", "plot"],
-            index=0 if current_task_name == "diagram" else 1,
-            key="tab1_task_name",
-            format_func=lambda x: TASK_OPTION_LABELS[x],
-            help="选择当前要生成的是论文方法图解，还是统计图表。",
-        )
-    with basic_cols[1]:
-        num_candidates = st.number_input(
-            "候选方案数量",
-            min_value=1,
-            max_value=20,
-            value=int(st.session_state.get("tab1_num_candidates", 5) or 5),
-            key="tab1_num_candidates",
-            help="要并行生成多少个候选方案。",
-        )
-    with basic_cols[2]:
-        quality_profile = st.selectbox(
-            "质量 / 成本档位",
-            list(GENERATION_QUALITY_PRESETS),
-            key="tab1_quality_profile",
-            help="这是面向真实使用的推荐档位，会在点击开始时覆盖相应高级参数。",
-        )
-
+    advanced_settings = render_generation_sidebar_controls()
+    task_name = normalize_task_name(advanced_settings["task_name"])
+    num_candidates = int(advanced_settings["num_candidates"])
     task_config = get_task_ui_config(task_name)
-    st.caption("默认只露出任务、候选数和输入区；检索、Provider、模型、并发和评审轮次被折叠到左侧高级设置。")
-    advanced_settings = render_generation_sidebar_controls(task_name)
+    st.markdown(f"### {task_config['intro']}")
+
     effective_settings = _build_generation_effective_settings(
-        quality_profile,
         advanced_settings,
         task_name=task_name,
     )
@@ -5290,7 +5396,6 @@ def render_generation_workspace() -> None:
             content_for_generation=content_for_generation,
             allow_raw_plot_input=allow_raw_plot_input,
             num_candidates=int(num_candidates),
-            quality_profile=quality_profile,
             effective_settings=effective_settings,
             retrieval_ref_path=advanced_settings["retrieval_ref_path"],
             resolved_profile_path=advanced_settings["resolved_profile_path"],
@@ -5308,7 +5413,6 @@ def render_generation_workspace() -> None:
         if preflight_report["errors"]:
             st.error("当前请求未通过启动前检查，请先修正上面的错误项。")
         else:
-            _apply_generation_effective_settings_to_session(effective_settings)
             st.session_state[content_state_key] = input_content
             st.session_state[visual_state_key] = visual_intent
             job_id = start_generation_background_job(
@@ -5363,35 +5467,48 @@ def render_refine_workspace() -> None:
 
         refine_settings_col1, refine_settings_col2 = st.columns(2)
         with refine_settings_col1:
+            ensure_session_choice_state("refine_resolution", ["2K", "4K"], "2K")
             refine_resolution = st.selectbox(
                 "目标分辨率",
                 ["2K", "4K"],
-                index=0,
                 key="refine_resolution",
                 help="更高分辨率会增加耗时，但通常能得到更细致的结果。",
+            )
+            ensure_session_choice_state(
+                "refine_aspect_ratio",
+                COMMON_ASPECT_RATIOS,
+                COMMON_ASPECT_RATIOS[0],
             )
             refine_aspect_ratio = st.selectbox(
                 "宽高比",
                 COMMON_ASPECT_RATIOS,
-                index=0,
                 key="refine_aspect_ratio",
                 help="指定精修后图像的目标宽高比。",
+            )
+            ensure_session_int_state(
+                "refine_num_images",
+                3,
+                min_value=1,
+                max_value=12,
             )
             refine_num_images = st.number_input(
                 "精修张数",
                 min_value=1,
                 max_value=12,
-                value=int(st.session_state.get("refine_num_images", 3) or 3),
                 step=1,
                 key="refine_num_images",
                 help="并发生成多少张不同版本，便于横向挑选。",
             )
 
         with refine_settings_col2:
+            ensure_session_choice_state(
+                "refine_provider",
+                ["gemini", "evolink"],
+                str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
+            )
             refine_provider = st.selectbox(
                 "精修 Provider",
                 ["gemini", "evolink"],
-                index=0,
                 key="refine_provider",
                 help="精修链路可单独选择 Provider，不依赖生成页设置。",
             )
