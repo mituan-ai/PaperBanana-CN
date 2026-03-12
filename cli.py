@@ -16,10 +16,13 @@
 PaperBanana-Pro CLI — 全局入口。
 
 支持：
-    paperbanana-pro              启动 GUI
-    paperbanana-pro gui          启动 GUI
-    paperbanana-pro run [...]    运行批处理 CLI
-    paperbanana-pro viewer ...   启动 viewer
+    paperbanana                  启动 GUI
+    paperbanana gui              启动 GUI
+    paperbanana run [...]        运行批处理 CLI
+    paperbanana viewer ...       启动 viewer
+
+兼容别名：
+    paperbanana-pro
 """
 
 from __future__ import annotations
@@ -96,10 +99,14 @@ def _print_viewer_help() -> None:
     print(
         """
 Viewer 子命令：
-    paperbanana-pro viewer evolution [args]   启动流程回放 viewer
-    paperbanana-pro viewer eval [args]        启动参考评测 viewer
+    paperbanana viewer evolution [args]   启动流程回放 viewer
+    paperbanana viewer eval [args]        启动参考评测 viewer
 
-别名：
+兼容别名：
+    paperbanana-pro viewer evolution [args]
+    paperbanana-pro viewer eval [args]
+
+别名映射：
     pipeline -> evolution
     review   -> eval
 """
@@ -112,30 +119,32 @@ def _print_help() -> None:
 PaperBanana-Pro 🍌  —  Academic Illustration Workbench
 
 主命令：
-    paperbanana-pro
-    paperbanana-pro gui [args]
-    paperbanana-pro run [args]
-    paperbanana-pro viewer evolution [args]
-    paperbanana-pro viewer eval [args]
-    paperbanana-pro --help
+    paperbanana
+    paperbanana gui [args]
+    paperbanana run [args]
+    paperbanana viewer evolution [args]
+    paperbanana viewer eval [args]
+    paperbanana --help
 
 兼容别名：
-    paperbanana
+    paperbanana-pro
 
 示例：
-    paperbanana-pro
-    paperbanana-pro gui --server.port 9000
-    paperbanana-pro run --exp_mode dev_full --task_name diagram
-    paperbanana-pro run --resume
-    paperbanana-pro viewer evolution
-    paperbanana-pro viewer eval
+    paperbanana
+    paperbanana gui --server.port 9000
+    paperbanana run --exp_mode dev_full --task_name diagram
+    paperbanana run --resume
+    paperbanana viewer evolution
+    paperbanana viewer eval
+    paperbanana-pro --help
 
-安装方式：
-    uv tool install .
-    uv tool install --from . paperbanana-pro
+安装方式（当前正式支持）：
+    uv sync --locked
+    uv tool install --editable . --force
 
-发布后：
-    uv tool install paperbanana-pro
+未来路线（暂未支持）：
+    非 editable uv tool install
+    PyPI / 索引发布
 """
     )
 

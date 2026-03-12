@@ -15,20 +15,32 @@ class CliEntrypointTest(unittest.TestCase):
             )
         )
 
-    def test_help_mentions_viewer_and_standalone_install(self):
+    def test_help_mentions_paperbanana_primary_command_and_repo_first_install(self):
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             cli._print_help()
         help_text = buffer.getvalue()
 
+        self.assertIn("paperbanana viewer evolution", help_text)
+        self.assertIn("paperbanana viewer eval", help_text)
+        self.assertIn("paperbanana --help", help_text)
+        self.assertIn("paperbanana-pro", help_text)
+        self.assertIn("uv tool install --editable . --force", help_text)
+        self.assertIn("未来路线", help_text)
+
+    def test_viewer_help_mentions_paperbanana_primary_command(self):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            cli._print_viewer_help()
+        help_text = buffer.getvalue()
+
+        self.assertIn("paperbanana viewer evolution", help_text)
+        self.assertIn("paperbanana viewer eval", help_text)
         self.assertIn("paperbanana-pro viewer evolution", help_text)
-        self.assertIn("paperbanana-pro viewer eval", help_text)
-        self.assertIn("uv tool install .", help_text)
-        self.assertIn("uv tool install paperbanana-pro", help_text)
 
     def test_main_dispatches_viewer_subcommand(self):
         with mock.patch.object(cli, "_launch_viewer", return_value=0) as launch_viewer:
-            with mock.patch("sys.argv", ["paperbanana-pro", "viewer", "eval"]):
+            with mock.patch("sys.argv", ["paperbanana", "viewer", "eval"]):
                 with self.assertRaises(SystemExit) as ctx:
                     cli.main()
 
@@ -37,7 +49,7 @@ class CliEntrypointTest(unittest.TestCase):
 
     def test_main_dispatches_run_subcommand(self):
         with mock.patch.object(cli, "_launch_cli", return_value=0) as launch_cli:
-            with mock.patch("sys.argv", ["paperbanana-pro", "run", "--help"]):
+            with mock.patch("sys.argv", ["paperbanana", "run", "--help"]):
                 with self.assertRaises(SystemExit) as ctx:
                     cli.main()
 

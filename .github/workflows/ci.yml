@@ -23,7 +23,7 @@ jobs:
         run: uv sync --locked --python 3.12
 
       - name: Compile Python sources
-        run: uv run python -m compileall cli.py demo.py main.py utils visualize tests
+        run: uv run python -m compileall agents providers utils visualize tests cli.py demo.py main.py
 
       - name: Run unit tests
         run: uv run python -m unittest discover -s tests
@@ -37,5 +37,17 @@ jobs:
           $toolBin = uv tool dir --bin
           $toolBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Smoke test CLI entrypoint
-        run: paperbanana-pro --help
+      - name: Smoke test global CLI entrypoints
+        shell: pwsh
+        run: |
+          $smokeDir = Join-Path $env:RUNNER_TEMP "paperbanana-cli-smoke"
+          New-Item -ItemType Directory -Path $smokeDir -Force | Out-Null
+          Push-Location $smokeDir
+          try {
+            paperbanana --help
+            paperbanana-pro --help
+            paperbanana run --help
+          }
+          finally {
+            Pop-Location
+          }
