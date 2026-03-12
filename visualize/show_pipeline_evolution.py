@@ -24,33 +24,29 @@ from io import BytesIO
 from PIL import Image
 import os
 import sys
-from pathlib import Path
 
 # Ensure local imports work
 sys.path.append(os.getcwd())
 
 from utils.pipeline_state import (
+    critic_suggestions_key,
     build_render_stage_entries,
     detect_task_type_from_result,
+    get_available_critic_rounds,
     stage_display_label,
 )
-from utils.result_bundle import load_result_bundle
+from utils.result_order import format_candidate_display_label
 from utils.result_paths import resolve_gt_image_path
+from visualize.viewer_helpers import (
+    clear_viewer_bundle_cache,
+    get_result_identifier,
+    matches_result_search,
+    render_bundle_manifest_sidebar,
+    render_bundle_source_picker,
+    render_viewer_empty_state,
+)
 
-st.set_page_config(layout="wide", page_title="PaperBanana 演化查看器", page_icon="🍌")
-
-
-
-@st.cache_data
-def load_data(path):
-    """Read legacy JSON/JSONL files or standardized result bundles."""
-    if not os.path.exists(path):
-        return {"manifest": {}, "summary": {}, "failures": [], "results": []}
-    try:
-        return load_result_bundle(path)
-    except Exception as e:
-        st.error(f"读取结果文件失败：{e}")
-        return {"manifest": {}, "summary": {}, "failures": [], "results": []}
+st.set_page_config(layout="wide", page_title="PaperBanana-Pro 流程回放", page_icon="🍌")
 
 def base64_to_image(b64_str):
     if not b64_str:
@@ -66,6 +62,23 @@ def base64_to_image(b64_str):
 def detect_task_type(item):
     """Detect whether data is for diagram or plot task."""
     return detect_task_type_from_result(item)
+
+
+def get_latest_review_notes(item):
+    task_type = detect_task_type(item)
+    rounds = get_available_critic_rounds(item, task_type)
+    if rounds:
+        latest_key = critic_suggestions_key(task_type, rounds[-1])
+        latest_notes = str(item.get(latest_key, "") or "").strip()
+        if latest_notes:
+            return latest_notes
+    for legacy_key in ("critique0", "suggestions_diagram", "suggestions_plot"):
+        legacy_notes = str(item.get(legacy_key, "") or "").strip()
+        if legacy_notes:
+            return legacy_notes
+    return ""
+
+
 def display_stage_comparison(item, results_path):
     """Display 2x2 grid comparison: Ground Truth + three pipeline stages."""
     st.markdown("### 📊 流水线演化对比")
@@ -167,11 +180,11 @@ def display_stage_comparison(item, results_path):
                     # Display description in expander
                     desc = item.get(stage["desc_key"], "暂无描述")
                     with st.expander("查看描述", expanded=False):
-                        if task_type == "plot" and desc:
-                             # Try to format as code if it looks like code, or just text
-                             st.code(desc, language="python") # Plots are usually python code
-                        else:
-                             st.write(desc)
+                        st.write(desc)
+
+                    if task_type == "plot" and stage.get("code_key") and item.get(stage["code_key"]):
+                        with st.expander("查看 Matplotlib 代码", expanded=False):
+                            st.code(item[stage["code_key"]], language="python")
                     
                     # Display critic suggestions if this is a critic stage
                     if "suggestions_key" in stage:
@@ -182,10 +195,11 @@ def display_stage_comparison(item, results_path):
 
 def display_critique(item):
     """Display the critique if available."""
-    if "critique0" in item and item["critique0"]:
+    critique = get_latest_review_notes(item)
+    if critique:
         st.markdown("### 💬 评审反馈")
         with st.expander("查看评审内容", expanded=False):
-            st.write(item["critique0"])
+            st.write(critique)
 
 def display_evaluation_results(item):
     """Display evaluation results if available."""
@@ -218,59 +232,54 @@ def display_evaluation_results(item):
                     st.write(reasoning)
 
 def main():
-    st.sidebar.title("🍌 流水线演化查看器")
-    file_path = st.sidebar.text_input("结果文件路径", placeholder="请输入结果文件路径...")
-    
+    bundle_source = render_bundle_source_picker(
+        viewer_key="pipeline_evolution",
+        sidebar_title="🍌 流程回放",
+    )
+
     if st.sidebar.button("🔄 刷新数据"):
-        load_data.clear()
+        clear_viewer_bundle_cache()
         st.rerun()
-    
-    if not file_path:
-        st.info("👆 请输入结果文件路径")
+
+    if bundle_source is None:
+        st.info("请先上传结果 Bundle；只有在需要读取本地同目录资源时，才使用高级路径模式。")
         st.stop()
-    
-    if not os.path.exists(file_path):
-        st.error(f"未找到文件：{file_path}")
-        st.stop()
-    
-    bundle = load_data(file_path)
+
+    bundle = bundle_source.bundle
     data = bundle.get("results", [])
     manifest = bundle.get("manifest", {})
 
     with st.sidebar.expander("🧾 运行清单", expanded=False):
-        manifest_fields = [
-            ("来源", "producer"),
-            ("数据集", "dataset_name"),
-            ("任务", "task_name"),
-            ("切分", "split_name"),
-            ("模式", "exp_mode"),
-            ("Provider", "provider"),
-            ("文本模型", "model_name"),
-            ("图像模型", "image_model_name"),
-        ]
-        for label, key in manifest_fields:
-            value = manifest.get(key)
-            if value:
-                st.write(f"**{label}:** {value}")
-        st.write(f"**结果数：** {manifest.get('result_count', len(data))}")
+        render_bundle_manifest_sidebar(
+            manifest,
+            result_count=len(data),
+            source_label=bundle_source.source_label,
+        )
     
     # --- Search Functionality ---
-    search_query = st.sidebar.text_input("🔍 搜索 ID", value="", help="按 ID 过滤（不区分大小写）")
+    search_query = st.sidebar.text_input(
+        "🔍 搜索候选编号 / ID",
+        value="",
+        help="优先按 candidate_id 搜索，也兼容旧结果里的 id、filename 和可视化意图。",
+    )
     if search_query:
-        data = [item for item in data if search_query.lower() in item.get("id", "").lower()]
+        data = [
+            item
+            for idx, item in enumerate(data)
+            if matches_result_search(item, search_query, idx)
+        ]
         st.sidebar.caption(f"找到 {len(data)} 条匹配结果")
     
     total_items = len(data)
     
     if total_items == 0:
-        if search_query:
-            st.warning(f"没有找到匹配 “{search_query}” 的样本。")
-        else:
-            st.warning("结果为空，或文件格式不正确。")
+        render_viewer_empty_state(search_query)
         return
     
-    st.title("🍌 流水线演化查看器")
-    st.markdown("查看候选在不同渲染阶段中的演化过程。")
+    st.title("🍌 PaperBanana-Pro 流程回放")
+    st.markdown("按候选回看规划、渲染、评审修正等中间阶段，不再直接暴露内部 artifact key。")
+    if bundle_source.source_kind != "path":
+        st.caption("当前使用上传模式。若某些人工参考图依赖本地同目录资源，可在左侧“高级：从本地路径读取”中切换到路径模式。")
     
     st.divider()
     
@@ -314,7 +323,7 @@ def main():
     
     with col_center:
         page_input = st.number_input(
-            "Page", 
+            "页码", 
             min_value=1, 
             max_value=total_pages, 
             value=st.session_state.page + 1,
@@ -343,8 +352,10 @@ def main():
         
         with st.container(border=True):
             # Header
-            st.subheader(f"#{idx + 1}: {item.get('visual_intent', 'N/A')}")
-            st.caption(f"ID: `{item.get('id', 'Unknown')}`")
+            candidate_label = format_candidate_display_label(item, fallback_index=idx)
+            identifier = get_result_identifier(item, idx)
+            st.subheader(f"{candidate_label}: {item.get('visual_intent', 'N/A')}")
+            st.caption(f"标识：`{identifier}`")
             
             # Method/Data section
             task_type = detect_task_type(item)
@@ -358,7 +369,10 @@ def main():
                     st.markdown(method_content)
             
             # Pipeline comparison
-            display_stage_comparison(item, file_path)
+            display_stage_comparison(
+                item,
+                bundle_source.source_name if bundle_source.source_kind == "path" else None,
+            )
             
             # Critique
             display_critique(item)

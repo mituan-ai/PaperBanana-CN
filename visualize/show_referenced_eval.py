@@ -19,42 +19,58 @@ from io import BytesIO
 from PIL import Image
 import os
 import sys
-import asyncio
-import importlib
 import re
-from pathlib import Path
 
 # Ensure local imports work
 sys.path.append(os.getcwd())
 
 from utils.pipeline_state import (
     build_render_stage_entries,
+    critic_suggestions_key,
     detect_task_type_from_result,
     find_final_stage_keys,
     get_available_critic_rounds,
     resolve_stage_artifact_keys,
     stage_display_label,
 )
-from utils.result_bundle import load_result_bundle
+from utils.result_order import format_candidate_display_label
 from utils.result_paths import resolve_gt_image_path
+from visualize.viewer_helpers import (
+    clear_viewer_bundle_cache,
+    get_result_identifier,
+    matches_result_search,
+    render_bundle_manifest_sidebar,
+    render_bundle_source_picker,
+    render_viewer_empty_state,
+)
 
-st.set_page_config(layout="wide", page_title="PaperBanana 参考评测查看器", page_icon="🍌")
+st.set_page_config(layout="wide", page_title="PaperBanana-Pro 参考评测查看器", page_icon="🍌")
 
 
 def detect_task_type(data):
     """Detect whether data is for diagram or plot task."""
     return detect_task_type_from_result(data)
 
-@st.cache_data
-def load_data(path):
-    """Read legacy JSON/JSONL files or standardized result bundles."""
-    if not os.path.exists(path):
-        return {"manifest": {}, "summary": {}, "failures": [], "results": []}
-    try:
-        return load_result_bundle(path)
-    except Exception as e:
-        st.error(f"读取结果文件失败：{e}")
-        return {"manifest": {}, "summary": {}, "failures": [], "results": []}
+
+DIMENSION_LABELS = {
+    "Faithfulness": "忠实性",
+    "Conciseness": "简洁性",
+    "Readability": "可读性",
+    "Aesthetics": "美观性",
+    "Overall": "综合质量",
+}
+def get_latest_suggestions(item, task_type):
+    rounds = get_available_critic_rounds(item, task_type)
+    if rounds:
+        latest_key = critic_suggestions_key(task_type, rounds[-1])
+        latest_text = str(item.get(latest_key, "") or "").strip()
+        if latest_text:
+            return latest_text
+    for legacy_key in ("suggestions_diagram", "suggestions_plot", "critique0"):
+        legacy_text = str(item.get(legacy_key, "") or "").strip()
+        if legacy_text:
+            return legacy_text
+    return ""
 
 def calculate_stats(data, dimensions):
     """Calculate win rates for each dimension."""
@@ -162,93 +178,30 @@ def format_reasoning(text):
     # Final trim
     return formatted_text.strip()
 
-async def run_eval_on_sample(sample, task_name="diagram"):
-    """Hot-reload prompts and run eval."""
-    import prompts.diagram_eval_prompts
-    import prompts.plot_eval_prompts
-    import utils.eval_toolkits
-    
-    importlib.reload(prompts.diagram_eval_prompts)
-    importlib.reload(prompts.plot_eval_prompts)
-    importlib.reload(utils.eval_toolkits)
-    from utils.eval_toolkits import get_score_for_image_referenced
-    
-    # Ensure eval_image_field is set
-    if "eval_image_field" not in sample:
-        inferred_eval_key, _ = find_final_stage_keys(
-            sample,
-            task_name,
-            sample.get("exp_mode", "demo_planner_critic"),
-        )
-        sample["eval_image_field"] = inferred_eval_key or "vanilla_image_base64"
-    
-    return await get_score_for_image_referenced(
-        sample,
-        task_name=task_name,
-        work_dir=Path(os.getcwd()),
+def main():
+    bundle_source = render_bundle_source_picker(
+        viewer_key="referenced_eval",
+        sidebar_title="🍌 参考评测查看器",
     )
 
-def main():
-    st.sidebar.title("🍌 参考评测查看器")
-    file_path = st.sidebar.text_input("结果文件路径", placeholder="请输入结果文件路径...")
-    
-    # --- Debug Tool Section in Sidebar ---
-    if "debug_sample" in st.session_state:
-        st.sidebar.divider()
-        st.sidebar.subheader("🛠️ 调试目标")
-        debug_sample = st.session_state.debug_sample
-        identifier = debug_sample.get('id')
-        st.sidebar.info(f"当前样本：{identifier}\n索引：{st.session_state.debug_idx}")
-        
-        if st.sidebar.button("🚀 重新评测（热加载 Prompt）", type="primary"):
-            with st.spinner("正在执行实时评测..."):
-                try:
-                    # Pass task_name if available
-                    task_name = st.session_state.get("task_type", "diagram")
-                    new_result = asyncio.run(run_eval_on_sample(debug_sample.copy(), task_name))
-                    st.session_state.debug_result = new_result
-                    st.sidebar.success("评测完成。")
-                except Exception as e:
-                    st.sidebar.error(f"评测失败：{e}")
-        
-        if st.sidebar.button("🧹 清除调试状态"):
-            if "debug_sample" in st.session_state: del st.session_state.debug_sample
-            if "debug_idx" in st.session_state: del st.session_state.debug_idx
-            if "debug_result" in st.session_state: del st.session_state.debug_result
-            st.rerun()
-
     if st.sidebar.button("🔄 刷新数据"):
-        load_data.clear()
+        clear_viewer_bundle_cache()
         st.rerun()
 
-    if not file_path:
-        st.info("👆 请输入结果文件路径")
+    if bundle_source is None:
+        st.info("请先上传结果 Bundle；只有在需要读取本地同目录资源时，才使用高级路径模式。")
         st.stop()
 
-    if not os.path.exists(file_path):
-        st.error(f"未找到文件：{file_path}")
-        st.stop()
-
-    bundle = load_data(file_path)
+    bundle = bundle_source.bundle
     data = bundle.get("results", [])
     manifest = bundle.get("manifest", {})
 
     with st.sidebar.expander("🧾 运行清单", expanded=False):
-        manifest_fields = [
-            ("来源", "producer"),
-            ("数据集", "dataset_name"),
-            ("任务", "task_name"),
-            ("切分", "split_name"),
-            ("模式", "exp_mode"),
-            ("Provider", "provider"),
-            ("文本模型", "model_name"),
-            ("图像模型", "image_model_name"),
-        ]
-        for label, key in manifest_fields:
-            value = manifest.get(key)
-            if value:
-                st.write(f"**{label}:** {value}")
-        st.write(f"**结果数：** {manifest.get('result_count', len(data))}")
+        render_bundle_manifest_sidebar(
+            manifest,
+            result_count=len(data),
+            source_label=bundle_source.source_label,
+        )
     
     # Detect task type
     task_type = detect_task_type(data)
@@ -261,26 +214,28 @@ def main():
     )
     
     # --- Search Functionality ---
-    search_field = "id"
     search_query = st.sidebar.text_input(
-        f"🔍 搜索 {search_field.upper()}",
+        "🔍 搜索候选编号 / ID",
         value="",
-        help=f"按 {search_field.upper()} 过滤（不区分大小写）",
+        help="优先按 candidate_id 搜索，也兼容旧结果里的 id、filename 和可视化意图。",
     )
     if search_query:
-        data = [item for item in data if search_query.lower() in str(item.get(search_field, "")).lower()]
+        data = [
+            item
+            for idx, item in enumerate(data)
+            if matches_result_search(item, search_query, idx)
+        ]
         st.sidebar.caption(f"找到 {len(data)} 条匹配结果")
 
     total_items = len(data)
 
     if total_items == 0:
-        if search_query:
-            st.warning(f"没有找到匹配 “{search_query}” 的样本。")
-        else:
-            st.warning("结果为空，或文件格式不正确。")
+        render_viewer_empty_state(search_query)
         return
 
-    st.title("🍌 参考评测查看器")
+    st.title("🍌 PaperBanana-Pro 参考评测查看器")
+    if bundle_source.source_kind != "path":
+        st.caption("当前使用上传模式。若某些人工参考图依赖本地同目录资源，可在左侧“高级：从本地路径读取”中切换到路径模式。")
     
     # --- Global Stats ---
     dimensions = ["Faithfulness", "Conciseness", "Readability", "Aesthetics", "Overall"]
@@ -290,7 +245,7 @@ def main():
         cols = st.columns(len(dimensions))
         for i, dim in enumerate(dimensions):
             with cols[i]:
-                st.info(f"**{dim}**")
+                st.info(f"**{DIMENSION_LABELS.get(dim, dim)}**")
                 s = stats[dim]
                 total = sum(s.values()) or 1
                 st.metric("模型胜率", f"{(s['Model'])/total:.1%}")
@@ -337,7 +292,8 @@ def main():
         idx = start_idx + i
         
         # Extract metadata based on task type
-        identifier = item.get("id", "Unknown")
+        identifier = get_result_identifier(item, idx)
+        candidate_label = format_candidate_display_label(item, fallback_index=idx)
         caption_or_desc = item.get("visual_intent") or item.get("brief_desc", "N/A")
         if task_type == "plot":
             raw_content_label = "原始数据"
@@ -345,20 +301,10 @@ def main():
         else:  # diagram
             raw_content_label = "方法章节"
             raw_content = item.get("content", "N/A")
-        
-        is_debugging = "debug_sample" in st.session_state and st.session_state.debug_idx == idx
-        
-        with st.container(border=is_debugging):
-            col_title, col_btn = st.columns([0.8, 0.2])
-            with col_title:
-                st.subheader(f"#{idx + 1}: {caption_or_desc}")
-            with col_btn:
-                if st.button("🛠️ 调试", key=f"btn_debug_{idx}"):
-                    st.session_state.debug_sample = item
-                    st.session_state.debug_idx = idx
-                    st.rerun()
 
-            st.caption(f"{search_field.title()}: `{identifier}`")
+        with st.container(border=True):
+            st.subheader(f"{candidate_label}: {caption_or_desc}")
+            st.caption(f"标识：`{identifier}`")
             
             # --- Determine Image and Text for Model ---
             if display_mode == "Auto":
@@ -398,17 +344,10 @@ def main():
             # Outcome Summary
             outcome_cols = st.columns(len(dimensions))
             for j, dim in enumerate(dimensions):
-                outcome_cols[j].markdown(f"**{dim}**\n{display_outcome(item.get(f'{dim.lower()}_outcome'))}")
-
-            # Debug Results Overlay
-            if is_debugging and "debug_result" in st.session_state:
-                st.markdown("---")
-                st.markdown("### 🧪 **实时调试结果**（基于当前 Prompt）")
-                new_res = st.session_state.debug_result
-                new_cols = st.columns(len(dimensions))
-                for j, dim in enumerate(dimensions):
-                    new_cols[j].markdown(f"**{dim}**\n{display_outcome(new_res.get(f'{dim.lower()}_outcome'))}")
-                st.markdown("---")
+                outcome_cols[j].markdown(
+                    f"**{DIMENSION_LABELS.get(dim, dim)}**\n"
+                    f"{display_outcome(item.get(f'{dim.lower()}_outcome'))}"
+                )
 
             # Images
             img_col1, img_col2 = st.columns(2)
@@ -436,7 +375,7 @@ def main():
                 resolved_gt_path = resolve_gt_image_path(
                     gt_path,
                     task_type,
-                    file_path,
+                    bundle_source.source_name if bundle_source.source_kind == "path" else None,
                     work_dir=os.getcwd(),
                     dataset_name=item.get("dataset_name"),
                 )
@@ -452,7 +391,7 @@ def main():
                         st.markdown(f"**人工图解说明：** {item.get('gt_diagram_desc0', 'N/A')}")
             
             # Suggestions (if any)
-            suggestions = item.get("suggestions_diagram") or item.get("suggestions_plot")
+            suggestions = get_latest_suggestions(item, task_type)
             if suggestions:
                 with st.expander("💡 精修建议", expanded=False):
                     st.markdown(suggestions)
@@ -466,20 +405,11 @@ def main():
 
             # Reasoning
             with st.expander("📝 原始评测理由", expanded=False):
-                tabs = st.tabs(dimensions)
+                tabs = st.tabs([DIMENSION_LABELS.get(dim, dim) for dim in dimensions])
                 for tab, dim in zip(tabs, dimensions):
                     with tab:
                         reasoning = item.get(f"{dim.lower()}_reasoning", "未提供理由。")
                         st.markdown(format_reasoning(reasoning))
-
-            if is_debugging and "debug_result" in st.session_state:
-                with st.expander("🧪 调试理由（当前 Prompt）", expanded=True):
-                    new_res = st.session_state.debug_result
-                    tabs = st.tabs(dimensions)
-                    for tab, dim in zip(tabs, dimensions):
-                        with tab:
-                            reasoning = new_res.get(f"{dim.lower()}_reasoning", "N/A")
-                            st.markdown(format_reasoning(reasoning))
             
             st.divider()
 

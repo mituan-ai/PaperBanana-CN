@@ -6,8 +6,10 @@ from pathlib import Path
 from utils.result_bundle import (
     RESULT_BUNDLE_SCHEMA,
     RESULT_BUNDLE_VERSION,
+    ResultBundleLoadError,
     build_run_manifest,
     companion_bundle_path,
+    load_result_bundle_bytes,
     load_result_bundle,
     write_result_bundle,
 )
@@ -143,6 +145,70 @@ class ResultBundleTest(unittest.TestCase):
             self.assertEqual(payload["manifest"]["dataset_name"], "BundleBench")
             self.assertEqual(payload["manifest"]["result_count"], 1)
             self.assertEqual(companion_bundle_path(Path(temp_dir) / "run.json").name, "run.bundle.json")
+
+    def test_load_result_bundle_bytes_supports_uploaded_bundle(self):
+        payload = {
+            "schema": RESULT_BUNDLE_SCHEMA,
+            "schema_version": RESULT_BUNDLE_VERSION,
+            "manifest": {
+                "producer": "demo",
+                "dataset_name": "UploadBench",
+                "task_name": "diagram",
+                "result_count": 1,
+            },
+            "results": [
+                {
+                    "candidate_id": 0,
+                    "dataset_name": "UploadBench",
+                    "task_name": "diagram",
+                    "target_diagram_desc0_base64_jpg": "abc",
+                    "eval_image_field": "target_diagram_desc0_base64_jpg",
+                }
+            ],
+        }
+
+        bundle = load_result_bundle_bytes(
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            source_name="upload.bundle.json",
+        )
+
+        self.assertEqual(bundle["manifest"]["source_file"], "upload.bundle.json")
+        self.assertEqual(bundle["manifest"]["dataset_name"], "UploadBench")
+        self.assertEqual(len(bundle["results"]), 1)
+
+    def test_load_result_bundle_rejects_summary_only_payload_for_viewer(self):
+        payload = {
+            "total_candidates": 5,
+            "successful_candidates": 4,
+            "failed_candidates": 1,
+        }
+
+        with self.assertRaises(ResultBundleLoadError) as ctx:
+            load_result_bundle_bytes(
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                source_name="run.summary.json",
+            )
+
+        self.assertEqual(ctx.exception.code, "summary_only_payload")
+        self.assertIn(".bundle.json", ctx.exception.hint)
+
+    def test_load_result_bundle_rejects_failure_manifest_for_viewer(self):
+        payload = [
+            {
+                "candidate_id": 0,
+                "type": "pipeline_failure",
+                "error": "boom",
+            }
+        ]
+
+        with self.assertRaises(ResultBundleLoadError) as ctx:
+            load_result_bundle_bytes(
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                source_name="run.failures.json",
+            )
+
+        self.assertEqual(ctx.exception.code, "failure_manifest")
+        self.assertIn(".bundle.json", ctx.exception.hint)
 
 
 if __name__ == "__main__":

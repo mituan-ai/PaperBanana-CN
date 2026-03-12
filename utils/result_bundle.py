@@ -16,6 +16,38 @@ from utils.run_report import build_failure_manifest, build_result_summary
 
 RESULT_BUNDLE_SCHEMA = "paperbanana.result_bundle"
 RESULT_BUNDLE_VERSION = 1
+SUMMARY_ONLY_KEYS = {
+    "total_candidates",
+    "successful_candidates",
+    "failed_candidates",
+    "failed_candidate_ids",
+    "rendered_candidates",
+    "missing_render_candidates",
+    "parse_error_candidates",
+}
+FAILURE_ONLY_KEYS = {
+    "candidate_id",
+    "type",
+    "error",
+    "error_detail",
+    "round_keys",
+    "eval_image_field",
+}
+
+
+class ResultBundleLoadError(ValueError):
+    """结果文件无法作为审阅 bundle 读取时抛出的带提示异常。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        hint: str = "",
+        code: str = "invalid_result_payload",
+    ) -> None:
+        super().__init__(message)
+        self.hint = hint
+        self.code = code
 
 
 def companion_bundle_path(path: str | Path) -> Path:
@@ -280,25 +312,76 @@ def _parse_jsonl_text(content: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _source_file_name(source_path: str | Path | None) -> str:
+    if not source_path:
+        return ""
+    return Path(source_path).name
+
+
+def _looks_like_summary_only_payload(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    keys = {str(key) for key in payload.keys()}
+    return bool(keys & SUMMARY_ONLY_KEYS) and "results" not in keys
+
+
+def _looks_like_failure_manifest(payload: Any) -> bool:
+    if not isinstance(payload, list) or not payload:
+        return False
+    for item in payload:
+        if not isinstance(item, dict):
+            return False
+        if "type" not in item:
+            return False
+        if any(str(key).endswith("_base64_jpg") for key in item.keys()):
+            return False
+    return True
+
+
+def _raise_missing_results_error(
+    payload: Any,
+    *,
+    source_path: str | Path | None = None,
+) -> None:
+    source_name = _source_file_name(source_path)
+    if _looks_like_summary_only_payload(payload) or "summary" in source_name.lower():
+        raise ResultBundleLoadError(
+            "当前文件看起来是运行汇总报表，不包含候选结果。",
+            hint="请改为打开同批次的 `.bundle.json` 文件；`summary` 只能用于统计概览。",
+            code="summary_only_payload",
+        )
+    if _looks_like_failure_manifest(payload) or "failure" in source_name.lower():
+        raise ResultBundleLoadError(
+            "当前文件看起来是失败清单，不包含可审阅的候选结果。",
+            hint="请改为打开同批次的 `.bundle.json` 文件；`failures` 主要用于排错，不适合直接进入 viewer。",
+            code="failure_manifest",
+        )
+    raise ResultBundleLoadError(
+        "结果文件缺少 `results` 数组，无法作为审阅 bundle 打开。",
+        hint="viewer 支持 `.bundle.json`，也兼容旧版结果 JSON / JSONL；如果你打开的是 `summary` 或 `failures` 文件，请切换到对应的 bundle。",
+        code="missing_results_array",
+    )
+
+
 def normalize_result_bundle_payload(
     payload: Any,
     *,
     source_path: str | Path | None = None,
 ) -> dict[str, Any]:
     if isinstance(payload, list):
+        if _looks_like_failure_manifest(payload):
+            _raise_missing_results_error(payload, source_path=source_path)
         if any(not isinstance(item, dict) for item in payload):
-            raise ValueError("Result arrays must contain only JSON objects.")
+            raise ResultBundleLoadError("结果数组中只能包含 JSON 对象。")
         manifest = infer_manifest_from_results(payload, source_path=source_path)
         return build_result_bundle(payload, manifest=manifest)
 
     if isinstance(payload, dict):
         results = payload.get("results")
         if not isinstance(results, list):
-            raise ValueError(
-                "Result files must be a JSON array, JSONL file, or JSON object with a 'results' array."
-            )
+            _raise_missing_results_error(payload, source_path=source_path)
         if any(not isinstance(item, dict) for item in results):
-            raise ValueError("Bundle 'results' must contain only JSON objects.")
+            raise ResultBundleLoadError("Bundle 的 `results` 数组中只能包含 JSON 对象。")
         inferred_manifest = infer_manifest_from_results(
             results,
             source_path=source_path,
@@ -312,7 +395,41 @@ def normalize_result_bundle_payload(
             failures=payload.get("failures"),
         )
 
-    raise ValueError("Unsupported result payload type.")
+    raise ResultBundleLoadError("不支持的结果文件格式。")
+
+
+def load_result_bundle_text(
+    content: str,
+    *,
+    source_path: str | Path | None = None,
+) -> dict[str, Any]:
+    normalized_content = str(content or "").strip()
+    if not normalized_content:
+        return build_result_bundle(
+            [],
+            manifest=infer_manifest_from_results([], source_path=source_path),
+        )
+
+    payload: Any
+    source_suffix = Path(source_path).suffix.lower() if source_path else ""
+    if source_suffix == ".jsonl":
+        payload = _parse_jsonl_text(normalized_content)
+    else:
+        try:
+            payload = json.loads(normalized_content)
+        except json.JSONDecodeError:
+            payload = _parse_jsonl_text(normalized_content)
+
+    return normalize_result_bundle_payload(payload, source_path=source_path)
+
+
+def load_result_bundle_bytes(
+    payload_bytes: bytes,
+    *,
+    source_name: str | Path | None = None,
+) -> dict[str, Any]:
+    decoded_text = bytes(payload_bytes or b"").decode("utf-8-sig", errors="ignore")
+    return load_result_bundle_text(decoded_text, source_path=source_name)
 
 
 def load_result_bundle(path: str | Path) -> dict[str, Any]:
@@ -320,20 +437,5 @@ def load_result_bundle(path: str | Path) -> dict[str, Any]:
     if not input_path.exists():
         raise FileNotFoundError(input_path)
 
-    content = input_path.read_text(encoding="utf-8").strip()
-    if not content:
-        return build_result_bundle(
-            [],
-            manifest=infer_manifest_from_results([], source_path=input_path),
-        )
-
-    payload: Any
-    if input_path.suffix.lower() == ".jsonl":
-        payload = _parse_jsonl_text(content)
-    else:
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError:
-            payload = _parse_jsonl_text(content)
-
-    return normalize_result_bundle_payload(payload, source_path=input_path)
+    content = input_path.read_text(encoding="utf-8")
+    return load_result_bundle_text(content, source_path=input_path)
