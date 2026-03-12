@@ -44,16 +44,13 @@ Homepage = "https://github.com/elpsykongloo/PaperBanana-Pro"
 Repository = "https://github.com/elpsykongloo/PaperBanana-Pro"
 
 [tool.hatch.build.targets.wheel]
-packages = [
+only-include = [
     "agents",
     "prompts",
     "providers",
     "utils",
     "visualize",
     "style_guides",
-]
-# Include top-level modules needed at runtime
-include = [
     "cli.py",
     "demo.py",
     "main.py",

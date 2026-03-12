@@ -13,95 +13,153 @@
 # limitations under the License.
 
 """
-PaperBanana-Pro CLI — global entry point.
+PaperBanana-Pro CLI — 全局入口。
 
-Primary command:
-    paperbanana-pro              Launch the Streamlit GUI (default)
-    paperbanana-pro gui          Same as above
-    paperbanana-pro run [args]   Run CLI batch processing (main.py)
-    paperbanana-pro --help       Show help
-
-Compatibility alias:
-    paperbanana                  Same as `paperbanana-pro`
+支持：
+    paperbanana-pro              启动 GUI
+    paperbanana-pro gui          启动 GUI
+    paperbanana-pro run [...]    运行批处理 CLI
+    paperbanana-pro viewer ...   启动 viewer
 """
 
-import os
-import sys
+from __future__ import annotations
+
+import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
-# Project root = directory where this file lives
-PROJECT_ROOT = Path(__file__).resolve().parent
+
+VIEWER_MODULES = {
+    "evolution": "visualize.show_pipeline_evolution",
+    "pipeline": "visualize.show_pipeline_evolution",
+    "eval": "visualize.show_referenced_eval",
+    "review": "visualize.show_referenced_eval",
+}
+
+
+def resolve_module_script_path(module_name: str) -> Path:
+    spec = importlib.util.find_spec(module_name)
+    if spec is None or not spec.origin:
+        raise FileNotFoundError(f"无法解析模块脚本：{module_name}")
+    return Path(spec.origin).resolve()
+
+
+def launch_streamlit_module(
+    module_name: str,
+    extra_args: list[str],
+    *,
+    default_port: int | None = None,
+) -> int:
+    script_path = resolve_module_script_path(module_name)
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(script_path),
+    ]
+    if default_port is not None:
+        cmd.extend(["--server.port", str(default_port)])
+    cmd.extend(extra_args)
+    print(f"[PaperBanana-Pro] 启动 Streamlit 应用：{module_name}")
+    return subprocess.call(cmd)
+
+
+def launch_python_module(module_name: str, extra_args: list[str]) -> int:
+    spec = importlib.util.find_spec(module_name)
+    if spec is None:
+        raise FileNotFoundError(f"无法解析 Python 模块：{module_name}")
+    cmd = [sys.executable, "-m", module_name, *extra_args]
+    print(f"[PaperBanana-Pro] 运行 CLI 模块：{module_name}")
+    return subprocess.call(cmd)
 
 
 def _launch_gui(extra_args: list[str]) -> int:
-    """Start the Streamlit interactive demo."""
-    demo_path = PROJECT_ROOT / "demo.py"
-    if not demo_path.exists():
-        print(f"[PaperBanana-Pro] Error: demo.py not found at {demo_path}")
-        return 1
-
-    cmd = [
-        sys.executable, "-m", "streamlit", "run",
-        str(demo_path),
-        "--server.port", "8501",
-        *extra_args,
-    ]
-    print(f"[PaperBanana-Pro] Starting Streamlit GUI ...")
-    return subprocess.call(cmd, cwd=str(PROJECT_ROOT))
+    return launch_streamlit_module("demo", extra_args, default_port=8501)
 
 
 def _launch_cli(extra_args: list[str]) -> int:
-    """Run the CLI batch-processing pipeline (main.py)."""
-    main_path = PROJECT_ROOT / "main.py"
-    if not main_path.exists():
-        print(f"[PaperBanana-Pro] Error: main.py not found at {main_path}")
-        return 1
+    return launch_python_module("main", extra_args)
 
-    cmd = [sys.executable, str(main_path), *extra_args]
-    print(f"[PaperBanana-Pro] Running CLI mode ...")
-    return subprocess.call(cmd, cwd=str(PROJECT_ROOT))
+
+def _launch_viewer(viewer_name: str, extra_args: list[str]) -> int:
+    module_name = VIEWER_MODULES.get(viewer_name, "")
+    if not module_name:
+        print(f"[PaperBanana-Pro] 未知 viewer：{viewer_name}\n")
+        _print_viewer_help()
+        return 1
+    return launch_streamlit_module(module_name, extra_args)
+
+
+def _print_viewer_help() -> None:
+    print(
+        """
+Viewer 子命令：
+    paperbanana-pro viewer evolution [args]   启动流程回放 viewer
+    paperbanana-pro viewer eval [args]        启动参考评测 viewer
+
+别名：
+    pipeline -> evolution
+    review   -> eval
+"""
+    )
 
 
 def _print_help() -> None:
-    print("""
+    print(
+        """
 PaperBanana-Pro 🍌  —  Academic Illustration Workbench
 
-Primary command:
-    paperbanana-pro              Launch the Streamlit GUI (default)
-    paperbanana-pro gui [args]   Same as above (extra args forwarded to Streamlit)
-    paperbanana-pro run [args]   Run CLI batch processing (main.py args)
-    paperbanana-pro --help       Show this help message
+主命令：
+    paperbanana-pro
+    paperbanana-pro gui [args]
+    paperbanana-pro run [args]
+    paperbanana-pro viewer evolution [args]
+    paperbanana-pro viewer eval [args]
+    paperbanana-pro --help
 
-Compatibility alias:
-    paperbanana                  Same as `paperbanana-pro`
+兼容别名：
+    paperbanana
 
-Examples:
+示例：
     paperbanana-pro
     paperbanana-pro gui --server.port 9000
     paperbanana-pro run --exp_mode dev_full --task_name diagram
-    paperbanana run --exp_mode demo_full --retrieval_setting auto
-""")
+    paperbanana-pro run --resume
+    paperbanana-pro viewer evolution
+    paperbanana-pro viewer eval
+
+安装方式：
+    uv tool install .
+    uv tool install --from . paperbanana-pro
+
+发布后：
+    uv tool install paperbanana-pro
+"""
+    )
 
 
 def main() -> None:
     args = sys.argv[1:]
 
-    # No args or 'gui' → launch Streamlit
     if not args or args[0] == "gui":
         extra = args[1:] if args else []
         raise SystemExit(_launch_gui(extra))
 
-    # 'run' → CLI batch mode
     if args[0] == "run":
         raise SystemExit(_launch_cli(args[1:]))
 
-    # Help
+    if args[0] == "viewer":
+        if len(args) == 1 or args[1] in ("--help", "-h"):
+            _print_viewer_help()
+            return
+        raise SystemExit(_launch_viewer(args[1], args[2:]))
+
     if args[0] in ("--help", "-h"):
         _print_help()
         return
 
-    # Unknown command — show help
     print(f"[PaperBanana-Pro] Unknown command: {args[0]}\n")
     _print_help()
     raise SystemExit(1)

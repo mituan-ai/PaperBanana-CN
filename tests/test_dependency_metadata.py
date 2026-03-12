@@ -45,6 +45,14 @@ class DependencyMetadataTest(unittest.TestCase):
         self.assertIn("uv sync --locked", readme_text)
         self.assertIn("uv.lock", readme_text)
 
+    def test_readme_documents_standalone_tool_install_contract(self):
+        readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("uv tool install .", readme_text)
+        self.assertIn("uv tool install --from . paperbanana-pro", readme_text)
+        self.assertIn("uv tool install paperbanana-pro", readme_text)
+        self.assertIn("standalone tool install", readme_text)
+        self.assertIn("发布到可访问索引", readme_text)
+
 
 if __name__ == "__main__":
     unittest.main()
