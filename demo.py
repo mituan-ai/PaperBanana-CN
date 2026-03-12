@@ -21,6 +21,7 @@ import streamlit as st
 import asyncio
 import math
 import base64
+import hashlib
 import json
 import time
 import re
@@ -171,6 +172,24 @@ GENERATION_QUALITY_PRESETS = {
 GENERATION_MODE_INFO = {
     "demo_planner_critic": "标准流程：规划 → 首轮出图 → 评审 → 修正出图。速度更快、语义更稳，建议默认使用。",
     "demo_full": "增强风格流程：在标准流程基础上加入风格化阶段；当开启参考检索时，也会利用参考样例辅助生成。视觉表现更强，但耗时和不确定性也更高。",
+}
+GENERATION_DECISION_FILTER_OPTIONS = [
+    "全部候选",
+    "仅未淘汰",
+    "仅收藏",
+    "仅最终候选",
+]
+GENERATION_EXPORT_SCOPE_OPTIONS = [
+    "全部候选",
+    "仅未淘汰",
+    "仅收藏",
+    "仅最终候选",
+]
+GENERATION_CANDIDATE_DECISION_LABELS = {
+    "default": "待决策",
+    "favorite": "已收藏",
+    "discarded": "已淘汰",
+    "final": "最终候选",
 }
 GENERATION_CANDIDATE_STATUS_RE = re.compile(r"^候选\s+(.+?):\s*(.+)$")
 GENERATION_LOGGER_NAMES = {
@@ -1076,6 +1095,13 @@ PERSISTED_UI_STATE_KEYS = {
     "refine_input_source",
     "refine_staged_input_mime_type",
     "refine_staged_source_label",
+    "generation_display_scope_diagram",
+    "generation_display_scope_plot",
+    "generation_export_scope_diagram",
+    "generation_export_scope_plot",
+    "generation_final_candidate_id",
+    "refine_version_counter",
+    "refine_active_version_key",
     "active_generation_job_id",
     "last_generation_completed_job_id",
     "active_refine_job_id",
@@ -1087,27 +1113,54 @@ PERSISTED_UI_STATE_KEYS = {
 PERSISTED_UI_STATE_BYTES_KEYS = {
     "refine_staged_image_bytes",
 }
+PERSISTED_UI_STATE_COMPLEX_KEYS = {
+    "generation_candidate_decisions",
+    "refine_latest_version_keys",
+    "refine_version_history",
+}
 
 
 def _serialize_ui_state_value(key: str, value):
-    if key in PERSISTED_UI_STATE_BYTES_KEYS:
+    if isinstance(value, bytes) or key in PERSISTED_UI_STATE_BYTES_KEYS:
         raw_bytes = bytes(value or b"")
         return {
             "__type__": "bytes",
             "data": base64.b64encode(raw_bytes).decode("utf-8"),
         }
+    if isinstance(value, list):
+        return {
+            "__type__": "list",
+            "data": [_serialize_ui_state_value(key, item) for item in value],
+        }
+    if isinstance(value, dict):
+        return {
+            "__type__": "dict",
+            "data": {
+                str(item_key): _serialize_ui_state_value(key, item_value)
+                for item_key, item_value in value.items()
+            },
+        }
     return value
 
 
 def _deserialize_ui_state_value(key: str, value):
-    if key in PERSISTED_UI_STATE_BYTES_KEYS and isinstance(value, dict) and value.get("__type__") == "bytes":
-        encoded = str(value.get("data", "") or "")
-        if encoded:
-            try:
-                return base64.b64decode(encoded)
-            except Exception:
-                return b""
-        return b""
+    if isinstance(value, dict):
+        value_type = value.get("__type__")
+        if value_type == "bytes":
+            encoded = str(value.get("data", "") or "")
+            if encoded:
+                try:
+                    return base64.b64decode(encoded)
+                except Exception:
+                    return b""
+            return b""
+        if value_type == "list":
+            return [_deserialize_ui_state_value(key, item) for item in value.get("data", [])]
+        if value_type == "dict":
+            return {
+                str(item_key): _deserialize_ui_state_value(key, item_value)
+                for item_key, item_value in dict(value.get("data", {})).items()
+            }
     return value
 
 
@@ -1132,6 +1185,7 @@ def restore_persisted_demo_ui_state() -> None:
                 persist_generation_job_results(
                     generation_snapshot,
                     source_label=st.session_state.get("result_source_label", "后台生成任务"),
+                    reset_candidate_workspace=False,
                 )
             elif generation_snapshot.get("status") == "failed":
                 st.session_state["generation_failures"] = generation_snapshot.get("failures", [])
@@ -1150,6 +1204,7 @@ def restore_persisted_demo_ui_state() -> None:
                 persist_generation_job_results(
                     snapshot,
                     source_label=st.session_state.get("result_source_label", f"历史回放：{bundle_path.name}"),
+                    reset_candidate_workspace=False,
                 )
 
     restored_refine_job_id = st.session_state.get("active_refine_job_id")
@@ -1170,7 +1225,12 @@ def persist_demo_ui_state() -> None:
         if key not in st.session_state:
             continue
         value = st.session_state.get(key)
-        if isinstance(value, (str, int, float, bool)) or value is None or key in PERSISTED_UI_STATE_BYTES_KEYS:
+        if (
+            isinstance(value, (str, int, float, bool))
+            or value is None
+            or key in PERSISTED_UI_STATE_BYTES_KEYS
+            or key in PERSISTED_UI_STATE_COMPLEX_KEYS
+        ):
             state_payload[key] = _serialize_ui_state_value(key, value)
     _persist_demo_ui_state_payload(state_payload)
 
@@ -1630,7 +1690,12 @@ def capture_job_logs(job_id: str, job_type: str):
         handler.close()
 
 
-def persist_generation_job_results(snapshot: dict, *, source_label: str = "后台生成任务") -> None:
+def persist_generation_job_results(
+    snapshot: dict,
+    *,
+    source_label: str = "后台生成任务",
+    reset_candidate_workspace: bool = True,
+) -> None:
     st.session_state["results"] = sort_results_stably(snapshot.get("results", []))
     st.session_state["task_name"] = normalize_task_name(snapshot.get("task_name", "diagram"))
     st.session_state["dataset_name"] = snapshot.get("dataset_name", DEFAULT_DATASET_NAME)
@@ -1648,6 +1713,9 @@ def persist_generation_job_results(snapshot: dict, *, source_label: str = "后�
         snapshot.get("requested_candidates", len(snapshot.get("results", []))) or 0
     )
     st.session_state["result_source_label"] = source_label
+    if reset_candidate_workspace:
+        st.session_state["generation_candidate_decisions"] = {}
+        st.session_state["generation_final_candidate_id"] = ""
 
 
 def list_demo_bundle_files(
@@ -1713,6 +1781,226 @@ def format_demo_bundle_label(bundle_path: str | Path) -> str:
     exp_mode = manifest.get("exp_mode", "-")
     result_count = len(snapshot.get("results", []))
     return f"{stamp} | {task_name} | {provider} | {exp_mode} | {result_count} results"
+
+
+def normalize_candidate_token(candidate_id: int | str | None) -> str:
+    return str(candidate_id if candidate_id not in (None, "") else "").strip()
+
+
+def get_generation_candidate_decision_map() -> dict[str, str]:
+    payload = st.session_state.get("generation_candidate_decisions", {})
+    if not isinstance(payload, dict):
+        payload = {}
+    normalized = {
+        normalize_candidate_token(candidate_id): str(decision or "default")
+        for candidate_id, decision in payload.items()
+        if normalize_candidate_token(candidate_id)
+    }
+    st.session_state["generation_candidate_decisions"] = normalized
+    return normalized
+
+
+def get_generation_final_candidate_token() -> str:
+    return normalize_candidate_token(st.session_state.get("generation_final_candidate_id", ""))
+
+
+def get_generation_candidate_decision(candidate_id: int | str | None) -> str:
+    candidate_token = normalize_candidate_token(candidate_id)
+    if not candidate_token:
+        return "default"
+    if get_generation_final_candidate_token() == candidate_token:
+        return "final"
+    return get_generation_candidate_decision_map().get(candidate_token, "default")
+
+
+def set_generation_candidate_decision(candidate_id: int | str | None, decision: str) -> None:
+    candidate_token = normalize_candidate_token(candidate_id)
+    if not candidate_token:
+        return
+    decision_map = get_generation_candidate_decision_map()
+    normalized_decision = str(decision or "default").strip() or "default"
+    if normalized_decision == "final":
+        previous_final = get_generation_final_candidate_token()
+        if previous_final and previous_final != candidate_token and decision_map.get(previous_final) == "final":
+            decision_map[previous_final] = "default"
+        st.session_state["generation_final_candidate_id"] = candidate_token
+        decision_map[candidate_token] = "final"
+    elif normalized_decision == "discarded":
+        if get_generation_final_candidate_token() == candidate_token:
+            st.session_state["generation_final_candidate_id"] = ""
+        decision_map[candidate_token] = "discarded"
+    elif normalized_decision == "favorite":
+        if get_generation_final_candidate_token() == candidate_token:
+            st.session_state["generation_final_candidate_id"] = ""
+        decision_map[candidate_token] = "favorite"
+    else:
+        if get_generation_final_candidate_token() == candidate_token:
+            st.session_state["generation_final_candidate_id"] = ""
+        decision_map.pop(candidate_token, None)
+    st.session_state["generation_candidate_decisions"] = decision_map
+
+
+def filter_generation_results_by_scope(
+    results: list[dict],
+    scope: str,
+) -> list[dict]:
+    normalized_scope = str(scope or "全部候选").strip() or "全部候选"
+    filtered_results = []
+    for fallback_index, result in enumerate(results):
+        candidate_id = get_candidate_id(result, fallback_index)
+        decision = get_generation_candidate_decision(candidate_id)
+        if normalized_scope == "仅未淘汰" and decision == "discarded":
+            continue
+        if normalized_scope == "仅收藏" and decision not in {"favorite", "final"}:
+            continue
+        if normalized_scope == "仅最终候选" and decision != "final":
+            continue
+        filtered_results.append(result)
+    return filtered_results
+
+
+def find_generation_result_by_candidate_id(
+    results: list[dict],
+    candidate_id: int | str | None,
+) -> dict | None:
+    candidate_token = normalize_candidate_token(candidate_id)
+    if not candidate_token:
+        return None
+    for fallback_index, result in enumerate(results):
+        if normalize_candidate_token(get_candidate_id(result, fallback_index)) == candidate_token:
+            return result
+    return None
+
+
+def _compute_image_digest(image_bytes: bytes) -> str:
+    return hashlib.sha1(bytes(image_bytes or b"")).hexdigest()
+
+
+def get_refine_version_history() -> list[dict]:
+    history = st.session_state.get("refine_version_history", [])
+    if not isinstance(history, list):
+        history = []
+    st.session_state["refine_version_history"] = history
+    return history
+
+
+def _next_refine_version_key() -> tuple[str, int]:
+    counter = int(st.session_state.get("refine_version_counter", 0) or 0) + 1
+    st.session_state["refine_version_counter"] = counter
+    return f"v{counter:02d}", counter
+
+
+def ensure_refine_source_version(
+    image_bytes: bytes,
+    *,
+    input_mime_type: str,
+    source_label: str,
+) -> str:
+    if not image_bytes:
+        return ""
+    history = get_refine_version_history()
+    image_digest = _compute_image_digest(image_bytes)
+    for entry in history:
+        if entry.get("image_digest") == image_digest:
+            return str(entry.get("version_key", "") or "")
+    version_key, _ = _next_refine_version_key()
+    history.append(
+        {
+            "version_key": version_key,
+            "parent_version_key": "",
+            "label": "原图" if len(history) == 0 else source_label,
+            "source_label": source_label,
+            "edit_prompt": "",
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "image_bytes": bytes(image_bytes),
+            "input_mime_type": normalize_image_mime_type(input_mime_type),
+            "image_digest": image_digest,
+            "provider": "",
+            "image_model_name": "",
+            "resolution": "",
+            "variant_index": 0,
+        }
+    )
+    return version_key
+
+
+def find_refine_version_entry(version_key: str) -> dict | None:
+    normalized_key = str(version_key or "").strip()
+    if not normalized_key:
+        return None
+    for entry in get_refine_version_history():
+        if str(entry.get("version_key", "") or "") == normalized_key:
+            return entry
+    return None
+
+
+def activate_refine_version(version_key: str) -> bool:
+    entry = find_refine_version_entry(version_key)
+    if not entry:
+        return False
+    stage_refine_source_image(
+        entry.get("image_bytes", b""),
+        input_mime_type=entry.get("input_mime_type", "image/png"),
+        source_label=entry.get("label", "历史版本"),
+        default_prompt=entry.get("edit_prompt", ""),
+    )
+    st.session_state["refine_active_version_key"] = version_key
+    return True
+
+
+def append_refine_snapshot_to_version_history(
+    snapshot: dict,
+    *,
+    edit_prompt: str,
+) -> list[str]:
+    refined_images = snapshot.get("refined_images", []) or []
+    if not refined_images:
+        return []
+
+    original_bytes = snapshot.get("original_image_bytes", b"") or b""
+    original_input_mime_type = snapshot.get("input_mime_type", "image/png")
+    source_label = (
+        st.session_state.get("refine_selected_source_label")
+        or st.session_state.get("refine_staged_source_label")
+        or "原图"
+    )
+    parent_version_key = ensure_refine_source_version(
+        original_bytes,
+        input_mime_type=original_input_mime_type,
+        source_label=source_label,
+    )
+    history = get_refine_version_history()
+    created_version_keys: list[str] = []
+    for variant_index, item in enumerate(refined_images, start=1):
+        image_bytes = item.get("bytes", b"") or b""
+        if not image_bytes:
+            continue
+        image_digest = _compute_image_digest(image_bytes)
+        if any(entry.get("image_digest") == image_digest for entry in history):
+            continue
+        version_key, _ = _next_refine_version_key()
+        history.append(
+            {
+                "version_key": version_key,
+                "parent_version_key": parent_version_key,
+                "label": version_key,
+                "source_label": source_label,
+                "edit_prompt": clean_text(edit_prompt),
+                "created_at": snapshot.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                "image_bytes": bytes(image_bytes),
+                "input_mime_type": "image/png",
+                "image_digest": image_digest,
+                "provider": snapshot.get("provider", ""),
+                "image_model_name": snapshot.get("image_model_name", ""),
+                "resolution": snapshot.get("resolution", ""),
+                "variant_index": variant_index,
+            }
+        )
+        created_version_keys.append(version_key)
+    if created_version_keys:
+        st.session_state["refine_active_version_key"] = created_version_keys[0]
+        st.session_state["refine_latest_version_keys"] = created_version_keys
+    return created_version_keys
 
 
 def stage_refine_source_image(
@@ -2304,6 +2592,10 @@ def persist_refine_job_results(snapshot: dict) -> None:
     st.session_state["refine_original_image_bytes"] = snapshot.get("original_image_bytes", b"")
     st.session_state["refine_original_input_mime_type"] = snapshot.get("input_mime_type", "image/png")
     st.session_state["refine_failed_results"] = snapshot.get("failed_results", [])
+    append_refine_snapshot_to_version_history(
+        snapshot,
+        edit_prompt=st.session_state.get("edit_prompt", ""),
+    )
 
 
 def start_generation_background_job(
@@ -3376,6 +3668,49 @@ def display_candidate_result(
                 width="stretch",
             )
 
+    decision_state = get_generation_candidate_decision(candidate_id)
+    st.caption(f"当前决策：{GENERATION_CANDIDATE_DECISION_LABELS.get(decision_state, '待决策')}")
+    decision_cols = st.columns(3)
+    with decision_cols[0]:
+        favorite_label = "取消收藏" if decision_state == "favorite" else "⭐ 收藏"
+        if st.button(
+            favorite_label,
+            key=f"candidate_favorite_{task_name}_{candidate_id}",
+            width="stretch",
+        ):
+            set_generation_candidate_decision(
+                candidate_id,
+                "default" if decision_state == "favorite" else "favorite",
+            )
+            persist_demo_ui_state()
+            st.rerun()
+    with decision_cols[1]:
+        final_label = "取消最终" if decision_state == "final" else "✅ 设为最终"
+        if st.button(
+            final_label,
+            key=f"candidate_final_{task_name}_{candidate_id}",
+            width="stretch",
+        ):
+            set_generation_candidate_decision(
+                candidate_id,
+                "default" if decision_state == "final" else "final",
+            )
+            persist_demo_ui_state()
+            st.rerun()
+    with decision_cols[2]:
+        discard_label = "恢复候选" if decision_state == "discarded" else "🚫 淘汰"
+        if st.button(
+            discard_label,
+            key=f"candidate_discard_{task_name}_{candidate_id}",
+            width="stretch",
+        ):
+            set_generation_candidate_decision(
+                candidate_id,
+                "default" if decision_state == "discarded" else "discarded",
+            )
+            persist_demo_ui_state()
+            st.rerun()
+
     action_column_count = 2 if task_name == "plot" and final_code_key and result.get(final_code_key) else 1
     action_cols = st.columns(action_column_count)
     with action_cols[0]:
@@ -3390,6 +3725,7 @@ def display_candidate_result(
                 exp_mode=exp_mode,
                 task_name=task_name,
             ):
+                persist_demo_ui_state()
                 st.success(f"已将 {candidate_label} 载入精修工作台。")
             else:
                 st.warning(f"当前{candidate_label}缺少可用于精修的最终图像。")
@@ -3590,6 +3926,13 @@ def render_generation_history_panel(task_name: str) -> None:
                     "generation_failures",
                     "requested_candidates",
                     "result_source_label",
+                    "generation_candidate_decisions",
+                    "generation_final_candidate_id",
+                ):
+                    st.session_state.pop(key, None)
+                for key in (
+                    f"generation_display_scope_{normalize_task_name(task_name)}",
+                    f"generation_export_scope_{normalize_task_name(task_name)}",
                 ):
                     st.session_state.pop(key, None)
                 persist_demo_ui_state()
@@ -3864,6 +4207,96 @@ def render_refine_runtime_panel(snapshot: dict | None, *, requested_images: int)
     return None
 
 
+def render_refine_version_history_panel() -> None:
+    history = get_refine_version_history()
+    if not history:
+        return
+
+    st.divider()
+    st.markdown("## 🧬 精修版本历史")
+    st.caption("每次精修结果都会形成独立版本分支。你可以从任意历史版本继续精修，或回退到它的父版本。")
+
+    history_options = {
+        f"{entry.get('label', entry.get('version_key', '版本'))} | {entry.get('created_at', 'N/A')}": str(
+            entry.get("version_key", "")
+        )
+        for entry in history
+    }
+    active_version_key = str(
+        st.session_state.get("refine_active_version_key", history[-1].get("version_key", ""))
+        or history[-1].get("version_key", "")
+    )
+    selected_history_label = st.selectbox(
+        "选择要继续编辑的版本",
+        list(history_options.keys()),
+        index=max(
+            0,
+            next(
+                (
+                    idx
+                    for idx, version_key in enumerate(history_options.values())
+                    if version_key == active_version_key
+                ),
+                len(history_options) - 1,
+            ),
+        ),
+        key="refine_history_version_picker",
+    )
+    selected_version_key = history_options[selected_history_label]
+    selected_entry = find_refine_version_entry(selected_version_key)
+    if selected_entry is None:
+        return
+
+    action_cols = st.columns(3)
+    with action_cols[0]:
+        if st.button("↺ 设为当前输入版本", width="stretch", key="refine_use_selected_version"):
+            if activate_refine_version(selected_version_key):
+                persist_demo_ui_state()
+                st.rerun()
+    with action_cols[1]:
+        parent_version_key = str(selected_entry.get("parent_version_key", "") or "")
+        if st.button(
+            "⤴ 回退到父版本",
+            width="stretch",
+            key="refine_use_parent_version",
+            disabled=not parent_version_key,
+        ):
+            if activate_refine_version(parent_version_key):
+                persist_demo_ui_state()
+                st.rerun()
+    with action_cols[2]:
+        if st.button("🧹 清空版本历史", width="stretch", key="refine_clear_version_history"):
+            for key in (
+                "refine_version_history",
+                "refine_version_counter",
+                "refine_active_version_key",
+                "refine_latest_version_keys",
+            ):
+                st.session_state.pop(key, None)
+            persist_demo_ui_state()
+            st.rerun()
+
+    preview_cols = 3
+    for row_start in range(0, len(history), preview_cols):
+        cols = st.columns(preview_cols)
+        for col_offset in range(preview_cols):
+            history_index = row_start + col_offset
+            if history_index >= len(history):
+                continue
+            entry = history[history_index]
+            with cols[col_offset]:
+                with st.container(border=True):
+                    st.markdown(f"**{entry.get('label', entry.get('version_key', '版本'))}**")
+                    parent_text = str(entry.get("parent_version_key", "") or "原始输入")
+                    st.caption(f"来源：{entry.get('source_label', 'N/A')} | 父版本：{parent_text}")
+                    image_bytes = entry.get("image_bytes", b"")
+                    if image_bytes:
+                        st.image(Image.open(BytesIO(image_bytes)), width="stretch")
+                    if entry.get("edit_prompt"):
+                        with st.expander("查看编辑指令", expanded=False):
+                            st.write(clean_text(entry["edit_prompt"]))
+
+
 def render_refine_results_section(
     *,
     fallback_original_bytes: bytes = b"",
@@ -3891,11 +4324,22 @@ def render_refine_results_section(
         fallback_image_model_name,
     )
     failed_refine_results = st.session_state.get("refine_failed_results", [])
+    latest_version_keys = list(st.session_state.get("refine_latest_version_keys", []) or [])
     st.caption(
         f"生成时间：{st.session_state.get('refine_timestamp', 'N/A')} | "
         f"分辨率：{final_resolution} | 张数：{final_count} | "
         f"Provider：{refine_provider_used} | 模型：{refine_image_model_used}"
     )
+    if latest_version_keys:
+        latest_labels = []
+        for version_key in latest_version_keys:
+            entry = find_refine_version_entry(version_key)
+            if entry is not None:
+                latest_labels.append(str(entry.get("label", version_key) or version_key))
+        if latest_labels:
+            st.info(
+                f"当前结果已写入版本链：{' / '.join(latest_labels)}。你可以直接继续精修某个版本，或在下方版本历史里切换分支。"
+            )
     if failed_refine_results:
         st.warning(f"有 {len(failed_refine_results)} 张精修失败。")
         with st.expander("查看失败详情", expanded=False):
@@ -3945,6 +4389,17 @@ def render_refine_results_section(
                 st.markdown(f"#### 结果 {idx}")
                 refined_image = Image.open(BytesIO(img_bytes))
                 st.image(refined_image, width=preview_width_px)
+                version_key = latest_version_keys[item_pos] if item_pos < len(latest_version_keys) else ""
+                if version_key:
+                    st.caption(f"版本：{version_key}")
+                    if st.button(
+                        "↺ 继续精修此版本",
+                        key=f"refine_continue_{version_key}_{item_pos}",
+                        width="stretch",
+                    ):
+                        if activate_refine_version(version_key):
+                            persist_demo_ui_state()
+                            st.rerun()
 
                 file_name = f"refined_{final_resolution}_{idx}.png"
                 st.download_button(
@@ -4390,6 +4845,69 @@ def render_generation_results_panel(default_task_name: str) -> None:
         f"保留结果：{len(results)}/{requested_candidates} | 成功/失败：{success_count}/{failed_count}"
     )
 
+    favorite_count = 0
+    discarded_count = 0
+    final_candidate_token = get_generation_final_candidate_token()
+    for fallback_index, result_item in enumerate(results):
+        decision = get_generation_candidate_decision(get_candidate_id(result_item, fallback_index))
+        if decision == "final":
+            favorite_count += 1
+        elif decision == "favorite":
+            favorite_count += 1
+        elif decision == "discarded":
+            discarded_count += 1
+
+    with st.container(border=True):
+        st.markdown("### 🧭 候选决策工作台")
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("全部候选", len(results))
+        metric_cols[1].metric("已收藏", favorite_count)
+        metric_cols[2].metric("已淘汰", discarded_count)
+        metric_cols[3].metric("最终候选", 1 if final_candidate_token else 0)
+
+        filter_col, export_col = st.columns(2)
+        with filter_col:
+            display_scope = st.selectbox(
+                "当前展示范围",
+                GENERATION_DECISION_FILTER_OPTIONS,
+                key=f"generation_display_scope_{current_task_name}",
+            )
+        with export_col:
+            export_scope = st.selectbox(
+                "批量导出范围",
+                GENERATION_EXPORT_SCOPE_OPTIONS,
+                key=f"generation_export_scope_{current_task_name}",
+            )
+
+        final_candidate_result = find_generation_result_by_candidate_id(
+            results,
+            final_candidate_token,
+        )
+        if final_candidate_result is not None:
+            final_candidate_label = format_candidate_display_label(final_candidate_result)
+            action_col1, action_col2 = st.columns(2)
+            with action_col1:
+                st.success(f"当前最终候选：{final_candidate_label}")
+            with action_col2:
+                if st.button(
+                    "✨ 将最终候选送去精修",
+                    key=f"stage_final_candidate_for_refine_{current_task_name}",
+                    width="stretch",
+                ):
+                    if stage_candidate_for_refine(
+                        final_candidate_result,
+                        candidate_id=final_candidate_token,
+                        exp_mode=current_mode,
+                        task_name=current_task_name,
+                    ):
+                        persist_demo_ui_state()
+                        st.success(f"已将 {final_candidate_label} 载入精修工作台。")
+                        st.rerun()
+                    else:
+                        st.warning(f"{final_candidate_label} 当前缺少可用于精修的最终图像。")
+
+    visible_results = filter_generation_results_by_scope(results, display_scope)
+
     json_file_path = Path(st.session_state["json_file"]) if st.session_state.get("json_file") else None
     bundle_file_path = Path(st.session_state["bundle_file"]) if st.session_state.get("bundle_file") else None
     if (json_file_path and json_file_path.exists()) or (bundle_file_path and bundle_file_path.exists()):
@@ -4426,39 +4944,46 @@ def render_generation_results_panel(default_task_name: str) -> None:
                     width="stretch",
                 )
 
-    num_cols = 3
-    for row_start in range(0, len(results), num_cols):
-        cols = st.columns(num_cols)
-        for col_idx in range(num_cols):
-            result_idx = row_start + col_idx
-            if result_idx >= len(results):
-                continue
-            result_item = results[result_idx]
-            candidate_id = get_candidate_id(result_item, result_idx)
-            with cols[col_idx]:
-                display_candidate_result(
-                    result_item,
-                    candidate_id,
-                    current_mode,
-                    task_name=current_task_name,
-                    candidate_index=result_idx,
-                )
+    if not visible_results:
+        st.info("当前筛选范围下没有可展示的候选。")
+    else:
+        num_cols = 3
+        for row_start in range(0, len(visible_results), num_cols):
+            cols = st.columns(num_cols)
+            for col_idx in range(num_cols):
+                result_idx = row_start + col_idx
+                if result_idx >= len(visible_results):
+                    continue
+                result_item = visible_results[result_idx]
+                candidate_id = get_candidate_id(result_item, result_idx)
+                with cols[col_idx]:
+                    display_candidate_result(
+                        result_item,
+                        candidate_id,
+                        current_mode,
+                        task_name=current_task_name,
+                        candidate_index=result_idx,
+                    )
 
     st.divider()
     st.markdown("### 💾 批量下载")
+    export_results = filter_generation_results_by_scope(results, export_scope)
+    if not export_results:
+        st.info("当前导出范围下没有候选可打包。")
+        return
     try:
         final_zip_bytes, final_exported_count, final_zip_failures = build_final_results_zip(
-            results,
+            export_results,
             task_name=current_task_name,
             exp_mode=current_mode,
         )
         full_zip_bytes, full_exported_count, full_zip_failures = build_full_process_zip(
-            results,
+            export_results,
             task_name=current_task_name,
             exp_mode=current_mode,
             dataset_name=current_dataset_name,
             timestamp=timestamp,
-            source_label=result_source_label,
+            source_label=f"{result_source_label} | 导出范围={export_scope}",
             json_file_path=json_file_path,
             bundle_file_path=bundle_file_path,
         )
@@ -4957,6 +5482,21 @@ def render_refine_workspace() -> None:
 
     st.session_state["refine_selected_image_bytes"] = selected_image_bytes
     st.session_state["refine_selected_input_mime_type"] = selected_input_mime_type
+    st.session_state["refine_selected_source_label"] = selected_source_label
+    if selected_image_bytes:
+        active_version_key = ensure_refine_source_version(
+            selected_image_bytes,
+            input_mime_type=selected_input_mime_type,
+            source_label=selected_source_label,
+        )
+        current_active_entry = find_refine_version_entry(
+            st.session_state.get("refine_active_version_key", "")
+        )
+        if active_version_key and (
+            current_active_entry is None
+            or current_active_entry.get("image_digest") != _compute_image_digest(selected_image_bytes)
+        ):
+            st.session_state["refine_active_version_key"] = active_version_key
     if selected_image_bytes:
         preview_image = Image.open(BytesIO(selected_image_bytes))
         col1, col2 = st.columns(2)
@@ -5014,6 +5554,7 @@ def render_refine_workspace() -> None:
         fallback_provider=refine_provider,
         fallback_image_model_name=refine_image_model_name,
     )
+    render_refine_version_history_panel()
 
 
 def main():
