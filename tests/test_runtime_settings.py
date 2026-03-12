@@ -55,6 +55,11 @@ class RuntimeSettingsTest(unittest.TestCase):
             self.assertEqual(defaults["model_name"], "evolink-text")
             self.assertEqual(defaults["image_model_name"], "evolink-image")
             self.assertEqual(defaults["api_key_default"], "yaml-evolink-key")
+            self.assertEqual(defaults["base_url"], "https://api.evolink.ai")
+
+    def test_resolve_runtime_settings_rejects_unknown_provider(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported provider"):
+            resolve_runtime_settings("openai")
 
     def test_build_runtime_context_delegates_to_generation_utils(self):
         settings = RuntimeSettings(
@@ -62,6 +67,7 @@ class RuntimeSettingsTest(unittest.TestCase):
             api_key="runtime-key",
             model_name="text-model",
             image_model_name="image-model",
+            base_url="",
         )
         hook = lambda message: message
 
@@ -72,6 +78,7 @@ class RuntimeSettingsTest(unittest.TestCase):
         mocked_create.assert_called_once_with(
             provider="gemini",
             api_key="runtime-key",
+            base_url="",
             event_hook=None,
             status_hook=hook,
             cancel_check=None,

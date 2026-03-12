@@ -25,7 +25,7 @@ from utils.retrieval_settings import (
     normalize_curated_profile_name,
     normalize_retrieval_setting,
 )
-from utils.runtime_settings import RuntimeSettings, resolve_runtime_settings
+from utils.runtime_settings import DEFAULT_PROVIDER, RuntimeSettings, resolve_runtime_settings
 
 try:
     from zoneinfo import ZoneInfo
@@ -97,7 +97,7 @@ class ExpConfig:
     max_concurrent: int = 20
     model_name: str = ""
     image_model_name: str = ""
-    provider: str = "evolink"
+    provider: str = DEFAULT_PROVIDER
     work_dir: Path = Path(__file__).parent.parent
     timezone: str = "America/Los_Angeles"
 

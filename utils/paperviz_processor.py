@@ -34,6 +34,7 @@ from .config import ExpConfig
 from .eval_toolkits import get_score_for_image_referenced
 from .pipeline_registry import PipelineSpec, get_pipeline_metadata, get_pipeline_spec
 from .pipeline_state import PipelineState
+from .pipeline_state import stage_display_label
 from .result_order import prepare_input_payload
 
 from utils.log_config import get_logger
@@ -87,15 +88,38 @@ class PaperVizProcessor:
     @staticmethod
     def _format_stage_sequence(spec: PipelineSpec, max_rounds: int) -> str:
         labels = {
-            "vanilla": "vanilla",
-            "retriever": "retriever",
-            "planner": "planner",
-            "stylist": "stylist",
-            "visualizer": "visualizer",
-            "critic": f"critic×{max_rounds}",
-            "polish": "polish",
+            "vanilla": stage_display_label("vanilla"),
+            "retriever": "📚 参考检索",
+            "planner": stage_display_label("planner"),
+            "stylist": stage_display_label("stylist"),
+            "visualizer": "🖼️ 首版渲染",
+            "critic": f"🔍 评审修正 × {max_rounds}",
+            "polish": stage_display_label("polish"),
         }
         return " → ".join(labels.get(stage, stage) for stage in spec.stages)
+
+    @staticmethod
+    def _resolve_preview_label(state: PipelineState, desc_key: str | None) -> str:
+        if not desc_key:
+            return "最新预览"
+        if desc_key == state.planner_desc_key():
+            return stage_display_label("planner")
+        if desc_key == state.stylist_desc_key():
+            return stage_display_label("stylist")
+        critic_prefix = f"target_{state.task_name}_critic_desc"
+        if desc_key.startswith(critic_prefix):
+            round_text = desc_key[len(critic_prefix):]
+            if round_text.isdigit():
+                return stage_display_label("critic", int(round_text))
+        return "最新预览"
+
+    @staticmethod
+    def _candidate_display_label(candidate_id: Any) -> str:
+        raw_text = str(candidate_id).strip()
+        try:
+            return f"候选 {int(raw_text) + 1:02d}"
+        except Exception:
+            return f"候选 {raw_text}" if raw_text else "候选"
 
     @staticmethod
     def _resolve_render_desc_key(state: PipelineState) -> str | None:
@@ -141,30 +165,30 @@ class PaperVizProcessor:
 
         if stage_name == "vanilla":
             logger.debug(f"[{candidate_id}] 流水线阶段: vanilla_agent")
-            self._emit_status(status_callback, event_callback, candidate_id, "vanilla 生成中")
+            self._emit_status(status_callback, event_callback, candidate_id, "🪄 基础直出")
             return await self.vanilla_agent.process(data)
 
         if stage_name == "retriever":
-            self._emit_status(status_callback, event_callback, candidate_id, "retriever 检索中")
+            self._emit_status(status_callback, event_callback, candidate_id, "📚 检索参考样例")
             data = await self.retriever_agent.process(data, retrieval_setting=retrieval_setting)
             logger.debug(f"[{candidate_id}] ✅ retriever 完成")
             return data
 
         if stage_name == "planner":
-            self._emit_status(status_callback, event_callback, candidate_id, "planner 规划中")
+            self._emit_status(status_callback, event_callback, candidate_id, "📝 生成规划草案")
             data = await self.planner_agent.process(data)
             state = PipelineState(data, task_name)
             logger.debug(f"[{candidate_id}] ✅ planner 完成, desc0 长度={len(data.get(state.planner_desc_key(), ''))}")
             return data
 
         if stage_name == "stylist":
-            self._emit_status(status_callback, event_callback, candidate_id, "stylist 风格优化中")
+            self._emit_status(status_callback, event_callback, candidate_id, "✨ 执行风格增强")
             data = await self.stylist_agent.process(data)
             logger.debug(f"[{candidate_id}] ✅ stylist 完成")
             return data
 
         if stage_name == "visualizer":
-            self._emit_status(status_callback, event_callback, candidate_id, "visualizer 生图中")
+            self._emit_status(status_callback, event_callback, candidate_id, "🖼️ 渲染首版结果")
             data = await self.visualizer_agent.process(data)
             state = PipelineState(data, task_name)
             render_desc_key = self._resolve_render_desc_key(state)
@@ -176,11 +200,11 @@ class PaperVizProcessor:
                     "candidate_id": candidate_id,
                     "kind": "preview_ready",
                     "status": "running",
-                    "stage": "visualizer 首张预览已生成",
-                    "message": f"候选 {candidate_id}: 首张预览已生成",
+                    "stage": "🖼️ 首张预览已生成",
+                    "message": f"{self._candidate_display_label(candidate_id)}: 首张预览已生成",
                     "preview_image": data.get(state.image_key(render_desc_key), ""),
                     "preview_mime_type": data.get(state.mime_key(render_desc_key), "image/png"),
-                    "preview_label": render_desc_key,
+                    "preview_label": self._resolve_preview_label(state, render_desc_key),
                 })
             logger.debug(f"[{candidate_id}] ✅ visualizer 完成, 图像生成={'成功' if has_img else '失败'}")
             return data
@@ -199,7 +223,7 @@ class PaperVizProcessor:
             return data
 
         if stage_name == "polish":
-            self._emit_status(status_callback, event_callback, candidate_id, "polish 精修中")
+            self._emit_status(status_callback, event_callback, candidate_id, "🎨 执行精修")
             return await self.polish_agent.process(data)
 
         raise ValueError(f"Unsupported pipeline stage: {stage_name}")
@@ -220,7 +244,7 @@ class PaperVizProcessor:
             level=level,
             kind=kind,
             source="PaperVizProcessor",
-            message=f"候选 {candidate_id}: {stage}",
+            message=f"{PaperVizProcessor._candidate_display_label(candidate_id)}: {stage}",
             job_type="generation",
             candidate_id=candidate_id,
             stage=stage,
@@ -285,7 +309,7 @@ class PaperVizProcessor:
                 status_callback,
                 event_callback,
                 candidate_id,
-                f"critic 第 {round_idx + 1}/{max_rounds} 轮",
+                f"🔍 第 {round_idx + 1}/{max_rounds} 轮评审修正",
             )
             state.current_critic_round = round_idx
             data = await self.critic_agent.process(data, source=source)
@@ -302,7 +326,7 @@ class PaperVizProcessor:
                     status_callback,
                     event_callback,
                     candidate_id,
-                    f"critic 第 {round_idx + 1}/{max_rounds} 轮解析失败，保留上一版本",
+                    f"🔍 第 {round_idx + 1}/{max_rounds} 轮解析失败，保留上一版本",
                     level="WARNING",
                     kind="warning",
                     status="failed",
@@ -315,7 +339,7 @@ class PaperVizProcessor:
                     status_callback,
                     event_callback,
                     candidate_id,
-                    f"critic 第 {round_idx + 1}/{max_rounds} 轮无需修改，提前结束",
+                    f"🔍 第 {round_idx + 1}/{max_rounds} 轮无需修改，提前结束",
                     status="completed",
                 )
                 break
@@ -332,18 +356,18 @@ class PaperVizProcessor:
                     status_callback,
                     event_callback,
                     candidate_id,
-                    f"critic 第 {round_idx + 1}/{max_rounds} 轮可视化成功",
+                    f"🔍 第 {round_idx + 1}/{max_rounds} 轮渲染成功",
                     status="running",
                 )
                 self._emit_event(event_callback, {
                     "candidate_id": candidate_id,
                     "kind": "preview_ready",
                     "status": "running",
-                    "stage": f"critic 第 {round_idx + 1}/{max_rounds} 轮可视化成功",
-                    "message": f"候选 {candidate_id}: critic 第 {round_idx + 1}/{max_rounds} 轮可视化成功",
+                    "stage": f"🔍 第 {round_idx + 1}/{max_rounds} 轮渲染成功",
+                    "message": f"{self._candidate_display_label(candidate_id)}: 第 {round_idx + 1}/{max_rounds} 轮评审修正已生成预览",
                     "preview_image": data.get(new_image_key, ""),
                     "preview_mime_type": data.get(state.mime_key(state.critic_desc_key(round_idx)), "image/png"),
-                    "preview_label": state.critic_desc_key(round_idx),
+                    "preview_label": stage_display_label("critic", round_idx),
                 })
             else:
                 logger.warning(f"⚠️  Critic 第 {round_idx} 轮可视化失败（无有效图像），回滚到: {current_best_image_key}")
@@ -351,7 +375,7 @@ class PaperVizProcessor:
                     status_callback,
                     event_callback,
                     candidate_id,
-                    f"critic 第 {round_idx + 1}/{max_rounds} 轮可视化失败，回退上一版本",
+                    f"🔍 第 {round_idx + 1}/{max_rounds} 轮渲染失败，回退上一版本",
                     level="WARNING",
                     kind="warning",
                     status="failed",

@@ -26,6 +26,26 @@ def get_candidate_id(result: dict[str, Any] | None, fallback: Any = None) -> Any
     return fallback
 
 
+def get_candidate_display_index(result: dict[str, Any] | None, fallback_index: int = 0) -> int:
+    if isinstance(result, dict):
+        for key in ("input_index", "candidate_id"):
+            value = result.get(key)
+            if isinstance(value, int):
+                return value + 1
+            if isinstance(value, str) and value.strip().isdigit():
+                return int(value.strip()) + 1
+    return max(1, int(fallback_index) + 1)
+
+
+def format_candidate_display_label(
+    result: dict[str, Any] | None,
+    *,
+    fallback_index: int = 0,
+    prefix: str = "候选",
+) -> str:
+    return f"{prefix} {get_candidate_display_index(result, fallback_index):02d}"
+
+
 def _normalize_order_value(value: Any) -> tuple[int, Any]:
     if isinstance(value, bool):
         return (0, int(value))

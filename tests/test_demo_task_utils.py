@@ -70,7 +70,7 @@ class DemoTaskUtilsTest(unittest.TestCase):
 
         stages = build_evolution_stages(result, "dev_planner_stylist", task_name="diagram")
 
-        self.assertEqual([stage["name"] for stage in stages], ["📋 规划器", "✨ 风格化器"])
+        self.assertEqual([stage["name"] for stage in stages], ["📝 规划草案", "✨ 风格增强"])
 
     def test_plot_task_ui_config_marks_image_model_unused(self):
         plot_config = get_task_ui_config("plot")

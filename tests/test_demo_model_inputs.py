@@ -1,7 +1,10 @@
 import importlib
+import json
 import sys
+import tempfile
 import types
 import unittest
+from pathlib import Path
 
 
 if "streamlit" not in sys.modules:
@@ -16,8 +19,19 @@ demo = importlib.import_module("demo")
 class _FakeInteractiveStreamlit:
     def __init__(self):
         self.session_state = {}
+        self.selectbox_calls = []
+        self.html_calls = []
 
-    def selectbox(self, label, options, index=0, key=None, help=None):
+    def selectbox(self, label, options, **kwargs):
+        self.selectbox_calls.append(
+            {
+                "label": label,
+                "options": list(options),
+                "kwargs": dict(kwargs),
+            }
+        )
+        index = kwargs.get("index", 0)
+        key = kwargs.get("key")
         if key not in self.session_state:
             self.session_state[key] = options[index]
         return self.session_state[key]
@@ -26,6 +40,19 @@ class _FakeInteractiveStreamlit:
         if key not in self.session_state:
             self.session_state[key] = value
         return self.session_state[key]
+
+    def columns(self, spec, **kwargs):
+        return [self for _ in spec]
+
+    def caption(self, *args, **kwargs):
+        return None
+
+    def button(self, *args, **kwargs):
+        return False
+
+    def html(self, body, **kwargs):
+        self.html_calls.append({"body": body, "kwargs": dict(kwargs)})
+        return None
 
 
 class DemoModelInputTest(unittest.TestCase):
@@ -85,6 +112,23 @@ class DemoModelInputTest(unittest.TestCase):
             "vendor/manual-image-model",
         )
 
+    def test_model_selector_widget_does_not_pass_default_index_when_key_is_managed(self):
+        self.fake_streamlit.session_state["model_value"] = "preset-b"
+
+        resolved = demo.render_preset_or_custom_model_input(
+            "文本模型",
+            ["preset-a", "preset-b"],
+            value_key="model_value",
+            selector_key="model_selector",
+            custom_value_key="model_custom",
+            default_value="preset-a",
+            select_help="help",
+        )
+
+        self.assertEqual(resolved, "preset-b")
+        self.assertEqual(len(self.fake_streamlit.selectbox_calls), 1)
+        self.assertNotIn("index", self.fake_streamlit.selectbox_calls[0]["kwargs"])
+
     def test_initialize_curated_profile_state_separates_widget_key_from_canonical_key(self):
         self.fake_streamlit.session_state["curated_profile"] = " paper profile "
 
@@ -135,3 +179,110 @@ class DemoModelInputTest(unittest.TestCase):
             self.fake_streamlit.session_state["tab1_api_key"],
             "local-google-key",
         )
+
+    def test_prepare_api_key_widget_state_honors_pending_clear_request(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = "persisted-key"
+        self.fake_streamlit.session_state["tab1_api_key_clear_requested"] = True
+
+        restored = demo.prepare_api_key_widget_state(
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            provider_defaults={"api_key_default": ""},
+        )
+
+        self.assertEqual(restored, "")
+        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "")
+        self.assertNotIn("tab1_api_key_clear_requested", self.fake_streamlit.session_state)
+
+    def test_build_api_key_storage_notice_reflects_local_secret_state(self):
+        self.assertEqual(
+            demo.build_api_key_storage_notice({"api_key_default": "saved-key"}),
+            "已在本机保存当前 Provider 的密钥，刷新页面后仍会保留。",
+        )
+        self.assertEqual(
+            demo.build_api_key_storage_notice({"api_key_default": ""}),
+            "密钥只保存在当前电脑；输入后会自动写入本地 txt。",
+        )
+
+    def test_inject_refine_tab_sidebar_autocollapse_hook_registers_dom_script(self):
+        demo.inject_refine_tab_sidebar_autocollapse_hook()
+
+        self.assertEqual(len(self.fake_streamlit.html_calls), 1)
+        html_call = self.fake_streamlit.html_calls[0]
+        self.assertIn("section.stSidebar", html_call["body"])
+        self.assertIn("button[role=\"tab\"]", html_call["body"])
+        self.assertIn("精修图像", html_call["body"])
+        self.assertIn("stExpandSidebarButton", html_call["body"])
+        self.assertIn("autoCollapsed", html_call["body"])
+        self.assertTrue(html_call["kwargs"]["unsafe_allow_javascript"])
+
+    def test_format_repo_relative_path_prefers_repo_relative_display(self):
+        absolute_path = Path("D:/PaperBanana/data/PaperBananaBench/diagram/manual_profiles/default.json")
+
+        formatted = demo.format_repo_relative_path(absolute_path, base_dir=Path("D:/PaperBanana"))
+
+        self.assertEqual(
+            formatted,
+            "data/PaperBananaBench/diagram/manual_profiles/default.json",
+        )
+
+    def test_format_repo_relative_path_falls_back_to_absolute_display(self):
+        outside_path = Path("C:/Users/86166/AppData/Roaming/uv/tools/paperbanana-pro/Lib/site-packages/results/demo/sample.bundle.json")
+
+        formatted = demo.format_repo_relative_path(outside_path, base_dir=Path("D:/PaperBanana"))
+
+        self.assertEqual(
+            formatted,
+            "C:/Users/86166/AppData/Roaming/uv/tools/paperbanana-pro/Lib/site-packages/results/demo/sample.bundle.json",
+        )
+
+    def test_ensure_session_choice_state_repairs_invalid_value(self):
+        self.fake_streamlit.session_state["tab1_retrieval_setting"] = "mystery"
+
+        resolved = demo.ensure_session_choice_state(
+            "tab1_retrieval_setting",
+            ["auto", "auto-full", "none"],
+            "auto",
+        )
+
+        self.assertEqual(resolved, "auto")
+        self.assertEqual(self.fake_streamlit.session_state["tab1_retrieval_setting"], "auto")
+
+    def test_ensure_session_int_state_clamps_invalid_input(self):
+        self.fake_streamlit.session_state["tab1_max_critic_rounds"] = "99"
+
+        resolved = demo.ensure_session_int_state(
+            "tab1_max_critic_rounds",
+            1,
+            min_value=0,
+            max_value=5,
+        )
+
+        self.assertEqual(resolved, 5)
+        self.assertEqual(self.fake_streamlit.session_state["tab1_max_critic_rounds"], 5)
+
+    def test_resolve_demo_base_dir_prefers_direct_url_workspace(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            install_root = temp_root / "site-packages"
+            install_root.mkdir()
+            workspace_root = temp_root / "workspace"
+            workspace_root.mkdir()
+            (workspace_root / "demo.py").write_text("", encoding="utf-8")
+            (workspace_root / "agents").mkdir()
+            (workspace_root / "utils").mkdir()
+            (workspace_root / "data").mkdir()
+
+            dist_info = install_root / "paperbanana_pro-0.1.0.dist-info"
+            dist_info.mkdir()
+            (dist_info / "direct_url.json").write_text(
+                json.dumps({"url": workspace_root.resolve().as_uri()}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            resolved = demo.resolve_demo_base_dir(
+                install_root,
+                cwd=temp_root / "outside-cwd",
+            )
+
+            self.assertEqual(resolved, workspace_root.resolve())

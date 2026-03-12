@@ -85,7 +85,9 @@ class BaseAgent(ABC):
         _sys = system_prompt or self.system_prompt
         _temp = temperature if temperature is not None else self.exp_config.temperature
 
-        if self.exp_config.provider == "evolink":
+        provider = str(getattr(self.exp_config, "provider", "") or "").strip().lower()
+
+        if provider == "evolink":
             return await generation_utils.call_evolink_text_with_retry_async(
                 model_name=_model,
                 contents=contents,
@@ -98,7 +100,7 @@ class BaseAgent(ABC):
                 retry_delay=retry_delay,
                 error_context=error_context,
             )
-        else:
+        if provider == "gemini":
             from google.genai import types
 
             return await generation_utils.call_gemini_with_retry_async(
@@ -114,6 +116,10 @@ class BaseAgent(ABC):
                 retry_delay=retry_delay,
                 error_context=error_context,
             )
+
+        raise ValueError(
+            f"Unsupported provider for text generation: {self.exp_config.provider!r}"
+        )
 
     async def call_image_api(
         self,
@@ -158,7 +164,9 @@ class BaseAgent(ABC):
         _temp = temperature if temperature is not None else self.exp_config.temperature
         _contents = contents or [{"type": "text", "text": prompt}]
 
-        if self.exp_config.provider == "evolink":
+        provider = str(getattr(self.exp_config, "provider", "") or "").strip().lower()
+
+        if provider == "evolink":
             config = {
                 "aspect_ratio": aspect_ratio,
                 "quality": image_resolution,
@@ -173,21 +181,7 @@ class BaseAgent(ABC):
                 retry_delay=retry_delay,
                 error_context=error_context,
             )
-        elif "gpt-image" in _model:
-            return await generation_utils.call_openai_image_generation_with_retry_async(
-                model_name=_model,
-                prompt=prompt,
-                config={
-                    "size": "1536x1024",
-                    "quality": "high",
-                    "background": "opaque",
-                    "output_format": "png",
-                },
-                max_attempts=max_attempts,
-                retry_delay=retry_delay,
-                error_context=error_context,
-            )
-        else:
+        if provider == "gemini":
             from google.genai import types
 
             prompt_with_hints = image_utils.build_gemini_image_prompt(
@@ -210,6 +204,14 @@ class BaseAgent(ABC):
                 retry_delay=retry_delay,
                 error_context=error_context,
             )
+
+        raise ValueError(
+            f"Unsupported provider for text generation: {self.exp_config.provider!r}"
+        )
+
+        raise ValueError(
+            f"Unsupported provider for image generation: {self.exp_config.provider!r}"
+        )
 
     @staticmethod
     def _inject_prompt_into_contents(

@@ -10,24 +10,28 @@ from utils.config_loader import load_model_config, load_provider_defaults
 
 
 PROVIDER_UI_META = {
-    "evolink": {
-        "api_key_label": "API Key",
-        "api_key_help": "Evolink API 密钥（Bearer Token）",
-    },
     "gemini": {
         "api_key_label": "Google API Key",
         "api_key_help": "Google AI Studio API 密钥",
     },
+    "evolink": {
+        "api_key_label": "API Key",
+        "api_key_help": "Evolink API 密钥（Bearer Token）",
+    },
 }
 
+DEFAULT_PROVIDER = "gemini"
 SUPPORTED_PROVIDERS = tuple(PROVIDER_UI_META.keys())
 
 
 def normalize_provider_name(provider: str) -> str:
     normalized = str(provider or "").strip().lower()
+    if not normalized:
+        return DEFAULT_PROVIDER
     if normalized in SUPPORTED_PROVIDERS:
         return normalized
-    return "gemini"
+    supported = ", ".join(SUPPORTED_PROVIDERS)
+    raise ValueError(f"Unsupported provider: {provider!r}. Expected one of: {supported}.")
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,7 @@ class RuntimeSettings:
     api_key: str
     model_name: str
     image_model_name: str
+    base_url: str = ""
     concurrency_mode: str = "auto"
     max_concurrent: int = 20
     max_critic_rounds: int = 3
@@ -46,6 +51,7 @@ class RuntimeSettings:
             "api_key": self.api_key,
             "model_name": self.model_name,
             "image_model_name": self.image_model_name,
+            "base_url": self.base_url,
             "concurrency_mode": self.concurrency_mode,
             "max_concurrent": self.max_concurrent,
             "max_critic_rounds": self.max_critic_rounds,
@@ -78,6 +84,7 @@ def resolve_runtime_settings(
         api_key=str(api_key or defaults["api_key"]).strip(),
         model_name=str(model_name or defaults["model_name"]).strip(),
         image_model_name=str(image_model_name or defaults["image_model_name"]).strip(),
+        base_url=str(defaults.get("base_url", "") or "").strip(),
         concurrency_mode=resolved_concurrency_mode,
         max_concurrent=max(1, int(max_concurrent)),
         max_critic_rounds=max(0, int(max_critic_rounds)),
@@ -103,6 +110,7 @@ def build_provider_ui_defaults(
         "api_key_default": settings.api_key,
         "model_name": settings.model_name,
         "image_model_name": settings.image_model_name,
+        "base_url": settings.base_url,
     }
 
 
@@ -143,6 +151,7 @@ def build_runtime_context(
     return generation_utils.create_runtime_context(
         provider=settings.provider,
         api_key=settings.api_key,
+        base_url=settings.base_url,
         event_hook=event_hook,
         status_hook=status_hook,
         cancel_check=cancel_check,

@@ -191,10 +191,13 @@ class PaperVizProcessorRegistryTest(unittest.TestCase):
             1,
         )
         self.assertEqual(
-            sum(1 for event in events if event.get("kind") == "stage" and event.get("stage") == "planner 规划中"),
+            sum(1 for event in events if event.get("kind") == "stage" and event.get("stage") == "📝 生成规划草案"),
             1,
         )
         self.assertTrue(any(event.get("kind") == "preview_ready" for event in events))
+        self.assertTrue(
+            any(event.get("preview_label") == "📝 规划草案" for event in events if event.get("kind") == "preview_ready")
+        )
 
     def test_shutdown_closes_agent_resources_when_supported(self):
         processor = self._build_processor("dev_planner")

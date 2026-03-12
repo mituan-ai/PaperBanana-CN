@@ -25,6 +25,10 @@ PROVIDER_CONFIG_MAP = {
         "api_env": "GOOGLE_API_KEY",
         "default_model_name": "gemini-3.1-pro-preview",
         "default_image_model_name": "gemini-3-pro-image-preview",
+        "base_url_section": "",
+        "base_url_key": "",
+        "base_url_env": "",
+        "default_base_url": "",
     },
     "evolink": {
         "model_section": "evolink",
@@ -33,8 +37,27 @@ PROVIDER_CONFIG_MAP = {
         "api_env": "EVOLINK_API_KEY",
         "default_model_name": "gemini-2.5-flash",
         "default_image_model_name": "nano-banana-2-lite",
+        "base_url_section": "evolink",
+        "base_url_key": "base_url",
+        "base_url_env": "EVOLINK_BASE_URL",
+        "default_base_url": "https://api.evolink.ai",
     },
 }
+
+
+def _normalize_provider_name(provider: str) -> str:
+    return str(provider or "").strip().lower()
+
+
+def _get_provider_config(provider: str) -> dict[str, str]:
+    normalized_provider = _normalize_provider_name(provider)
+    provider_config = PROVIDER_CONFIG_MAP.get(normalized_provider)
+    if provider_config is None:
+        supported = ", ".join(sorted(PROVIDER_CONFIG_MAP))
+        raise ValueError(
+            f"Unsupported provider: {provider!r}. Expected one of: {supported}."
+        )
+    return provider_config
 
 
 def get_repo_root(base_dir: Path | None = None) -> Path:
@@ -88,6 +111,19 @@ def write_local_secret(
     return secret_path
 
 
+def delete_local_secret(
+    section: str,
+    key: str,
+    base_dir: Path | None = None,
+) -> Path | None:
+    secret_path = get_local_secret_path(section, key, base_dir=base_dir)
+    if secret_path is None:
+        return None
+    if secret_path.exists():
+        secret_path.unlink()
+    return secret_path
+
+
 def load_model_config(base_dir: Path | None = None) -> dict[str, Any]:
     config_path = get_config_dir(base_dir) / "model_config.yaml"
     if not config_path.exists():
@@ -124,7 +160,7 @@ def get_provider_model_defaults(
     provider: str,
     model_config: dict[str, Any],
 ) -> dict[str, str]:
-    provider_config = PROVIDER_CONFIG_MAP.get(provider, PROVIDER_CONFIG_MAP["gemini"])
+    provider_config = _get_provider_config(provider)
     section_config = model_config.get(provider_config["model_section"], {})
     model_name = section_config.get("model_name") or provider_config["default_model_name"]
     image_model_name = (
@@ -142,13 +178,31 @@ def get_provider_api_key(
     model_config: dict[str, Any],
     base_dir: Path | None = None,
 ) -> str:
-    provider_config = PROVIDER_CONFIG_MAP.get(provider, PROVIDER_CONFIG_MAP["gemini"])
+    provider_config = _get_provider_config(provider)
     return get_config_val(
         model_config,
         provider_config["api_section"],
         provider_config["api_key"],
         provider_config["api_env"],
         "",
+        base_dir=base_dir,
+    )
+
+
+def get_provider_base_url(
+    provider: str,
+    model_config: dict[str, Any],
+    base_dir: Path | None = None,
+) -> str:
+    provider_config = _get_provider_config(provider)
+    if not provider_config["base_url_section"]:
+        return ""
+    return get_config_val(
+        model_config,
+        provider_config["base_url_section"],
+        provider_config["base_url_key"],
+        provider_config["base_url_env"],
+        provider_config["default_base_url"],
         base_dir=base_dir,
     )
 
@@ -164,6 +218,11 @@ def load_provider_defaults(
         model_config,
         base_dir=base_dir,
     )
+    defaults["base_url"] = get_provider_base_url(
+        provider,
+        model_config,
+        base_dir=base_dir,
+    )
     return defaults
 
 
@@ -172,10 +231,22 @@ def write_provider_api_key(
     api_key: str,
     base_dir: Path | None = None,
 ) -> Path | None:
-    provider_config = PROVIDER_CONFIG_MAP.get(provider, PROVIDER_CONFIG_MAP["gemini"])
+    provider_config = _get_provider_config(provider)
     return write_local_secret(
         provider_config["api_section"],
         provider_config["api_key"],
         api_key,
+        base_dir=base_dir,
+    )
+
+
+def delete_provider_api_key(
+    provider: str,
+    base_dir: Path | None = None,
+) -> Path | None:
+    provider_config = _get_provider_config(provider)
+    return delete_local_secret(
+        provider_config["api_section"],
+        provider_config["api_key"],
         base_dir=base_dir,
     )

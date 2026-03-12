@@ -1,6 +1,8 @@
 import unittest
 
 from utils.result_order import (
+    format_candidate_display_label,
+    get_candidate_display_index,
     get_candidate_id,
     prepare_input_payload,
     sort_results_stably,
@@ -31,6 +33,15 @@ class ResultOrderTest(unittest.TestCase):
         self.assertEqual(get_candidate_id({"input_index": 8}, "x"), 8)
         self.assertEqual(get_candidate_id({"id": "sample_1"}, "x"), "sample_1")
         self.assertEqual(get_candidate_id({}, "x"), "x")
+
+    def test_candidate_display_helpers_use_one_based_human_labels(self):
+        result = {"candidate_id": 7}
+
+        self.assertEqual(get_candidate_display_index(result, fallback_index=0), 8)
+        self.assertEqual(
+            format_candidate_display_label(result, fallback_index=0),
+            "候选 08",
+        )
 
 
 if __name__ == "__main__":

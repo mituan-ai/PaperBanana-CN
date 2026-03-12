@@ -129,17 +129,18 @@ def resolve_stage_artifact_keys(
 
 def stage_display_label(stage_name: str, round_idx: int | None = None) -> str:
     if stage_name == "vanilla":
-        return "🪄 Vanilla"
+        return "🪄 基础直出"
     if stage_name == "planner":
-        return "📝 Planner"
+        return "📝 规划草案"
     if stage_name == "stylist":
-        return "✨ Stylist"
+        return "✨ 风格增强"
     if stage_name == "critic":
-        critic_round = int(round_idx or 0) + 1
-        emoji = "🔍" * min(critic_round, 3)
-        return f"{emoji} Critic Round {critic_round}"
+        if round_idx is None:
+            return "🔍 评审修正"
+        critic_round = int(round_idx) + 1
+        return f"🔍 第 {critic_round} 轮评审修正"
     if stage_name == "polish":
-        return "🎨 Polish"
+        return "🎨 精修成稿"
     return stage_name
 
 

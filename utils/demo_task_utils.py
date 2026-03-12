@@ -12,6 +12,7 @@ from utils.pipeline_state import (
     image_key_for_desc,
     normalize_task_name,
     planner_desc_key,
+    stage_display_label,
     stylist_desc_key,
 )
 
@@ -165,14 +166,14 @@ def build_evolution_stages(result, exp_mode: str, task_name: str = "diagram"):
         stage_name = stage_entry["stage_name"]
         if stage_name == "planner":
             stage = {
-                "name": "📋 规划器",
+                "name": stage_display_label("planner"),
                 "image_key": stage_entry["image_key"],
                 "desc_key": stage_entry["text_key"],
                 "description": task_config["planner_stage_description"],
             }
         elif stage_name == "stylist":
             stage = {
-                "name": "✨ 风格化器",
+                "name": stage_display_label("stylist"),
                 "image_key": stage_entry["image_key"],
                 "desc_key": stage_entry["text_key"],
                 "description": task_config["stylist_stage_description"],
@@ -180,7 +181,7 @@ def build_evolution_stages(result, exp_mode: str, task_name: str = "diagram"):
         elif stage_name == "critic":
             round_idx = stage_entry["round_idx"]
             stage = {
-                "name": f"🔍 评审第 {round_idx + 1} 轮",
+                "name": stage_display_label("critic", round_idx),
                 "image_key": stage_entry["image_key"],
                 "desc_key": stage_entry["text_key"],
                 "suggestions_key": stage_entry["suggestions_key"],
@@ -188,14 +189,14 @@ def build_evolution_stages(result, exp_mode: str, task_name: str = "diagram"):
             }
         elif stage_name == "vanilla":
             stage = {
-                "name": "🪄 Vanilla",
+                "name": stage_display_label("vanilla"),
                 "image_key": stage_entry["image_key"],
                 "desc_key": stage_entry["text_key"],
                 "description": "直接从输入内容生成的基础结果。",
             }
         elif stage_name == "polish":
             stage = {
-                "name": "🎨 精修器",
+                "name": stage_display_label("polish"),
                 "image_key": stage_entry["image_key"],
                 "desc_key": stage_entry["text_key"],
                 "description": "在现有结果基础上进一步精修的最终版本。",

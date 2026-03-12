@@ -17,6 +17,11 @@ evolink:
 
 
 class ExpConfigProviderDefaultsTest(unittest.TestCase):
+    def test_exp_config_defaults_to_gemini_provider(self):
+        exp_config = ExpConfig(dataset_name="PaperBananaBench")
+
+        self.assertEqual(exp_config.provider, "gemini")
+
     def test_gemini_provider_uses_default_section(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             work_dir = Path(tmp_dir)

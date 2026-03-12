@@ -151,6 +151,18 @@ class DemoWorkbenchStateTest(unittest.TestCase):
         self.assertEqual(restored[0]["version_key"], "v01")
         self.assertEqual(restored[0]["image_bytes"], b"image-bytes")
 
+    def test_apply_pending_generation_widget_state_updates_flushes_queue(self):
+        demo.st.session_state["_pending_generation_widget_updates"] = {
+            "tab1_exp_mode": "demo_planner_critic",
+            "tab1_image_resolution": "2K",
+        }
+
+        demo._apply_pending_generation_widget_state_updates()
+
+        self.assertEqual(demo.st.session_state["tab1_exp_mode"], "demo_planner_critic")
+        self.assertEqual(demo.st.session_state["tab1_image_resolution"], "2K")
+        self.assertNotIn("_pending_generation_widget_updates", demo.st.session_state)
+
 
 if __name__ == "__main__":
     unittest.main()

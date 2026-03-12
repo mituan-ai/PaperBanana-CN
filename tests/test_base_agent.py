@@ -1,4 +1,5 @@
 import asyncio
+import types
 import unittest
 from pathlib import Path
 
@@ -65,6 +66,66 @@ class BaseAgentImageApiTest(unittest.TestCase):
             )
         finally:
             generation_utils.call_gemini_with_retry_async = original
+
+    def test_image_provider_route_does_not_switch_based_on_custom_model_name(self):
+        captured = {"gemini": 0, "openai": 0}
+
+        async def fake_call_gemini_with_retry_async(**kwargs):
+            captured["gemini"] += 1
+            return ["fake-image-b64"]
+
+        async def fake_call_openai_image_generation_with_retry_async(**kwargs):
+            captured["openai"] += 1
+            return ["fake-image-b64"]
+
+        original_gemini = generation_utils.call_gemini_with_retry_async
+        original_openai = generation_utils.call_openai_image_generation_with_retry_async
+        generation_utils.call_gemini_with_retry_async = fake_call_gemini_with_retry_async
+        generation_utils.call_openai_image_generation_with_retry_async = (
+            fake_call_openai_image_generation_with_retry_async
+        )
+        try:
+            exp_config = ExpConfig(
+                dataset_name="PaperBananaBench",
+                task_name="diagram",
+                provider="gemini",
+                work_dir=Path("."),
+            )
+            agent = _DummyAgent(
+                model_name="gpt-image-1",
+                system_prompt="System prompt",
+                exp_config=exp_config,
+            )
+
+            result = asyncio.run(
+                agent.call_image_api(
+                    prompt="Draw a diagram.",
+                    contents=[{"type": "text", "text": "old text"}],
+                )
+            )
+
+            self.assertEqual(result, ["fake-image-b64"])
+            self.assertEqual(captured["gemini"], 1)
+            self.assertEqual(captured["openai"], 0)
+        finally:
+            generation_utils.call_gemini_with_retry_async = original_gemini
+            generation_utils.call_openai_image_generation_with_retry_async = original_openai
+
+
+class BaseAgentProviderValidationTest(unittest.TestCase):
+    def test_text_api_rejects_unknown_provider(self):
+        exp_config = types.SimpleNamespace(
+            provider="mystery-provider",
+            temperature=0.5,
+        )
+        agent = _DummyAgent(
+            model_name="gemini-3.1-flash-lite-preview",
+            system_prompt="System prompt",
+            exp_config=exp_config,
+        )
+
+        with self.assertRaisesRegex(ValueError, "Unsupported provider for text generation"):
+            asyncio.run(agent.call_text_api([{"type": "text", "text": "hello"}]))
 
 
 if __name__ == "__main__":
