@@ -4842,34 +4842,18 @@ def render_generation_sidebar_controls() -> dict:
             """
             <style>
             /* ── sidebar global spacing ── */
-            [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.55rem; }
-            [data-testid="stSidebar"] hr { margin: 0.2rem 0; }
-            [data-testid="stSidebar"] .stAppViewBlockContainer,
-            [data-testid="stSidebar"] > div:first-child { padding-top: 1rem !important; }
-            [data-testid="stSidebarContent"] { padding-top: 1.2rem !important; }
+            [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.5rem; }
+            [data-testid="stSidebar"] hr { margin: 0.25rem 0; }
 
             /* ── section label ── */
             .sb-section {
-                font-size: 0.72rem;
-                font-weight: 700;
-                color: #374151;
-                text-transform: uppercase;
-                letter-spacing: 0.06em;
-                margin: 20px 0 6px 0;
-                padding: 0 0 5px 0;
-                border-bottom: 1px solid #e5e7eb;
+                font-size: 0.7rem; font-weight: 700;
+                color: #c47d15;
+                text-transform: uppercase; letter-spacing: 0.08em;
+                margin: 14px 0 4px 0; padding: 0 0 4px 0;
+                border-bottom: 2px solid #f5deb3;
             }
-            .sb-section:first-of-type { margin-top: 4px; }
-
-            /* ── sidebar captions (descriptions) ── */
-            [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
-                line-height: 1.45;
-                margin-bottom: 4px;
-            }
-
-            /* ── inputs & buttons styling ── */
-            [data-testid="stSidebar"] div[data-baseweb="select"] > div { border-radius: 6px; }
-            [data-testid="stSidebar"] input { border-radius: 6px; }
+            .sb-section:first-of-type { margin-top: 6px; }
             </style>
             """,
             unsafe_allow_html=True,
@@ -5726,20 +5710,8 @@ def render_generation_workspace() -> None:
 
 
 def render_refine_workspace() -> None:
-    st.markdown(
-        """
-        <style>
-        /* ── refine page compact spacing ── */
-        .main .block-container [data-testid="stVerticalBlock"] { gap: 0.3rem; }
-        .main .block-container [data-testid="stCaptionContainer"] { margin-bottom: -0.2rem; }
-        .main .sb-section { margin: 8px 0 2px 0 !important; }
-        .main .block-container h4 { margin-top: 0; padding-top: 0; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown("#### ✨ 精修并放大图表")
-    st.caption("上传候选方案或任意图表，描述调整意图，输出高分辨率版本。")
+    st.markdown("### 精修并放大图表（2K / 4K）")
+    st.caption("上传候选方案或任意图表，说明希望保留和调整的部分，输出更清晰的高分辨率版本。")
 
     active_refine_job_id = st.session_state.get("active_refine_job_id")
     active_refine_snapshot = hydrate_persisted_job_snapshot(
@@ -5750,88 +5722,98 @@ def render_refine_workspace() -> None:
         active_refine_snapshot and active_refine_snapshot.get("status") == "running"
     )
 
-    st.markdown('<p class="sb-section">参数配置</p>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown("## ✨ 精修参数")
+        st.caption("精修设置不再与生成侧边栏共享；这里的配置只影响当前精修任务。")
 
-    # ── Row 1: 分辨率 | 宽高比 | Provider ──
-    r1c1, r1c2, r1c3 = st.columns(3)
-    with r1c1:
-        ensure_session_choice_state("refine_resolution", ["2K", "4K"], "2K")
-        refine_resolution = st.selectbox(
-            "目标分辨率", ["2K", "4K"],
-            key="refine_resolution",
-            help="更高分辨率会增加耗时，但通常能得到更细致的结果。",
-        )
-    with r1c2:
-        ensure_session_choice_state(
-            "refine_aspect_ratio", COMMON_ASPECT_RATIOS, COMMON_ASPECT_RATIOS[0],
-        )
-        refine_aspect_ratio = st.selectbox(
-            "宽高比", COMMON_ASPECT_RATIOS,
-            key="refine_aspect_ratio",
-            help="指定精修后图像的目标宽高比。",
-        )
-    with r1c3:
-        ensure_session_choice_state(
-            "refine_provider", ["gemini", "evolink"],
-            str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
-        )
-        refine_provider = st.selectbox(
-            "精修 Provider", ["gemini", "evolink"],
-            key="refine_provider",
-            help="精修链路可单独选择 Provider。",
-        )
-
-    # ── Row 2: 张数 | API Key | 模型 ──
-    r2c1, r2c2, r2c3 = st.columns(3)
-    with r2c1:
-        ensure_session_int_state("refine_num_images", 3, min_value=1, max_value=12)
-        refine_num_images = st.number_input(
-            "精修张数", min_value=1, max_value=12, step=1,
-            key="refine_num_images",
-            help="并发生成多少张不同版本。",
-        )
-    with r2c2:
-        refine_provider_defaults = get_provider_ui_defaults(refine_provider)
-        if "refine_api_key" not in st.session_state:
-            st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
-        if "refine_image_model_name" not in st.session_state:
-            st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
-        if "refine_prev_provider" not in st.session_state:
-            st.session_state["refine_prev_provider"] = refine_provider
-        if st.session_state["refine_prev_provider"] != refine_provider:
-            st.session_state["refine_prev_provider"] = refine_provider
-            st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
-            st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
-            st.session_state["refine_image_model_name_selector"] = refine_provider_defaults["image_model_name"]
-            st.session_state["refine_image_model_name_custom"] = ""
-            st.rerun()
-        refine_api_key = render_provider_api_key_controls(
-            provider=refine_provider,
-            provider_defaults=refine_provider_defaults,
-            session_key="refine_api_key",
-            clear_request_key="refine_api_key_clear_requested",
-            clear_button_key="refine_clear_provider_api_key",
-        )
-    with r2c3:
-        if refine_provider == "gemini":
-            refine_image_model_name = render_preset_or_custom_model_input(
-                "精修图像模型",
-                GEMINI_IMAGE_MODELS,
-                value_key="refine_image_model_name",
-                selector_key="refine_image_model_name_selector",
-                custom_value_key="refine_image_model_name_custom",
-                default_value=refine_provider_defaults["image_model_name"],
-                select_help="精修流程使用的图像模型。",
-                custom_help="请输入自定义图像模型名称。",
+        refine_settings_col1, refine_settings_col2 = st.columns(2)
+        with refine_settings_col1:
+            ensure_session_choice_state("refine_resolution", ["2K", "4K"], "2K")
+            refine_resolution = st.selectbox(
+                "目标分辨率",
+                ["2K", "4K"],
+                key="refine_resolution",
+                help="更高分辨率会增加耗时，但通常能得到更细致的结果。",
             )
-        else:
-            refine_image_model_name = st.text_input(
-                "精修图像模型",
-                key="refine_image_model_name",
-                help="精修流程使用的图像模型",
+            ensure_session_choice_state(
+                "refine_aspect_ratio",
+                COMMON_ASPECT_RATIOS,
+                COMMON_ASPECT_RATIOS[0],
+            )
+            refine_aspect_ratio = st.selectbox(
+                "宽高比",
+                COMMON_ASPECT_RATIOS,
+                key="refine_aspect_ratio",
+                help="指定精修后图像的目标宽高比。",
+            )
+            ensure_session_int_state(
+                "refine_num_images",
+                3,
+                min_value=1,
+                max_value=12,
+            )
+            refine_num_images = st.number_input(
+                "精修张数",
+                min_value=1,
+                max_value=12,
+                step=1,
+                key="refine_num_images",
+                help="并发生成多少张不同版本，便于横向挑选。",
             )
 
-    st.markdown('<p class="sb-section">图像来源</p>', unsafe_allow_html=True)
+        with refine_settings_col2:
+            ensure_session_choice_state(
+                "refine_provider",
+                ["gemini", "evolink"],
+                str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
+            )
+            refine_provider = st.selectbox(
+                "精修 Provider",
+                ["gemini", "evolink"],
+                key="refine_provider",
+                help="精修链路可单独选择 Provider，不依赖生成页设置。",
+            )
+            refine_provider_defaults = get_provider_ui_defaults(refine_provider)
+            if "refine_api_key" not in st.session_state:
+                st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
+            if "refine_image_model_name" not in st.session_state:
+                st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
+            if "refine_prev_provider" not in st.session_state:
+                st.session_state["refine_prev_provider"] = refine_provider
+            if st.session_state["refine_prev_provider"] != refine_provider:
+                st.session_state["refine_prev_provider"] = refine_provider
+                st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
+                st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
+                st.session_state["refine_image_model_name_selector"] = refine_provider_defaults["image_model_name"]
+                st.session_state["refine_image_model_name_custom"] = ""
+                st.rerun()
+            refine_api_key = render_provider_api_key_controls(
+                provider=refine_provider,
+                provider_defaults=refine_provider_defaults,
+                session_key="refine_api_key",
+                clear_request_key="refine_api_key_clear_requested",
+                clear_button_key="refine_clear_provider_api_key",
+            )
+            if refine_provider == "gemini":
+                refine_image_model_name = render_preset_or_custom_model_input(
+                    "精修图像模型",
+                    GEMINI_IMAGE_MODELS,
+                    value_key="refine_image_model_name",
+                    selector_key="refine_image_model_name_selector",
+                    custom_value_key="refine_image_model_name_custom",
+                    default_value=refine_provider_defaults["image_model_name"],
+                    select_help="精修流程使用的图像模型。可选择预设模型，或选“自定义”后手动输入。",
+                    custom_help="请输入精修流程使用的自定义图像模型名称。",
+                )
+            else:
+                refine_image_model_name = st.text_input(
+                    "精修图像模型",
+                    key="refine_image_model_name",
+                    help="精修流程使用的图像模型",
+                )
+
+    st.divider()
+    st.markdown("## 📤 上传图像")
     staged_refine_bytes = st.session_state.get("refine_staged_image_bytes", b"")
     upload_widget_nonce = int(st.session_state.get("refine_upload_widget_nonce", 0) or 0)
     upload_widget_key = f"refine_uploaded_file_input_{upload_widget_nonce}"
@@ -5851,14 +5833,12 @@ def render_refine_workspace() -> None:
         index=source_options.index(default_refine_source),
         key="refine_input_source",
         horizontal=True,
-        label_visibility="collapsed",
     )
     uploaded_file = st.file_uploader(
         "选择一个图像文件",
         type=["png", "jpg", "jpeg"],
         help="上传您想要精修的图表",
         key=upload_widget_key,
-        label_visibility="collapsed",
     )
     if uploaded_file is not None:
         upload_error = cache_refine_uploaded_file(uploaded_file)
@@ -5955,16 +5935,16 @@ def render_refine_workspace() -> None:
     if preview_image is not None:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("##### 🖼️ 原始图像")
+            st.markdown("### 原始图像")
             st.caption(f"来源：{selected_source_label}")
             st.image(preview_image, width="stretch")
 
         with col2:
             with st.form("refine_request_form", clear_on_submit=False):
-                st.markdown("##### ✏️ 编辑指令")
+                st.markdown("### 编辑指令")
                 edit_prompt = st.text_area(
                     "描述您想要的修改",
-                    height=160,
+                    height=200,
                     placeholder="例如：'将配色方案改为学术论文风格' 或 '将文字放大加粗' 或 '保持内容不变但输出更高分辨率'",
                     help="描述您想要的修改，或使用'保持内容不变'仅进行放大",
                     key="edit_prompt",
@@ -6016,69 +5996,22 @@ def main():
     st.markdown(
         """
         <style>
-        /* ── main layout top padding optimization ── */
-        .block-container {
-            padding-top: 2.5rem !important;
-            padding-bottom: 1.5rem !important;
-        }
-
-        /* ── advanced header styling ── */
-        .pb-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 4px 0 8px 0;
-            margin-bottom: 2px;
-        }
-        .pb-header .title {
-            font-size: 2.0rem;
-            font-weight: 800;
-            margin: 0;
-            color: #1f2937; /* Dark slate for premium feel text */
-            letter-spacing: -0.01em;
-        }
+        .pb-header { display:flex; align-items:center; gap:12px; padding:4px 0 0 0; }
+        .pb-header .title { font-size:1.75rem; font-weight:700; margin:0; }
         .pb-header .badge {
-            font-size: 0.7rem; 
-            font-weight: 600;
-            background-color: #f3f4f6; /* Soft gray tag */
-            color: #4b5563;
-            padding: 3px 10px;
-            border-radius: 6px;
-            letter-spacing: 0.04em;
-            border: 1px solid #e5e7eb;
+            font-size:0.72rem; font-weight:600;
+            background: linear-gradient(135deg, #f7c948 0%, #f2994a 100%);
+            color: #fff; padding:3px 10px; border-radius:12px;
+            letter-spacing:0.03em;
         }
-        .pb-sub {
-            color: #6b7280;
-            font-size: 0.95rem;
-            margin: 0 0 12px 2px;
-            font-weight: 400;
-        }
-        .pb-sep {
-            border: none;
-            height: 1px;
-            background-color: #e5e7eb; /* Solid, clean thin line */
-            margin: 0;
-        }
-        
-        /* ── buttons hover transition ── */
-        button[data-testid="baseButton-secondary"] {
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            border-radius: 6px !important;
-        }
-        button[data-testid="baseButton-secondary"]:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        button[data-testid="baseButton-primary"] {
-            border-radius: 6px !important;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
+        .pb-sub { color:#888; font-size:0.88rem; margin:0 0 2px 0; }
+        .pb-sep { border:none; border-top:1px solid #e0e0e0; margin:4px 0 0 0; }
         </style>
         <div class="pb-header">
             <p class="title">🍌 PaperBanana-Pro</p>
-            <span class="badge">PRO SERVER</span>
+            <span class="badge">工作台</span>
         </div>
-        <p class="pb-sub">AI 驱动的科学图表生成与精修工作流</p>
+        <p class="pb-sub">AI 驱动的科学图表生成与精修</p>
         """,
         unsafe_allow_html=True,
     )
@@ -6096,9 +6029,15 @@ def main():
         render_generation_workspace()
     else:
         with st.sidebar:
-            st.markdown('<p class="sb-section">精修工作台</p>', unsafe_allow_html=True)
-            st.caption("生成侧高级设置已隐藏。")
+            st.title("高级设置")
+            st.caption("当前处于精修工作台，生成侧高级设置已隐藏。")
         render_refine_workspace()
+
+    persist_demo_ui_state()
+
+
+if __name__ == "__main__":
+    main()
 
     persist_demo_ui_state()
 
