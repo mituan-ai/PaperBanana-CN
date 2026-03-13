@@ -36,6 +36,10 @@ def _build_png_base64() -> str:
 
 class GenerationBackgroundJobTest(unittest.TestCase):
     def setUp(self):
+        self._drain_background_jobs()
+        self._original_repo_root = demo.REPO_ROOT
+        self._repo_root_tempdir = tempfile.TemporaryDirectory()
+        demo.REPO_ROOT = Path(self._repo_root_tempdir.name)
         demo.st.session_state.clear()
         with demo.DEMO_UI_STATE_LOCK:
             demo.DEMO_UI_STATE.clear()
@@ -46,6 +50,43 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         for child in job_store_root.glob("*"):
             if child.is_file():
                 child.unlink()
+
+    def tearDown(self):
+        try:
+            self._drain_background_jobs()
+            demo.st.session_state.clear()
+            with demo.DEMO_UI_STATE_LOCK:
+                demo.DEMO_UI_STATE.clear()
+        finally:
+            demo.REPO_ROOT = self._original_repo_root
+            self._repo_root_tempdir.cleanup()
+
+    def _drain_background_jobs(self, timeout: float = 5.0):
+        generation_ids = list(demo.GENERATION_JOBS.keys())
+        refine_ids = list(demo.REFINE_JOBS.keys())
+
+        for job_id in generation_ids:
+            job = demo.get_generation_job(job_id)
+            if job and job.future is not None and not job.future.done():
+                demo.request_generation_job_cancel(job_id)
+        for job_id in refine_ids:
+            job = demo.get_refine_job(job_id)
+            if job and job.future is not None and not job.future.done():
+                demo.request_refine_job_cancel(job_id)
+
+        deadline = time.time() + timeout
+        for job_id in generation_ids:
+            job = demo.get_generation_job(job_id)
+            if job and job.future is not None:
+                remaining = max(0.01, deadline - time.time())
+                job.future.result(timeout=remaining)
+            demo.clear_generation_job(job_id)
+        for job_id in refine_ids:
+            job = demo.get_refine_job(job_id)
+            if job and job.future is not None:
+                remaining = max(0.01, deadline - time.time())
+                job.future.result(timeout=remaining)
+            demo.clear_refine_job(job_id)
 
     def test_background_job_runtime_is_shared_resource(self):
         runtime_a = demo.get_background_job_runtime()
@@ -146,7 +187,11 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         deadline = time.time() + timeout
         while time.time() < deadline:
             snapshot = demo.get_generation_job_snapshot(job_id)
-            if snapshot and snapshot.get("status") in {"completed", "cancelled", "failed"}:
+            if (
+                snapshot
+                and snapshot.get("status") in {"completed", "cancelled", "failed"}
+                and snapshot.get("worker_done", False)
+            ):
                 return snapshot
             time.sleep(0.05)
         self.fail(f"generation job {job_id} did not finish within {timeout}s")

@@ -1164,6 +1164,7 @@ class GenerationJobState:
     def snapshot(self) -> dict:
         with self.lock:
             _sync_generation_job_progress_locked(self)
+            worker_done = self.future.done() if self.future is not None else self.status in {"completed", "cancelled", "failed", "interrupted"}
             return {
                 "job_id": self.job_id,
                 "dataset_name": self.dataset_name,
@@ -1207,6 +1208,7 @@ class GenerationJobState:
                 "cancel_requested": self.cancel_requested,
                 "json_file": self.json_file,
                 "bundle_file": self.bundle_file,
+                "worker_done": worker_done,
             }
 
 
@@ -1237,6 +1239,7 @@ class RefineJobState:
 
     def snapshot(self) -> dict:
         with self.lock:
+            worker_done = self.future.done() if self.future is not None else self.status in {"completed", "cancelled", "failed", "interrupted"}
             return {
                 "job_id": self.job_id,
                 "provider": self.provider,
@@ -1257,6 +1260,7 @@ class RefineJobState:
                 "elapsed_seconds": self.elapsed_seconds,
                 "cancel_requested": self.cancel_requested,
                 "original_image_bytes": self.original_image_bytes,
+                "worker_done": worker_done,
             }
 
 
@@ -1599,6 +1603,7 @@ def _load_persisted_generation_job_snapshot(job_id: str) -> dict | None:
     snapshot["event_history"] = read_job_events(job_id, base_dir=REPO_ROOT)
     snapshot["event_timeline"] = list(snapshot["event_history"])
     snapshot["snapshot_source"] = "disk"
+    snapshot["worker_done"] = True
     return snapshot
 
 
@@ -2756,6 +2761,7 @@ def _load_persisted_refine_job_snapshot(job_id: str) -> dict | None:
         return None
     snapshot["event_history"] = read_job_events(job_id, base_dir=REPO_ROOT)
     snapshot["snapshot_source"] = "disk"
+    snapshot["worker_done"] = True
     return snapshot
 
 
@@ -5388,7 +5394,11 @@ def render_generation_activity_fragment(*, requested_candidates: int, default_ta
 
     finalized_generation_snapshot = None
     terminal_statuses = {"completed", "cancelled", "failed", "interrupted"}
-    if active_generation_snapshot and active_generation_snapshot.get("status") in terminal_statuses:
+    if (
+        active_generation_snapshot
+        and active_generation_snapshot.get("status") in terminal_statuses
+        and active_generation_snapshot.get("worker_done", True)
+    ):
         finalized_generation_snapshot = active_generation_snapshot
         if st.session_state.get("last_generation_completed_job_id") != active_generation_job_id:
             snapshot_status = active_generation_snapshot.get("status")
@@ -5462,7 +5472,11 @@ def render_refine_activity_fragment(
 
     finalized_refine_snapshot = None
     terminal_statuses = {"completed", "cancelled", "failed", "interrupted"}
-    if active_refine_snapshot and active_refine_snapshot.get("status") in terminal_statuses:
+    if (
+        active_refine_snapshot
+        and active_refine_snapshot.get("status") in terminal_statuses
+        and active_refine_snapshot.get("worker_done", True)
+    ):
         finalized_refine_snapshot = active_refine_snapshot
         if st.session_state.get("last_refine_completed_job_id") != active_refine_job_id:
             persist_refine_job_results(active_refine_snapshot)

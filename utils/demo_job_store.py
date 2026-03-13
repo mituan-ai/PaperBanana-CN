@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +82,33 @@ def _deserialize_value(value: Any) -> Any:
     return value
 
 
+def _atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_path_str = tempfile.mkstemp(
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temp_path = Path(temp_path_str)
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as handle:
+            handle.write(content)
+        last_error: PermissionError | None = None
+        for _ in range(20):
+            try:
+                temp_path.replace(path)
+                last_error = None
+                break
+            except PermissionError as exc:
+                last_error = exc
+                time.sleep(0.02)
+        if last_error is not None:
+            raise last_error
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
 def write_job_snapshot(
     job_id: str,
     snapshot: dict[str, Any],
@@ -87,9 +117,9 @@ def write_job_snapshot(
 ) -> Path:
     snapshot_path = get_job_snapshot_path(job_id, base_dir)
     payload = _serialize_value(snapshot)
-    snapshot_path.write_text(
+    _atomic_write_text(
+        snapshot_path,
         json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
     )
     return snapshot_path
 
@@ -142,9 +172,9 @@ def write_ui_state(
     base_dir: str | Path | None = None,
 ) -> Path:
     ui_state_path = get_ui_state_path(base_dir)
-    ui_state_path.write_text(
+    _atomic_write_text(
+        ui_state_path,
         json.dumps(_serialize_value(state_payload), ensure_ascii=False, indent=2),
-        encoding="utf-8",
     )
     return ui_state_path
 
