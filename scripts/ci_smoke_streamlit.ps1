@@ -58,13 +58,14 @@ $env:PYTHONUNBUFFERED = "1"
 $process = $null
 
 try {
+    Write-Host ("[smoke:{0}] 进程启动参数: FilePath={1} Args={2}" -f $Label, $Executable, ($Arguments -join " "))
     $startProcessParams = @{
         FilePath               = $Executable
         ArgumentList           = $Arguments
         RedirectStandardOutput = $stdoutPath
         RedirectStandardError  = $stderrPath
         PassThru               = $true
-        WindowStyle            = "Hidden"
+        NoNewWindow            = $true
     }
     $process = Start-Process @startProcessParams
 

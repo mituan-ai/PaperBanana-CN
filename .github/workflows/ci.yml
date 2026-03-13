@@ -45,6 +45,15 @@ jobs:
           $toolBin = uv tool dir --bin
           $toolBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Verify CLI entrypoints resolve
+        shell: pwsh
+        run: |
+          Write-Host "PATH entries:"
+          $env:PATH -split ';' | ForEach-Object { Write-Host "  $_" }
+          $pb = Get-Command paperbanana -ErrorAction SilentlyContinue
+          if ($pb) { Write-Host "paperbanana => $($pb.Source)" }
+          else { Write-Host "::error::paperbanana not found on PATH"; exit 1 }
+
       - name: Smoke test global CLI entrypoints
         shell: pwsh
         run: |
@@ -58,8 +67,19 @@ jobs:
             & $smokeScript -Label "viewer-evolution" -Port 8512 -Executable "paperbanana" -Arguments @("viewer", "evolution")
             & $smokeScript -Label "viewer-eval" -Port 8513 -Executable "paperbanana" -Arguments @("viewer", "eval")
             paperbanana --help
+            if ($LASTEXITCODE -ne 0) { throw "paperbanana --help exited $LASTEXITCODE" }
             paperbanana-pro --help
+            if ($LASTEXITCODE -ne 0) { throw "paperbanana-pro --help exited $LASTEXITCODE" }
             paperbanana run --help
+            if ($LASTEXITCODE -ne 0) { throw "paperbanana run --help exited $LASTEXITCODE" }
+          }
+          catch {
+            Write-Host "::error::Smoke test failed: $_"
+            Write-Host "Exception details: $($_.Exception.Message)"
+            if ($_.Exception.InnerException) {
+              Write-Host "Inner: $($_.Exception.InnerException.Message)"
+            }
+            throw
           }
           finally {
             Pop-Location
