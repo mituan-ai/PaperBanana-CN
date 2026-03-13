@@ -38,6 +38,15 @@ class CliEntrypointTest(unittest.TestCase):
         self.assertIn("paperbanana viewer eval", help_text)
         self.assertIn("paperbanana-pro viewer evolution", help_text)
 
+    def test_main_dispatches_gui_when_no_subcommand_is_provided(self):
+        with mock.patch.object(cli, "_launch_gui", return_value=0) as launch_gui:
+            with mock.patch("sys.argv", ["paperbanana"]):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+
+        self.assertEqual(ctx.exception.code, 0)
+        launch_gui.assert_called_once_with([])
+
     def test_main_dispatches_viewer_subcommand(self):
         with mock.patch.object(cli, "_launch_viewer", return_value=0) as launch_viewer:
             with mock.patch("sys.argv", ["paperbanana", "viewer", "eval"]):

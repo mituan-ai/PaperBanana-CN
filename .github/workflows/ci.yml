@@ -40,10 +40,15 @@ jobs:
       - name: Smoke test global CLI entrypoints
         shell: pwsh
         run: |
+          $repoRoot = $env:GITHUB_WORKSPACE
+          $smokeScript = Join-Path $repoRoot "scripts/ci_smoke_streamlit.ps1"
           $smokeDir = Join-Path $env:RUNNER_TEMP "paperbanana-cli-smoke"
           New-Item -ItemType Directory -Path $smokeDir -Force | Out-Null
           Push-Location $smokeDir
           try {
+            & $smokeScript -Label "gui-primary" -Port 8501 -Executable "paperbanana"
+            & $smokeScript -Label "viewer-evolution" -Port 8512 -Executable "paperbanana" -Arguments @("viewer", "evolution")
+            & $smokeScript -Label "viewer-eval" -Port 8513 -Executable "paperbanana" -Arguments @("viewer", "eval")
             paperbanana --help
             paperbanana-pro --help
             paperbanana run --help
