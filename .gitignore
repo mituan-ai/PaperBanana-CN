@@ -11,6 +11,7 @@ results/
 logs/
 docs/
 output/
+artifacts/
 .codex-streamlit-*.log
 
 # Packaging artifacts
