@@ -1,41 +1,55 @@
 # PaperBanana-Pro
 
-> 多 Agent 驱动的科研插图与统计图生成系统，提供中文 GUI、CLI 批处理与结果审阅工具。
+> Multi-agent scientific illustration & chart generation system with Chinese GUI, CLI batch processing, and result review tools.
 
 [![Dataset on HF](assets/dataset-on-hf-xl.svg)](https://huggingface.co/datasets/dwzhu/PaperBananaBench)
 [![Paper page](assets/paper-page-xl.svg)](https://huggingface.co/papers/2601.23265)
 
-![PaperBanana-Pro 示例](assets/teaser_figure.jpg)
+![PaperBanana-Pro Teaser](assets/teaser_figure.jpg)
 
-## ✨ 功能展示
+## ✨ Features
 
-### 生成候选方案
+### Generation Workspace — 生成候选方案
 
-![生成工作台](assets/readme/01-generation-workspace.png)
+![Generation Workspace](assets/ui_generation_workspace.png)
 
-输入论文的方法章节和图注，一键生成多个科研插图候选方案。左侧边栏可选择生成任务（学术图解 / 统计图）、流水线流程和参考样例策略。
+Input your paper's methodology section and figure caption, then generate multiple scientific illustration candidates in one click. The sidebar provides task selection (academic diagram / statistical plot), pipeline modes, and retrieval strategies — all in a fully localized Chinese interface with fine-grained parameter controls.
 
-### 启动前检查与参数预览
+### Preflight Validation — 启动前检查
 
-![启动前检查](assets/readme/02-prelaunch-check.png)
+![Preflight Check](assets/ui_preflight_check.png)
 
-点击生成前，系统会自动校验参数配置并预估成本，确认无误后一键启动。
+Before execution, the system automatically validates parameter configurations and previews estimated cost. Confirm and launch with a single click.
 
-### 候选结果与决策
+### Candidate Review & Decision — 候选结果与决策
 
-![候选结果](assets/readme/03-candidate-results.png)
+![Candidate Results](assets/ui_candidate_results.png)
 
-生成完成后，每个候选方案都会展示最终图解、下载入口和决策按钮（收藏 / 设为最终 / 淘汰），支持一键送入精修页继续打磨。
+Each generated candidate displays the final illustration alongside download links and decision buttons (Favorite / Set as Final / Eliminate). Send any candidate directly to the refine workspace for further polish.
 
-### 图像精修（2K / 4K）
+### Full Pipeline Visualization — 完整流水线展开
 
-![精修工作台](assets/readme/04-refine-interface.png)
+![Pipeline Detail View](assets/ui_pipeline_detail.png)
 
-独立的精修工作台，支持设置目标分辨率、宽高比和并发精修张数。每轮精修会形成版本链，可从任意历史版本继续或回退。
+Expand any candidate to inspect the full pipeline trace: planner output, stylist refinement, critic feedback, and revision history — all in one view.
 
-## 🚀 快速开始
+### Batch Download — 一键批量下载
 
-### 1. 安装
+![Batch Download](assets/ui_batch_download.png)
+
+### History Replay — 历史回放
+
+![History Replay](assets/ui_history_replay.png)
+
+### Image Refinement (2K / 4K) — 图像精修
+
+![Refine Workspace](assets/ui_refine_workspace.png)
+
+A dedicated refinement workspace supporting target resolution, aspect ratio, and concurrent refinement count. Each round creates a version chain — resume or roll back from any historical version.
+
+## 🚀 Quick Start
+
+### 1. Installation
 
 ```bash
 git clone https://github.com/elpsykongloo/PaperBanana-Pro.git
@@ -45,117 +59,122 @@ uv sync --locked
 uv tool install --editable . --force
 ```
 
-安装完成后，`paperbanana` 命令可在任意目录使用。如未进入 PATH，执行 `uv tool update-shell` 即可。
+After installation, `paperbanana` is available globally. If it's not on your PATH, run `uv tool update-shell`.
 
 > [!TIP]
-> 不需要全局命令？也可以直接 `streamlit run demo.py` 启动 GUI，或 `python main.py --help` 使用 CLI。
+> Prefer not to install globally? Run `streamlit run demo.py` for the GUI, or `python main.py --help` for CLI.
 
-### 2. 准备数据集（可选）
+### 2. Dataset (Optional but Recommended)
 
-下载 [`dwzhu/PaperBananaBench`](https://huggingface.co/datasets/dwzhu/PaperBananaBench) 并放到 `data/PaperBananaBench/` 下。该数据集提供 few-shot 参考样例和评估基准。
+Download [`dwzhu/PaperBananaBench`](https://huggingface.co/datasets/dwzhu/PaperBananaBench) and place it under `data/PaperBananaBench/`. This dataset provides few-shot reference examples and evaluation benchmarks.
 
-如果只是试用，可将检索设置为 `none` 跳过数据集依赖。
+To skip the dataset dependency, set the retrieval strategy to `none`.
 
-### 3. 配置 API Key
+### 3. API Key Setup
 
 ```bash
-Copy-Item configs\model_config.template.yaml configs\model_config.yaml
+cp configs/model_config.template.yaml configs/model_config.yaml
 ```
 
-在 `configs/model_config.yaml` 中填入你的 API Key，或将 Key 写入以下文件（任选一种方式）：
+Add your API key to `configs/model_config.yaml`, or save it to one of the following files:
 
 - `configs/local/google_api_key.txt`
 - `configs/local/evolink_api_key.txt`
 
-当前正式支持两个 Provider：**Gemini**（推荐日常使用）和 **Evolink**。
+Supported providers: **Gemini** and **Evolink**.
 
-### 4. 启动
+You can also configure keys directly in the GUI — they will be persisted locally:
+
+<img src="assets/ui_api_key_config.png" alt="API Key Configuration" width="480" />
+
+### 4. Launch
 
 ```bash
-paperbanana
+paperbanana        # Equivalent to `paperbanana gui`; starts the web UI on port 8501
 ```
 
-## 📖 使用指南
+## 📖 Usage Guide
 
-### GUI — 主产品界面
+### GUI — Primary Interface
 
 ```bash
 paperbanana gui
 ```
 
-提供两个核心工作区：
+Two core workspaces:
 
-- **生成候选方案**：`diagram`（科研插图）或 `plot`（统计图），支持后台生成、多候选并发、实时预览、历史回放、批量导出
-- **精修图像**：对候选结果做修改、放大，支持版本历史、并发精修、批量下载
+- **Generation** — `diagram` (scientific illustrations) or `plot` (statistical charts). Supports background generation, concurrent candidates, real-time preview, history replay, and batch export.
+- **Refinement** — Edit, upscale, and iterate on candidates. Supports version history, concurrent refinement, and batch download.
 
-### CLI — 批处理
+### CLI — Batch Processing
 
 ```bash
 paperbanana run --task_name diagram --exp_mode demo_full --provider gemini
 ```
 
-适合数据集批量运行与产物归档。常用参数：
+Designed for dataset-scale batch runs and artifact archiving.
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `--task_name` | `diagram` 或 `plot` |
-| `--exp_mode` | 流水线模式，如 `demo_full`、`demo_planner_critic` |
+| `--task_name` | `diagram` or `plot` |
+| `--exp_mode` | Pipeline mode, e.g. `demo_full`, `demo_planner_critic` |
 | `--provider` | `gemini` / `evolink` |
-| `--max_critic_rounds` | 最大评审轮数，可设为 `0` |
-| `--retrieval_setting` | 检索模式：`auto`、`curated`、`none` 等 |
-| `--resume` | 自动恢复上次运行 |
+| `--max_critic_rounds` | Max review rounds (set `0` to disable) |
+| `--retrieval_setting` | Retrieval mode: `auto`, `curated`, `none`, etc. |
+| `--resume` | Auto-resume from the last interrupted run |
 
-完整参数见 `paperbanana run --help`。
+See `paperbanana run --help` for the full parameter list.
 
-### Viewer — 结果审阅
+### Viewer — Result Review
 
 ```bash
-paperbanana viewer evolution   # 查看流程演化
-paperbanana viewer eval        # 查看带参考结果的评估
+paperbanana viewer evolution   # View pipeline evolution traces
+paperbanana viewer eval        # View evaluation results with references
 ```
 
-## 🏗️ 架构
+## 🏗️ Architecture
 
-![PaperBanana-Pro 流水线](assets/method_diagram.png)
+![Pipeline Overview](assets/method_diagram.png)
 
-| 阶段 | 作用 |
+| Stage | Purpose |
 | --- | --- |
-| Retriever | 从参考池中检索 few-shot 样例 |
-| Planner | 生成结构化的可视化描述 |
-| Stylist | 优化学术表达和风格一致性 |
-| Visualizer | 生成图像（diagram）或 Matplotlib 代码（plot） |
-| Critic | 多轮评审与修订建议 |
-| Polish | 可选后处理精修 |
+| Retriever | Retrieve few-shot examples from the reference pool |
+| Planner | Generate structured visualization descriptions |
+| Stylist | Refine academic expression and style consistency |
+| Visualizer | Produce images (diagram) or Matplotlib code (plot) |
+| Critic | Multi-round review and revision suggestions |
+| Polish | Optional post-processing refinement |
 
-## 📁 项目结构
+## 📁 Project Structure
 
 ```text
 PaperBanana-Pro/
-├── agents/          # 多 Agent 阶段实现
-├── configs/         # 模型与 API Key 配置
-├── data/            # 数据集目录
-├── visualize/       # Streamlit Viewer
-├── cli.py           # 全局命令入口
-├── demo.py          # GUI 主程序
-├── main.py          # CLI 批处理入口
-└── pyproject.toml   # 项目元数据与依赖
+├── agents/          # Multi-agent stage implementations
+├── configs/         # Model & API key configurations
+├── data/            # Dataset directory
+├── visualize/       # Streamlit Viewer apps
+├── cli.py           # Global CLI entry point
+├── demo.py          # GUI main application
+├── main.py          # CLI batch runner
+└── pyproject.toml   # Project metadata & dependencies
 ```
 
-## 🗺️ 路线图
+## 🗺️ Roadmap
 
-- [ ] 多语言 UI 与提示词支持
-- [ ] 扩展更多会议数据集（ICML、ACL 等）
-- [ ] Plot 结构化合同与自动修复（`PlotSpec`）
-- [ ] 无参考自动质量评估（No-reference QA）
-- [ ] 发布到 PyPI，支持 `uv tool install paperbanana-pro`
+- [ ] Multi-language UI & prompt support
+- [ ] Expand to more conference datasets (ICML, ACL, etc.) for diverse style coverage
+- [ ] Integrate iterative critique loop into the refinement workspace
+- [ ] Structured plot contracts with auto-repair (`PlotSpec`)
+- [ ] No-reference automatic quality assessment
+- [ ] Publish to PyPI (`uv tool install paperbanana-pro`)
 
-## 🙏 致谢
+## 🙏 Acknowledgements
 
-本项目在以下工作基础上独立演化：
+This project evolved independently from the following work:
 
-- 原始仓库：[`dwzhu-pku/PaperBanana`](https://github.com/dwzhu-pku/PaperBanana)
-- 中文参考：[`Mylszd/PaperBanana-CN`](https://github.com/Mylszd/PaperBanana-CN)
-- 原始论文：[*PaperBanana: Automating Academic Illustration for AI Scientists*](https://huggingface.co/papers/2601.23265)
+- Original repository: [`dwzhu-pku/PaperBanana`](https://github.com/dwzhu-pku/PaperBanana)
+- Chinese interface & lightweight retrieval: [`Mylszd/PaperBanana-CN`](https://github.com/Mylszd/PaperBanana-CN)
+- Paper: [*PaperBanana: Automating Academic Illustration for AI Scientists*](https://huggingface.co/papers/2601.23265)
 
 ## 📄 License
 

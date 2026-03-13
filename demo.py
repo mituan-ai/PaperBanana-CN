@@ -283,6 +283,21 @@ def base64_to_image(b64_str):
         return None
 
 
+THUMBNAIL_MAX_SIZE = (480, 480)
+THUMBNAIL_JPEG_QUALITY = 70
+
+
+def image_to_jpeg_thumbnail(img, max_size=THUMBNAIL_MAX_SIZE, quality=THUMBNAIL_JPEG_QUALITY):
+    """Convert a PIL image to a JPEG thumbnail bytes for fast grid preview."""
+    thumb = img.copy()
+    thumb.thumbnail(max_size, Image.LANCZOS)
+    if thumb.mode in ("RGBA", "P", "LA"):
+        thumb = thumb.convert("RGB")
+    buf = BytesIO()
+    thumb.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
 def safe_log_text(value, max_len=2000):
     """将任意日志文本转换为可安全打印的字符串。"""
     try:
@@ -1419,47 +1434,24 @@ def _deserialize_ui_state_value(key: str, value):
 
 
 def restore_persisted_demo_ui_state() -> None:
+    # NOTE: Do not auto-restore completed generation results (contains large
+    # base64 images) to avoid significant slowdown on page refresh.
+    # Users can manually reload history via the history replay panel.
+    st.session_state.pop("active_generation_job_id", None)
+    st.session_state.pop("bundle_file", None)
+    st.session_state.pop("json_file", None)
+
     payload = _load_persisted_demo_ui_state_payload()
     if not payload:
         return
 
+    _skip_restore_keys = {"active_generation_job_id", "bundle_file", "json_file", "results"}
     for key, raw_value in payload.items():
-        if key in st.session_state:
+        if key in st.session_state or key in _skip_restore_keys:
             continue
         st.session_state[key] = _deserialize_ui_state_value(key, raw_value)
 
-    restored_generation_job_id = st.session_state.get("active_generation_job_id")
-    if restored_generation_job_id and "results" not in st.session_state:
-        generation_snapshot = hydrate_persisted_job_snapshot(
-            get_generation_job_snapshot(restored_generation_job_id),
-            job_kind="generation",
-        )
-        if generation_snapshot:
-            if generation_snapshot.get("status") in {"completed", "cancelled"}:
-                persist_generation_job_results(
-                    generation_snapshot,
-                    source_label=st.session_state.get("result_source_label", "后台生成任务"),
-                    reset_candidate_workspace=False,
-                )
-            elif generation_snapshot.get("status") == "failed":
-                st.session_state["generation_failures"] = generation_snapshot.get("failures", [])
-        else:
-            st.session_state.pop("active_generation_job_id", None)
 
-    bundle_file = st.session_state.get("bundle_file", "")
-    if bundle_file and "results" not in st.session_state:
-        bundle_path = Path(bundle_file)
-        if bundle_path.exists():
-            try:
-                snapshot = load_generation_history_snapshot(bundle_path)
-            except Exception:
-                snapshot = None
-            if snapshot:
-                persist_generation_job_results(
-                    snapshot,
-                    source_label=st.session_state.get("result_source_label", f"历史回放：{bundle_path.name}"),
-                    reset_candidate_workspace=False,
-                )
 
     restored_refine_job_id = st.session_state.get("active_refine_job_id")
     if restored_refine_job_id and "refined_images" not in st.session_state:
@@ -2027,14 +2019,30 @@ def load_generation_history_snapshot(bundle_path: str | Path) -> dict:
     }
 
 
+def _read_bundle_manifest_fast(bundle_path: str | Path) -> dict:
+    """Read only the manifest from a bundle file without loading the full results array.
+
+    This avoids parsing multi-MB base64 image data just to extract metadata.
+    Falls back to an empty dict on any error.
+    """
+    import json as _json
+    try:
+        with open(bundle_path, "r", encoding="utf-8") as f:
+            payload = _json.load(f)
+        if isinstance(payload, dict):
+            return payload.get("manifest", {})
+    except Exception:
+        pass
+    return {}
+
+
 def format_demo_bundle_label(bundle_path: str | Path) -> str:
-    snapshot = load_generation_history_snapshot(bundle_path)
-    manifest = snapshot.get("manifest", {})
+    manifest = _read_bundle_manifest_fast(bundle_path)
     stamp = manifest.get("timestamp") or manifest.get("created_at") or Path(bundle_path).stem
     task_name = normalize_task_name(manifest.get("task_name", "diagram"))
     provider = manifest.get("provider", "-")
     exp_mode = manifest.get("exp_mode", "-")
-    result_count = len(snapshot.get("results", []))
+    result_count = int(manifest.get("result_count", 0) or 0)
     return f"{stamp} | {task_name} | {provider} | {exp_mode} | {result_count} results"
 
 
@@ -3894,17 +3902,23 @@ def display_candidate_result(
         exp_mode=exp_mode,
     )
 
-    # 展示最终图像
+    # 展示最终图像（缩略图 + 点击查看原图）
     if final_image_key and final_image_key in result:
         img = base64_to_image(result[final_image_key])
         if img:
+            # 网格预览使用 JPEG 缩略图，减少前端传输量
+            thumb_bytes = image_to_jpeg_thumbnail(img)
             st.image(
-                img,
+                thumb_bytes,
                 width="stretch",
                 caption=f"{candidate_label}（{task_config['final_caption']}）",
             )
 
-            # 添加下载按钮
+            # 点击展开查看原图
+            with st.expander("🔍 查看原图", expanded=False):
+                st.image(img, width="stretch")
+
+            # 添加下载按钮（下载原始 PNG）
             buffered = BytesIO()
             img.save(buffered, format="PNG")
             st.download_button(
@@ -4170,9 +4184,10 @@ def render_generation_history_panel(task_name: str) -> None:
         selected_path = Path(options[selected_label])
         st.caption(f"文件：`{format_repo_relative_path(selected_path)}`")
 
+        normalized_tn = normalize_task_name(task_name)
         action_col1, action_col2 = st.columns(2)
         with action_col1:
-            if st.button("📥 载入历史结果", width="stretch"):
+            if st.button("📥 载入历史结果", key=f"history_load_{normalized_tn}", width="stretch"):
                 snapshot = load_generation_history_snapshot(selected_path)
                 persist_generation_job_results(
                     snapshot,
@@ -4181,7 +4196,7 @@ def render_generation_history_panel(task_name: str) -> None:
                 persist_demo_ui_state()
                 st.rerun()
         with action_col2:
-            if st.button("🧹 清除当前结果", width="stretch"):
+            if st.button("🧹 清除当前结果", key=f"history_clear_{normalized_tn}", width="stretch"):
                 for key in (
                     "results",
                     "task_name",
@@ -4809,20 +4824,57 @@ def render_preflight_summary(report: dict) -> None:
     errors = report.get("errors", [])
     warnings = report.get("warnings", [])
     notes = report.get("notes", [])
-    with st.container(border=True):
-        st.markdown("### 启动前检查")
-        if not errors and not warnings:
-            st.success("已通过基础检查，可以直接启动任务。")
+    if errors:
         for message in errors:
-            st.error(message)
+            st.error(message, icon="⛔")
+    elif warnings:
         for message in warnings:
-            st.warning(message)
-        for message in notes:
-            st.caption(message)
+            st.warning(message, icon="⚠️")
+    else:
+        st.success("✅ 已通过检查，可以直接启动任务。", icon="🚀")
+    if notes:
+        st.caption(" · ".join(notes))
 
 
 def render_generation_sidebar_controls() -> dict:
     with st.sidebar:
+        st.markdown(
+            """
+            <style>
+            /* ── sidebar global spacing ── */
+            [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.55rem; }
+            [data-testid="stSidebar"] hr { margin: 0.2rem 0; }
+            [data-testid="stSidebar"] .stAppViewBlockContainer,
+            [data-testid="stSidebar"] > div:first-child { padding-top: 1rem !important; }
+            [data-testid="stSidebarContent"] { padding-top: 1.2rem !important; }
+
+            /* ── section label ── */
+            .sb-section {
+                font-size: 0.72rem;
+                font-weight: 700;
+                color: #374151;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                margin: 20px 0 6px 0;
+                padding: 0 0 5px 0;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            .sb-section:first-of-type { margin-top: 4px; }
+
+            /* ── sidebar captions (descriptions) ── */
+            [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+                line-height: 1.45;
+                margin-bottom: 4px;
+            }
+
+            /* ── inputs & buttons styling ── */
+            [data-testid="stSidebar"] div[data-baseweb="select"] > div { border-radius: 6px; }
+            [data-testid="stSidebar"] input { border-radius: 6px; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('<p class="sb-section">基本设置</p>', unsafe_allow_html=True)
         ensure_session_choice_state(
             "tab1_task_name",
             ["diagram", "plot"],
@@ -4852,7 +4904,8 @@ def render_generation_sidebar_controls() -> dict:
                 help="要并行生成多少个候选方案。",
             )
         )
-        st.divider()
+
+        st.markdown('<p class="sb-section">流水线配置</p>', unsafe_allow_html=True)
 
         if "tab1_dataset_name" not in st.session_state:
             st.session_state["tab1_dataset_name"] = DEFAULT_DATASET_NAME
@@ -4861,7 +4914,6 @@ def render_generation_sidebar_controls() -> dict:
             key="tab1_dataset_name",
             help="用于定位参考样例、GT 资源和数据集内的相对路径。",
         ).strip() or DEFAULT_DATASET_NAME
-        st.caption(f"当前参考资源目录：`{dataset_name}`")
 
         exp_mode = st.selectbox(
             "生成流程",
@@ -4870,7 +4922,7 @@ def render_generation_sidebar_controls() -> dict:
             format_func=lambda x: PIPELINE_OPTION_LABELS[x],
             help="选择本次生成采用的多 Agent 流程。",
         )
-        st.info(GENERATION_MODE_INFO[exp_mode])
+        st.caption(GENERATION_MODE_INFO[exp_mode])
 
         retrieval_setting_key = "tab1_retrieval_setting"
         retrieval_options = ["auto", "auto-full", "curated", "random", "none"]
@@ -4898,7 +4950,7 @@ def render_generation_sidebar_controls() -> dict:
             retrieval_notice = (
                 f"默认推荐。只把你的{retrieval_target_label}发给模型做参考匹配，成本低、速度快，适合大多数试跑。"
             )
-        getattr(st, RETRIEVAL_NOTICE_LEVELS[retrieval_setting])(retrieval_notice)
+        st.caption(retrieval_notice)
 
         curated_profile_key = "tab1_curated_profile"
         curated_profile_input_key = "tab1_curated_profile_input"
@@ -4960,6 +5012,7 @@ def render_generation_sidebar_controls() -> dict:
                         f"当前未找到固定参考集：`{format_repo_relative_path(expected_profile_path)}`。运行时会自动回退到“不使用参考”。"
                     )
 
+        st.markdown('<p class="sb-section">并发 & 渲染</p>', unsafe_allow_html=True)
         ensure_session_choice_state(
             "tab1_concurrency_mode",
             ["auto", "manual"],
@@ -5045,6 +5098,7 @@ def render_generation_sidebar_controls() -> dict:
             key="tab1_max_critic_rounds",
             help="评审优化迭代的最大轮次；设为 0 可做低成本试跑。",
         )
+        st.markdown('<p class="sb-section">Provider & 模型</p>', unsafe_allow_html=True)
         ensure_session_choice_state(
             "tab1_provider",
             ["gemini", "evolink"],
@@ -5449,8 +5503,6 @@ def render_generation_activity_fragment(*, requested_candidates: int, default_ta
             st.error(f"❌ 后台生成失败：{finalized_generation_snapshot.get('error', 'Unknown error')}")
 
     render_generation_live_stream(active_generation_snapshot or finalized_generation_snapshot)
-    render_generation_results_panel(default_task_name)
-    render_generation_history_panel(default_task_name)
 
 
 @streamlit_fragment(run_every=1.0)
@@ -5536,22 +5588,26 @@ def render_generation_workspace() -> None:
     task_name = normalize_task_name(advanced_settings["task_name"])
     num_candidates = int(advanced_settings["num_candidates"])
     task_config = get_task_ui_config(task_name)
-    st.markdown(f"### {task_config['intro']}")
-
     effective_settings = _build_generation_effective_settings(
         advanced_settings,
         task_name=task_name,
     )
 
-    st.divider()
-    st.markdown("## 📝 输入")
-    st.caption(task_config["intro"])
+    st.markdown(f"#### 📝 {task_config['intro']}")
 
     content_state_key = f"tab1_{task_name}_content"
     visual_state_key = f"tab1_{task_name}_visual_intent"
     content_example_key = f"tab1_{task_name}_content_example_selector"
     visual_example_key = f"tab1_{task_name}_visual_example_selector"
     example_options = ["无", task_config["example_name"]]
+
+    content_editor_key = f"{content_state_key}_editor"
+    visual_editor_key = f"{visual_state_key}_editor"
+
+    if content_editor_key not in st.session_state:
+        st.session_state[content_editor_key] = st.session_state.get(content_state_key, "")
+    if visual_editor_key not in st.session_state:
+        st.session_state[visual_editor_key] = st.session_state.get(visual_state_key, "")
 
     with st.form("generation_request_form", clear_on_submit=False):
         col_input1, col_input2 = st.columns([3, 2])
@@ -5562,16 +5618,13 @@ def render_generation_workspace() -> None:
                 key=content_example_key,
             )
             if content_example == task_config["example_name"]:
-                content_value = task_config["example_content"]
-            else:
-                content_value = st.session_state.get(content_state_key, "")
+                st.session_state[content_editor_key] = task_config["example_content"]
             input_content = st.text_area(
                 task_config["content_label"],
-                value=content_value,
-                height=250,
+                height=180,
                 placeholder=task_config["content_placeholder"],
                 help=task_config["content_help"],
-                key=f"{content_state_key}_editor",
+                key=content_editor_key,
             )
 
         with col_input2:
@@ -5581,16 +5634,13 @@ def render_generation_workspace() -> None:
                 key=visual_example_key,
             )
             if visual_example == task_config["example_name"]:
-                visual_value = task_config["example_visual_intent"]
-            else:
-                visual_value = st.session_state.get(visual_state_key, "")
+                st.session_state[visual_editor_key] = task_config["example_visual_intent"]
             visual_intent = st.text_area(
                 task_config["visual_label"],
-                value=visual_value,
-                height=250,
+                height=180,
                 placeholder=task_config["visual_placeholder"],
                 help=task_config["visual_help"],
-                key=f"{visual_state_key}_editor",
+                key=visual_editor_key,
             )
 
         content_for_generation = input_content
@@ -5671,11 +5721,25 @@ def render_generation_workspace() -> None:
         requested_candidates=int(num_candidates),
         default_task_name=task_name,
     )
+    render_generation_results_panel(task_name)
+    render_generation_history_panel(task_name)
 
 
 def render_refine_workspace() -> None:
-    st.markdown("### 精修并放大图表（2K / 4K）")
-    st.caption("上传候选方案或任意图表，说明希望保留和调整的部分，输出更清晰的高分辨率版本。")
+    st.markdown(
+        """
+        <style>
+        /* ── refine page compact spacing ── */
+        .main .block-container [data-testid="stVerticalBlock"] { gap: 0.3rem; }
+        .main .block-container [data-testid="stCaptionContainer"] { margin-bottom: -0.2rem; }
+        .main .sb-section { margin: 8px 0 2px 0 !important; }
+        .main .block-container h4 { margin-top: 0; padding-top: 0; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("#### ✨ 精修并放大图表")
+    st.caption("上传候选方案或任意图表，描述调整意图，输出高分辨率版本。")
 
     active_refine_job_id = st.session_state.get("active_refine_job_id")
     active_refine_snapshot = hydrate_persisted_job_snapshot(
@@ -5686,98 +5750,88 @@ def render_refine_workspace() -> None:
         active_refine_snapshot and active_refine_snapshot.get("status") == "running"
     )
 
-    with st.container(border=True):
-        st.markdown("## ✨ 精修参数")
-        st.caption("精修设置不再与生成侧边栏共享；这里的配置只影响当前精修任务。")
+    st.markdown('<p class="sb-section">参数配置</p>', unsafe_allow_html=True)
 
-        refine_settings_col1, refine_settings_col2 = st.columns(2)
-        with refine_settings_col1:
-            ensure_session_choice_state("refine_resolution", ["2K", "4K"], "2K")
-            refine_resolution = st.selectbox(
-                "目标分辨率",
-                ["2K", "4K"],
-                key="refine_resolution",
-                help="更高分辨率会增加耗时，但通常能得到更细致的结果。",
+    # ── Row 1: 分辨率 | 宽高比 | Provider ──
+    r1c1, r1c2, r1c3 = st.columns(3)
+    with r1c1:
+        ensure_session_choice_state("refine_resolution", ["2K", "4K"], "2K")
+        refine_resolution = st.selectbox(
+            "目标分辨率", ["2K", "4K"],
+            key="refine_resolution",
+            help="更高分辨率会增加耗时，但通常能得到更细致的结果。",
+        )
+    with r1c2:
+        ensure_session_choice_state(
+            "refine_aspect_ratio", COMMON_ASPECT_RATIOS, COMMON_ASPECT_RATIOS[0],
+        )
+        refine_aspect_ratio = st.selectbox(
+            "宽高比", COMMON_ASPECT_RATIOS,
+            key="refine_aspect_ratio",
+            help="指定精修后图像的目标宽高比。",
+        )
+    with r1c3:
+        ensure_session_choice_state(
+            "refine_provider", ["gemini", "evolink"],
+            str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
+        )
+        refine_provider = st.selectbox(
+            "精修 Provider", ["gemini", "evolink"],
+            key="refine_provider",
+            help="精修链路可单独选择 Provider。",
+        )
+
+    # ── Row 2: 张数 | API Key | 模型 ──
+    r2c1, r2c2, r2c3 = st.columns(3)
+    with r2c1:
+        ensure_session_int_state("refine_num_images", 3, min_value=1, max_value=12)
+        refine_num_images = st.number_input(
+            "精修张数", min_value=1, max_value=12, step=1,
+            key="refine_num_images",
+            help="并发生成多少张不同版本。",
+        )
+    with r2c2:
+        refine_provider_defaults = get_provider_ui_defaults(refine_provider)
+        if "refine_api_key" not in st.session_state:
+            st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
+        if "refine_image_model_name" not in st.session_state:
+            st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
+        if "refine_prev_provider" not in st.session_state:
+            st.session_state["refine_prev_provider"] = refine_provider
+        if st.session_state["refine_prev_provider"] != refine_provider:
+            st.session_state["refine_prev_provider"] = refine_provider
+            st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
+            st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
+            st.session_state["refine_image_model_name_selector"] = refine_provider_defaults["image_model_name"]
+            st.session_state["refine_image_model_name_custom"] = ""
+            st.rerun()
+        refine_api_key = render_provider_api_key_controls(
+            provider=refine_provider,
+            provider_defaults=refine_provider_defaults,
+            session_key="refine_api_key",
+            clear_request_key="refine_api_key_clear_requested",
+            clear_button_key="refine_clear_provider_api_key",
+        )
+    with r2c3:
+        if refine_provider == "gemini":
+            refine_image_model_name = render_preset_or_custom_model_input(
+                "精修图像模型",
+                GEMINI_IMAGE_MODELS,
+                value_key="refine_image_model_name",
+                selector_key="refine_image_model_name_selector",
+                custom_value_key="refine_image_model_name_custom",
+                default_value=refine_provider_defaults["image_model_name"],
+                select_help="精修流程使用的图像模型。",
+                custom_help="请输入自定义图像模型名称。",
             )
-            ensure_session_choice_state(
-                "refine_aspect_ratio",
-                COMMON_ASPECT_RATIOS,
-                COMMON_ASPECT_RATIOS[0],
-            )
-            refine_aspect_ratio = st.selectbox(
-                "宽高比",
-                COMMON_ASPECT_RATIOS,
-                key="refine_aspect_ratio",
-                help="指定精修后图像的目标宽高比。",
-            )
-            ensure_session_int_state(
-                "refine_num_images",
-                3,
-                min_value=1,
-                max_value=12,
-            )
-            refine_num_images = st.number_input(
-                "精修张数",
-                min_value=1,
-                max_value=12,
-                step=1,
-                key="refine_num_images",
-                help="并发生成多少张不同版本，便于横向挑选。",
+        else:
+            refine_image_model_name = st.text_input(
+                "精修图像模型",
+                key="refine_image_model_name",
+                help="精修流程使用的图像模型",
             )
 
-        with refine_settings_col2:
-            ensure_session_choice_state(
-                "refine_provider",
-                ["gemini", "evolink"],
-                str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
-            )
-            refine_provider = st.selectbox(
-                "精修 Provider",
-                ["gemini", "evolink"],
-                key="refine_provider",
-                help="精修链路可单独选择 Provider，不依赖生成页设置。",
-            )
-            refine_provider_defaults = get_provider_ui_defaults(refine_provider)
-            if "refine_api_key" not in st.session_state:
-                st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
-            if "refine_image_model_name" not in st.session_state:
-                st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
-            if "refine_prev_provider" not in st.session_state:
-                st.session_state["refine_prev_provider"] = refine_provider
-            if st.session_state["refine_prev_provider"] != refine_provider:
-                st.session_state["refine_prev_provider"] = refine_provider
-                st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
-                st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
-                st.session_state["refine_image_model_name_selector"] = refine_provider_defaults["image_model_name"]
-                st.session_state["refine_image_model_name_custom"] = ""
-                st.rerun()
-            refine_api_key = render_provider_api_key_controls(
-                provider=refine_provider,
-                provider_defaults=refine_provider_defaults,
-                session_key="refine_api_key",
-                clear_request_key="refine_api_key_clear_requested",
-                clear_button_key="refine_clear_provider_api_key",
-            )
-            if refine_provider == "gemini":
-                refine_image_model_name = render_preset_or_custom_model_input(
-                    "精修图像模型",
-                    GEMINI_IMAGE_MODELS,
-                    value_key="refine_image_model_name",
-                    selector_key="refine_image_model_name_selector",
-                    custom_value_key="refine_image_model_name_custom",
-                    default_value=refine_provider_defaults["image_model_name"],
-                    select_help="精修流程使用的图像模型。可选择预设模型，或选“自定义”后手动输入。",
-                    custom_help="请输入精修流程使用的自定义图像模型名称。",
-                )
-            else:
-                refine_image_model_name = st.text_input(
-                    "精修图像模型",
-                    key="refine_image_model_name",
-                    help="精修流程使用的图像模型",
-                )
-
-    st.divider()
-    st.markdown("## 📤 上传图像")
+    st.markdown('<p class="sb-section">图像来源</p>', unsafe_allow_html=True)
     staged_refine_bytes = st.session_state.get("refine_staged_image_bytes", b"")
     upload_widget_nonce = int(st.session_state.get("refine_upload_widget_nonce", 0) or 0)
     upload_widget_key = f"refine_uploaded_file_input_{upload_widget_nonce}"
@@ -5797,12 +5851,14 @@ def render_refine_workspace() -> None:
         index=source_options.index(default_refine_source),
         key="refine_input_source",
         horizontal=True,
+        label_visibility="collapsed",
     )
     uploaded_file = st.file_uploader(
         "选择一个图像文件",
         type=["png", "jpg", "jpeg"],
         help="上传您想要精修的图表",
         key=upload_widget_key,
+        label_visibility="collapsed",
     )
     if uploaded_file is not None:
         upload_error = cache_refine_uploaded_file(uploaded_file)
@@ -5899,16 +5955,16 @@ def render_refine_workspace() -> None:
     if preview_image is not None:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("### 原始图像")
+            st.markdown("##### 🖼️ 原始图像")
             st.caption(f"来源：{selected_source_label}")
             st.image(preview_image, width="stretch")
 
         with col2:
             with st.form("refine_request_form", clear_on_submit=False):
-                st.markdown("### 编辑指令")
+                st.markdown("##### ✏️ 编辑指令")
                 edit_prompt = st.text_area(
                     "描述您想要的修改",
-                    height=200,
+                    height=160,
                     placeholder="例如：'将配色方案改为学术论文风格' 或 '将文字放大加粗' 或 '保持内容不变但输出更高分辨率'",
                     help="描述您想要的修改，或使用'保持内容不变'仅进行放大",
                     key="edit_prompt",
@@ -5957,22 +6013,91 @@ def render_refine_workspace() -> None:
 
 def main():
     restore_persisted_demo_ui_state()
-    st.title("🍌 PaperBanana-Pro 工作台")
-    st.markdown("AI 驱动的科学图表生成与精修")
+    st.markdown(
+        """
+        <style>
+        /* ── main layout top padding optimization ── */
+        .block-container {
+            padding-top: 2.5rem !important;
+            padding-bottom: 1.5rem !important;
+        }
+
+        /* ── advanced header styling ── */
+        .pb-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 4px 0 8px 0;
+            margin-bottom: 2px;
+        }
+        .pb-header .title {
+            font-size: 2.0rem;
+            font-weight: 800;
+            margin: 0;
+            color: #1f2937; /* Dark slate for premium feel text */
+            letter-spacing: -0.01em;
+        }
+        .pb-header .badge {
+            font-size: 0.7rem; 
+            font-weight: 600;
+            background-color: #f3f4f6; /* Soft gray tag */
+            color: #4b5563;
+            padding: 3px 10px;
+            border-radius: 6px;
+            letter-spacing: 0.04em;
+            border: 1px solid #e5e7eb;
+        }
+        .pb-sub {
+            color: #6b7280;
+            font-size: 0.95rem;
+            margin: 0 0 12px 2px;
+            font-weight: 400;
+        }
+        .pb-sep {
+            border: none;
+            height: 1px;
+            background-color: #e5e7eb; /* Solid, clean thin line */
+            margin: 0;
+        }
+        
+        /* ── buttons hover transition ── */
+        button[data-testid="baseButton-secondary"] {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border-radius: 6px !important;
+        }
+        button[data-testid="baseButton-secondary"]:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        button[data-testid="baseButton-primary"] {
+            border-radius: 6px !important;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        </style>
+        <div class="pb-header">
+            <p class="title">🍌 PaperBanana-Pro</p>
+            <span class="badge">PRO SERVER</span>
+        </div>
+        <p class="pb-sub">AI 驱动的科学图表生成与精修工作流</p>
+        """,
+        unsafe_allow_html=True,
+    )
 
     workspace_mode = st.radio(
         "工作区",
         WORKSPACE_MODE_OPTIONS,
         key="workspace_mode",
         horizontal=True,
+        label_visibility="collapsed",
     )
+    st.markdown('<hr class="pb-sep">', unsafe_allow_html=True)
 
     if workspace_mode == WORKSPACE_MODE_OPTIONS[0]:
         render_generation_workspace()
     else:
         with st.sidebar:
-            st.title("高级设置")
-            st.caption("当前处于精修工作台，生成侧高级设置已隐藏。")
+            st.markdown('<p class="sb-section">精修工作台</p>', unsafe_allow_html=True)
+            st.caption("生成侧高级设置已隐藏。")
         render_refine_workspace()
 
     persist_demo_ui_state()
