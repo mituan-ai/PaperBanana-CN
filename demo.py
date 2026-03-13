@@ -6038,9 +6038,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    persist_demo_ui_state()
-
-
-if __name__ == "__main__":
-    main()
