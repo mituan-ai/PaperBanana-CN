@@ -304,6 +304,8 @@ def base64_to_image(b64_str):
 
 THUMBNAIL_MAX_SIZE = (480, 480)
 THUMBNAIL_JPEG_QUALITY = 70
+SINGLE_CANDIDATE_LIVE_PREVIEW_WIDTH = 720
+DOUBLE_CANDIDATE_LIVE_PREVIEW_WIDTH = 560
 
 
 def image_to_jpeg_thumbnail(img, max_size=THUMBNAIL_MAX_SIZE, quality=THUMBNAIL_JPEG_QUALITY):
@@ -315,6 +317,26 @@ def image_to_jpeg_thumbnail(img, max_size=THUMBNAIL_MAX_SIZE, quality=THUMBNAIL_
     buf = BytesIO()
     thumb.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
+
+
+def get_generation_live_preview_width(candidate_count: int):
+    """根据候选数量返回流式预览图宽度策略。"""
+    normalized_count = max(1, int(candidate_count))
+    if normalized_count == 1:
+        return SINGLE_CANDIDATE_LIVE_PREVIEW_WIDTH
+    if normalized_count == 2:
+        return DOUBLE_CANDIDATE_LIVE_PREVIEW_WIDTH
+    return "stretch"
+
+
+def get_generation_live_row_layout(candidate_count: int):
+    """根据候选数量返回流式卡片布局。"""
+    normalized_count = max(1, int(candidate_count))
+    if normalized_count == 1:
+        return [1, 2, 1]
+    if normalized_count == 2:
+        return [0.25, 1, 1, 0.25]
+    return min(3, normalized_count)
 
 
 def safe_log_text(value, max_len=2000):
@@ -4415,39 +4437,66 @@ def render_generation_live_stream(snapshot: dict | None) -> None:
 
     if candidate_snapshots:
         candidate_items = sorted(candidate_snapshots.items(), key=_candidate_sort_key)
-        num_cols = min(3, max(1, len(candidate_items)))
-        for row_start in range(0, len(candidate_items), num_cols):
-            cols = st.columns(num_cols)
+        preview_width = get_generation_live_preview_width(len(candidate_items))
+        row_layout = get_generation_live_row_layout(len(candidate_items))
+
+        def _render_candidate_card(candidate_id, candidate_snapshot, *, fallback_index: int) -> None:
+            with st.container(border=True):
+                st.caption(
+                    format_candidate_slot_label(
+                        candidate_id,
+                        fallback_index=fallback_index,
+                    )
+                )
+                st.markdown(f"**{candidate_snapshot.get('stage', '等待开始')}**")
+                status_label = candidate_snapshot.get("status", "queued")
+                updated_at = candidate_snapshot.get("updated_at", "")
+                st.caption(f"状态：{status_label} | 更新时间：{updated_at}")
+                preview_image = candidate_snapshot.get("preview_image", "")
+                if preview_image:
+                    preview = base64_to_image(preview_image)
+                    if preview is not None:
+                        st.image(
+                            preview,
+                            width=preview_width,
+                            caption=candidate_snapshot.get("preview_label", "最新预览"),
+                        )
+                else:
+                    st.info("当前候选还没有可展示的图像预览。")
+
+                if candidate_snapshot.get("error"):
+                    st.error(candidate_snapshot["error"])
+
+        if len(candidate_items) == 1:
+            candidate_id, candidate_snapshot = candidate_items[0]
+            _, center_col, _ = st.columns(row_layout, gap="large")
+            with center_col:
+                _render_candidate_card(candidate_id, candidate_snapshot, fallback_index=0)
+        elif len(candidate_items) == 2:
+            _, left_col, right_col, _ = st.columns(row_layout, gap="large")
             for offset, (col, (candidate_id, candidate_snapshot)) in enumerate(
-                zip(cols, candidate_items[row_start: row_start + num_cols]),
-                start=row_start,
+                zip((left_col, right_col), candidate_items),
             ):
                 with col:
-                    with st.container(border=True):
-                        st.caption(
-                            format_candidate_slot_label(
-                                candidate_id,
-                                fallback_index=offset,
-                            )
+                    _render_candidate_card(
+                        candidate_id,
+                        candidate_snapshot,
+                        fallback_index=offset,
+                    )
+        else:
+            num_cols = min(3, len(candidate_items))
+            for row_start in range(0, len(candidate_items), num_cols):
+                cols = st.columns(num_cols)
+                for offset, (col, (candidate_id, candidate_snapshot)) in enumerate(
+                    zip(cols, candidate_items[row_start: row_start + num_cols]),
+                    start=row_start,
+                ):
+                    with col:
+                        _render_candidate_card(
+                            candidate_id,
+                            candidate_snapshot,
+                            fallback_index=offset,
                         )
-                        st.markdown(f"**{candidate_snapshot.get('stage', '等待开始')}**")
-                        status_label = candidate_snapshot.get("status", "queued")
-                        updated_at = candidate_snapshot.get("updated_at", "")
-                        st.caption(f"状态：{status_label} | 更新时间：{updated_at}")
-                        preview_image = candidate_snapshot.get("preview_image", "")
-                        if preview_image:
-                            preview = base64_to_image(preview_image)
-                            if preview is not None:
-                                st.image(
-                                    preview,
-                                    width="stretch",
-                                    caption=candidate_snapshot.get("preview_label", "最新预览"),
-                                )
-                        else:
-                            st.info("当前候选还没有可展示的图像预览。")
-
-                        if candidate_snapshot.get("error"):
-                            st.error(candidate_snapshot["error"])
 
     if event_timeline:
         _render_collapsible_event_timeline(

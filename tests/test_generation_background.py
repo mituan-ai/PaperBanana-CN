@@ -34,6 +34,61 @@ def _build_png_base64() -> str:
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
+class _DummyContextManager:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeLiveStreamlit:
+    def __init__(self):
+        self.session_state = {}
+        self.markdown_calls = []
+        self.caption_calls = []
+        self.columns_calls = []
+        self.image_calls = []
+        self.info_calls = []
+        self.error_calls = []
+        self.container_calls = []
+
+    def markdown(self, text, **kwargs):
+        self.markdown_calls.append(text)
+
+    def caption(self, text, **kwargs):
+        self.caption_calls.append(text)
+
+    def columns(self, spec, **kwargs):
+        normalized_spec = spec if isinstance(spec, int) else list(spec)
+        self.columns_calls.append(
+            {
+                "spec": normalized_spec,
+                "kwargs": dict(kwargs),
+            }
+        )
+        count = normalized_spec if isinstance(normalized_spec, int) else len(normalized_spec)
+        return [_DummyContextManager() for _ in range(count)]
+
+    def container(self, **kwargs):
+        self.container_calls.append(dict(kwargs))
+        return _DummyContextManager()
+
+    def image(self, image, **kwargs):
+        self.image_calls.append(
+            {
+                "image": image,
+                "kwargs": dict(kwargs),
+            }
+        )
+
+    def info(self, text, **kwargs):
+        self.info_calls.append(text)
+
+    def error(self, text, **kwargs):
+        self.error_calls.append(text)
+
+
 class GenerationBackgroundJobTest(unittest.TestCase):
     def setUp(self):
         self._drain_background_jobs()
@@ -687,6 +742,126 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertTrue(success)
         self.assertTrue(demo.st.session_state["refine_staged_image_bytes"])
         self.assertEqual(demo.st.session_state["refine_staged_source_label"], "候选 08")
+
+    def test_render_generation_live_stream_uses_centered_narrow_layout_for_single_candidate(self):
+        original_st = demo.st
+        fake_st = _FakeLiveStreamlit()
+        snapshot = {
+            "candidate_snapshots": {
+                "0": {
+                    "stage": "第 1/3 轮评审修正",
+                    "status": "running",
+                    "updated_at": "17:43:08",
+                    "preview_image": _build_png_base64(),
+                    "preview_label": "📝 规划草案",
+                }
+            },
+            "event_history": [],
+        }
+
+        demo.st = fake_st
+        try:
+            demo.render_generation_live_stream(snapshot)
+        finally:
+            demo.st = original_st
+
+        self.assertIn("### ⚡ 流式生成展示", fake_st.markdown_calls)
+        self.assertIn("候选 01", fake_st.caption_calls)
+        self.assertGreaterEqual(len(fake_st.columns_calls), 1)
+        self.assertEqual(fake_st.columns_calls[0]["spec"], [1, 2, 1])
+        self.assertEqual(fake_st.columns_calls[0]["kwargs"].get("gap"), "large")
+        self.assertEqual(len(fake_st.image_calls), 1)
+        self.assertEqual(
+            fake_st.image_calls[0]["kwargs"].get("width"),
+            demo.SINGLE_CANDIDATE_LIVE_PREVIEW_WIDTH,
+        )
+        self.assertEqual(
+            fake_st.image_calls[0]["kwargs"].get("caption"),
+            "📝 规划草案",
+        )
+
+    def test_render_generation_live_stream_uses_centered_narrow_layout_for_two_candidates(self):
+        original_st = demo.st
+        fake_st = _FakeLiveStreamlit()
+        snapshot = {
+            "candidate_snapshots": {
+                "0": {
+                    "stage": "阶段 A",
+                    "status": "running",
+                    "updated_at": "17:43:08",
+                    "preview_image": _build_png_base64(),
+                    "preview_label": "预览 A",
+                },
+                "1": {
+                    "stage": "阶段 B",
+                    "status": "completed",
+                    "updated_at": "17:44:08",
+                    "preview_image": _build_png_base64(),
+                    "preview_label": "预览 B",
+                },
+            },
+            "event_history": [],
+        }
+
+        demo.st = fake_st
+        try:
+            demo.render_generation_live_stream(snapshot)
+        finally:
+            demo.st = original_st
+
+        self.assertGreaterEqual(len(fake_st.columns_calls), 1)
+        self.assertEqual(fake_st.columns_calls[0]["spec"], [0.25, 1, 1, 0.25])
+        self.assertEqual(fake_st.columns_calls[0]["kwargs"].get("gap"), "large")
+        self.assertEqual(len(fake_st.image_calls), 2)
+        self.assertTrue(
+            all(
+                call["kwargs"].get("width") == demo.DOUBLE_CANDIDATE_LIVE_PREVIEW_WIDTH
+                for call in fake_st.image_calls
+            )
+        )
+
+    def test_render_generation_live_stream_keeps_stretch_grid_for_three_candidates(self):
+        original_st = demo.st
+        fake_st = _FakeLiveStreamlit()
+        snapshot = {
+            "candidate_snapshots": {
+                "0": {
+                    "stage": "阶段 A",
+                    "status": "running",
+                    "updated_at": "17:43:08",
+                    "preview_image": _build_png_base64(),
+                    "preview_label": "预览 A",
+                },
+                "1": {
+                    "stage": "阶段 B",
+                    "status": "completed",
+                    "updated_at": "17:44:08",
+                    "preview_image": _build_png_base64(),
+                    "preview_label": "预览 B",
+                },
+                "2": {
+                    "stage": "阶段 C",
+                    "status": "completed",
+                    "updated_at": "17:45:08",
+                    "preview_image": _build_png_base64(),
+                    "preview_label": "预览 C",
+                },
+            },
+            "event_history": [],
+        }
+
+        demo.st = fake_st
+        try:
+            demo.render_generation_live_stream(snapshot)
+        finally:
+            demo.st = original_st
+
+        self.assertGreaterEqual(len(fake_st.columns_calls), 1)
+        self.assertEqual(fake_st.columns_calls[0]["spec"], 3)
+        self.assertEqual(len(fake_st.image_calls), 3)
+        self.assertTrue(
+            all(call["kwargs"].get("width") == "stretch" for call in fake_st.image_calls)
+        )
 
     def test_build_full_process_zip_contains_stage_images_and_metadata(self):
         result = {
