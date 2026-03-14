@@ -1,55 +1,98 @@
-# PaperBanana-Pro
+<h1 align="center">PaperBanana-Pro</h1>
 
-> 多 Agent 驱动的科研插图与统计图生成系统，提供中文 GUI、CLI 批处理与结果审阅工具。
+<p align="center">
+  <strong>面向未来的工业级学术绘图引擎</strong><br>
+  多 Agent 协同 · 全中文流式交互 · 深度精修闭环
+</p>
 
-[![Dataset on HF](assets/dataset-on-hf-xl.svg)](https://huggingface.co/datasets/dwzhu/PaperBananaBench)
-[![Paper page](assets/paper-page-xl.svg)](https://huggingface.co/papers/2601.23265)
+<p align="center">
+  <a href="https://github.com/elpsykongloo/PaperBanana-Pro/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"></a>&nbsp;<img src="https://img.shields.io/badge/Python-≥3.12-3776AB?logo=python&logoColor=white" alt="Python">&nbsp;<a href="https://github.com/elpsykongloo/PaperBanana-Pro/actions"><img src="https://img.shields.io/github/actions/workflow/status/elpsykongloo/PaperBanana-Pro/ci.yml?label=CI&logo=github" alt="CI"></a>&nbsp;<img src="https://img.shields.io/badge/version-0.1.0-brightgreen" alt="Version">&nbsp;<a href="https://huggingface.co/datasets/dwzhu/PaperBananaBench"><img src="https://img.shields.io/badge/🤗_Dataset-PaperBananaBench-yellow" alt="Dataset"></a>&nbsp;<a href="https://huggingface.co/papers/2601.23265"><img src="https://img.shields.io/badge/📄_Paper-HuggingFace-orange" alt="Paper"></a>&nbsp;<img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
+</p>
 
-![PaperBanana-Pro 示例](assets/teaser_figure.jpg)
+---
 
-## ✨ 功能展示
+## 👑 为什么选择 Pro？
 
-### 生成候选方案
+PaperBanana-Pro 在 [原始 PaperBanana](https://github.com/dwzhu-pku/PaperBanana) 基础上独立演化，完成了 **21 轮工程打磨** 和 **70+ 单元测试** 覆盖，从学术原型蜕变为可日常使用的产品级工具。
 
-![ui_generation_workspace](assets/ui_generation_workspace.png)
+| | 特性 | 说明 |
+|---|---|---|
+| 🚀 | **流式高并发生成** | 后台异步作业队列 + 实时事件时间线，支持 40+ 候选并发，界面永不卡死 |
+| 📦 | **Bundle 便携式交付** | 独创 `Bundle v1` 架构，一个 `.bundle.json` 还原完整图文时间线和评审记录 |
+| 🛡️ | **智能容灾重试** | Pro→Flash 模型梯队平滑降级，确定性任务状态，真正的工程健壮性 |
+| 🎨 | **2K/4K 精修工作台** | 独立精修闭环，支持并发多版本重绘、树状演化链和版本回退 |
+| 🇨🇳 | **全中文产品界面** | 从输入到输出全中文，侧边栏参数人性化，即开即用 |
+| 🔧 | **注册制流水线** | Pipeline Registry 驱动，告别硬编码分支，一行配置扩展新流程 |
+| 📊 | **Plot 全链路** | 数据输入解析 → 代码生成 → 本地重渲染 → 精修，统计图端到端闭环 |
+| ⚡ | **`uv` 一键安装** | `uv tool install` 全局可用，免虚拟环境、免 PATH 配置 |
 
-输入论文的方法章节和图注，一键生成多个科研插图候选方案。左侧边栏可选择生成任务（学术图解 / 统计图）、流水线流程和参考样例策略。提供全中文界面和人性化的可视化调整的多重参数
+---
 
-### 启动前检查与参数预览
+## ✨ 核心工作流
 
-![ui_preflight_check](assets/ui_preflight_check.png)
+<table>
+<tr>
+<td width="50%">
 
-点击生成前，系统会自动校验参数配置并预估成本，确认无误后一键启动。
+**📋 生成候选方案**
 
-### 候选结果与决策
+输入论文方法章节和图注，一键并发生成多个科研插图候选。
 
-![ui_candidate_results](assets/ui_candidate_results.png)
+<img src="assets/ui_generation_workspace.png" alt="生成候选" width="100%">
+</td>
+<td width="50%">
 
-生成完成后，每个候选方案都会展示最终图解、下载入口和决策按钮（收藏 / 设为最终 / 淘汰），支持一键送入精修页继续打磨。
+**🎯 候选决策 & 批量导出**
 
-### 完整流水线展示，提供更多可选项
+收藏、选定或淘汰候选方案，一键 ZIP 打包下载全部结果。
 
-![ui_pipeline_detail](assets/ui_pipeline_detail.png)
+<img src="assets/ui_candidate_results.png" alt="候选决策" width="100%">
+</td>
+</tr>
+<tr>
+<td width="50%">
 
-展开任意候选方案的「演化时间线」，即可查看各流水线阶段（规划 → 风格增强 → 多轮评审修正）的中间图像与描述，直观追踪图解从草案到终稿的完整演化过程。
+**🔍 流水线演化追踪**
 
-### 一键批量下载
+展开任意候选方案的演化时间线，逐阶段查看规划→风格增强→评审修正的完整过程。
 
-![ui_batch_download](assets/ui_batch_download.png)
+<img src="assets/ui_pipeline_detail.png" alt="流水线详情" width="100%">
+</td>
+<td width="50%">
 
-支持按筛选范围（全部 / 未淘汰 / 收藏 / 最终候选）将结果一键打包为 ZIP 下载，包含最终图像、描述文本及绘图代码（统计图任务）。
+**✨ 2K/4K 图像精修**
 
-### 历史回放
+独立精修工作台，设置目标分辨率与宽高比，每轮精修形成版本链，可从任意历史版本继续或回退。
 
-![ui_history_replay](assets/ui_history_replay.png)
+<img src="assets/ui_refine_workspace.png" alt="图像精修" width="100%">
+</td>
+</tr>
+</table>
 
-每次生成完成后系统自动保存 bundle 快照。随时可从历史记录中选择并载入过往运行结果，继续做决策、送去精修或重新导出。
+<details>
+<summary>📸 <strong>更多功能截图</strong>（点击展开）</summary>
 
-### 图像精修（2K / 4K）
+<br>
 
-![ui_refine_workspace](assets/ui_refine_workspace.png)
+**启动前检查与参数预览** — 自动校验配置并预估成本
 
-独立的精修工作台，支持设置目标分辨率、宽高比和并发精修张数。每轮精修会形成版本链，可从任意历史版本继续或回退。
+<img src="assets/ui_preflight_check.png" alt="预检" width="60%">
+
+**历史回放** — 从 Bundle 快照中载入过往运行结果
+
+<img src="assets/ui_history_replay.png" alt="历史回放" width="60%">
+
+**批量下载** — 按筛选范围一键打包 ZIP（含图像、描述、绘图代码）
+
+<img src="assets/ui_batch_download.png" alt="批量下载" width="60%">
+
+**API Key 可视化配置** — 密钥自动存储到本地，刷新不丢失
+
+<img src="assets/ui_api_key_config.png" alt="API Key 配置" width="40%">
+
+</details>
+
+---
 
 ## 🚀 快速开始
 
@@ -85,17 +128,19 @@ Copy-Item configs\model_config.template.yaml configs\model_config.yaml
 - `configs/local/google_api_key.txt`
 - `configs/local/evolink_api_key.txt`
 
-当前正式支持3个 Provider：**Gemini**、**Openrouter** 和 **Evolink**。
+当前正式支持 3 个 Provider：**Gemini**、**Openrouter** 和 **Evolink**。
 
-您也可以直接可视化进行配置，API会自动存储到您本地：
+您也可以直接在 GUI 中可视化配置，API Key 会自动存储到本地：
 
-<img src="assets/ui_api_key_config.png" alt="ui_api_key_config" style="zoom: 33%;" />
+<img src="assets/ui_api_key_config.png" alt="API Key 配置" width="280">
 
 ### 4. 启动
 
 ```bash
-paperbanana  # 等价于paperbanana gui，会在8501端口启动前端
+paperbanana          # 等价于 paperbanana gui，会在 8501 端口启动前端
 ```
+
+---
 
 ## 📖 使用指南
 
@@ -136,6 +181,8 @@ paperbanana viewer evolution   # 查看流程演化
 paperbanana viewer eval        # 查看带参考结果的评估
 ```
 
+---
+
 ## 🏗️ 架构
 
 ![PaperBanana-Pro 流水线](assets/method_diagram.png)
@@ -148,6 +195,8 @@ paperbanana viewer eval        # 查看带参考结果的评估
 | Visualizer | 生成图像（diagram）或 Matplotlib 代码（plot） |
 | Critic | 多轮评审与修订建议 |
 | Polish | 可选后处理精修 |
+
+---
 
 ## 📁 项目结构
 
@@ -166,11 +215,13 @@ PaperBanana-Pro/
 ## 🗺️ 路线图
 
 - [ ] 多语言 UI 与提示词支持
-- [ ] 扩展更多会议数据集（ICML、ACL 等），从而适应不同的会议风格
-- [ ] 精修功能扩展：把迭代流程引入到精修功能中
+- [ ] 扩展更多会议数据集（ICML、ACL 等），适应不同会议风格
+- [ ] 精修功能扩展：迭代流程引入精修功能
 - [ ] Plot 结构化合同与自动修复（`PlotSpec`）
 - [ ] 无参考自动质量评估（No-reference QA）
 - [ ] 发布到 PyPI，支持 `uv tool install paperbanana-pro`
+
+---
 
 ## 🙏 致谢
 
