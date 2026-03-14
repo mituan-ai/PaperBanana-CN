@@ -6,7 +6,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/elpsykongloo/PaperBanana-Pro/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"></a>&nbsp;<img src="https://img.shields.io/badge/Python-≥3.12-3776AB?logo=python&logoColor=white" alt="Python">&nbsp;<a href="https://github.com/elpsykongloo/PaperBanana-Pro/actions"><img src="https://img.shields.io/github/actions/workflow/status/elpsykongloo/PaperBanana-Pro/ci.yml?label=CI&logo=github" alt="CI"></a>&nbsp;<img src="https://img.shields.io/badge/version-0.1.0-brightgreen" alt="Version">&nbsp;<a href="https://huggingface.co/datasets/dwzhu/PaperBananaBench"><img src="https://img.shields.io/badge/🤗_Dataset-PaperBananaBench-yellow" alt="Dataset"></a>&nbsp;<a href="https://huggingface.co/papers/2601.23265"><img src="https://img.shields.io/badge/📄_Paper-HuggingFace-orange" alt="Paper"></a>&nbsp;<img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
+  <a href="https://github.com/elpsykongloo/PaperBanana-Pro/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"></a>&nbsp;
+  <img src="https://img.shields.io/badge/Python-≥3.12-3776AB?logo=python&logoColor=white" alt="Python">&nbsp;
+  <a href="https://github.com/elpsykongloo/PaperBanana-Pro/actions"><img src="https://img.shields.io/github/actions/workflow/status/elpsykongloo/PaperBanana-Pro/ci.yml?label=CI&logo=github" alt="CI"></a>&nbsp;
+  <img src="https://img.shields.io/badge/version-0.1.0-brightgreen" alt="Version">
+  <br>
+  <a href="https://huggingface.co/datasets/dwzhu/PaperBananaBench"><img src="https://img.shields.io/badge/🤗_Dataset-PaperBananaBench-yellow" alt="Dataset"></a>&nbsp;
+  <a href="https://huggingface.co/papers/2601.23265"><img src="https://img.shields.io/badge/📄_Paper-HuggingFace-orange" alt="Paper"></a>&nbsp;
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
 </p>
 
 ---
