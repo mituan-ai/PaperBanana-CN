@@ -85,11 +85,11 @@ Copy-Item configs\model_config.template.yaml configs\model_config.yaml
 - `configs/local/google_api_key.txt`
 - `configs/local/evolink_api_key.txt`
 
-当前正式支持两个 Provider：**Gemini**和 **Evolink**。
+当前正式支持3个 Provider：**Gemini**、**Openrouter** 和 **Evolink**。
 
 您也可以直接可视化进行配置，API会自动存储到您本地：
 
-<img src="assets/ui_api_key_config.png" alt="ui_api_key_config" style="zoom: 50%;" />
+<img src="assets/ui_api_key_config.png" alt="ui_api_key_config" style="zoom: 33%;" />
 
 ### 4. 启动
 
