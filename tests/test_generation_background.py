@@ -144,6 +144,107 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertNotIn("tab1_api_key", demo.st.session_state)
         self.assertNotIn("active_generation_job_id", demo.st.session_state)
 
+    def test_restore_persisted_demo_ui_state_keeps_running_generation_job_id_when_snapshot_exists(self):
+        job_id = "generate_restore_running"
+        job = demo.GenerationJobState(
+            job_id=job_id,
+            dataset_name="PaperBananaBench",
+            task_name="diagram",
+            exp_mode="demo_planner_critic",
+            retrieval_setting="none",
+            curated_profile="default",
+            provider="gemini",
+            model_name="gemini-3.1-flash-lite-preview",
+            image_model_name="gemini-3.1-flash-image-preview",
+            concurrency_mode="manual",
+            max_concurrent=1,
+            requested_candidates=1,
+            max_critic_rounds=0,
+            aspect_ratio="16:9",
+            image_resolution="2K",
+            content="paper method",
+            visual_intent="draw a pipeline",
+        )
+        demo._store_generation_job(job)
+        demo.record_generation_job_event(
+            job_id,
+            {
+                "kind": "job",
+                "status": "running",
+                "message": "后台任务已启动",
+            },
+        )
+
+        try:
+            demo.st.session_state["active_generation_job_id"] = job_id
+            demo.persist_demo_ui_state()
+            with demo.DEMO_UI_STATE_LOCK:
+                demo.DEMO_UI_STATE.clear()
+            demo.st.session_state.clear()
+
+            demo.restore_persisted_demo_ui_state()
+
+            self.assertEqual(demo.st.session_state["active_generation_job_id"], job_id)
+            restored_snapshot = demo._restore_active_background_job(
+                session_key="active_generation_job_id",
+                job_kind="generation",
+                get_snapshot_fn=demo.get_generation_job_snapshot,
+            )
+            self.assertIsNotNone(restored_snapshot)
+            self.assertEqual(restored_snapshot["status"], "running")
+        finally:
+            demo.clear_generation_job(job_id)
+
+    def test_restore_persisted_demo_ui_state_clears_stale_generation_job_id_without_snapshot(self):
+        demo.st.session_state["active_generation_job_id"] = "generate_missing_snapshot"
+        demo.persist_demo_ui_state()
+        with demo.DEMO_UI_STATE_LOCK:
+            demo.DEMO_UI_STATE.clear()
+        demo.st.session_state.clear()
+
+        demo.restore_persisted_demo_ui_state()
+
+        self.assertNotIn("active_generation_job_id", demo.st.session_state)
+
+    def test_generation_activity_wrapper_prefers_fragment_runner_while_job_running(self):
+        original_supports = demo.supports_streamlit_fragment
+        original_get_snapshot = demo.get_generation_job_snapshot
+        original_hydrate = demo.hydrate_persisted_job_snapshot
+        original_fragment_runner = demo._render_generation_activity_fragment_running
+        original_plain_renderer = demo._render_generation_activity_content
+        demo.st.session_state["active_generation_job_id"] = "generate_fragment_running"
+        calls = []
+
+        demo.supports_streamlit_fragment = lambda: True
+        demo.get_generation_job_snapshot = lambda job_id: {
+            "job_id": job_id,
+            "status": "running",
+            "worker_done": False,
+        }
+        demo.hydrate_persisted_job_snapshot = lambda snapshot, job_kind: snapshot
+        demo._render_generation_activity_fragment_running = lambda **kwargs: calls.append(("fragment", kwargs))
+        demo._render_generation_activity_content = lambda **kwargs: calls.append(("plain", kwargs))
+
+        try:
+            demo.render_generation_activity_fragment(
+                requested_candidates=1,
+                default_task_name="diagram",
+            )
+        finally:
+            demo.supports_streamlit_fragment = original_supports
+            demo.get_generation_job_snapshot = original_get_snapshot
+            demo.hydrate_persisted_job_snapshot = original_hydrate
+            demo._render_generation_activity_fragment_running = original_fragment_runner
+            demo._render_generation_activity_content = original_plain_renderer
+
+        self.assertEqual(calls, [("fragment", {"requested_candidates": 1, "default_task_name": "diagram"})])
+
+    def test_demo_source_no_longer_uses_browser_location_reload_for_polling(self):
+        source_text = Path(demo.__file__).read_text(encoding="utf-8")
+
+        self.assertNotIn("location.reload()", source_text)
+        self.assertNotIn("components.html(", source_text)
+
     def test_generation_job_snapshot_falls_back_to_disk_store(self):
         job_id = "generate_disk_snapshot"
         job = demo.GenerationJobState(

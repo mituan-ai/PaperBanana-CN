@@ -249,6 +249,8 @@ REFINE_LOGGER_NAMES = {
     "GenerationUtils",
     "ImageUtils",
 }
+BACKGROUND_FRAGMENT_AUTO_REFRESH_INTERVAL = "2s"
+BACKGROUND_TERMINAL_STATUSES = {"completed", "cancelled", "failed", "interrupted"}
 
 
 def streamlit_fragment(**fragment_kwargs):
@@ -260,6 +262,23 @@ def streamlit_fragment(**fragment_kwargs):
         return func
 
     return decorator
+
+
+def supports_streamlit_fragment() -> bool:
+    return callable(getattr(st, "fragment", None))
+
+
+def request_streamlit_rerun(*, scope: str = "app") -> None:
+    rerun = getattr(st, "rerun", None)
+    if not callable(rerun):
+        return
+    if scope == "fragment":
+        try:
+            rerun(scope="fragment")
+            return
+        except Exception:
+            pass
+    rerun()
 
 def clean_text(text):
     """清理文本，移除无效的 UTF-8 代理字符。"""
@@ -1433,11 +1452,30 @@ def _deserialize_ui_state_value(key: str, value):
     return value
 
 
+def _restore_active_background_job(
+    *,
+    session_key: str,
+    job_kind: str,
+    get_snapshot_fn: Callable[[str], dict | None],
+) -> dict | None:
+    restored_job_id = str(st.session_state.get(session_key, "") or "").strip()
+    if not restored_job_id:
+        return None
+
+    snapshot = hydrate_persisted_job_snapshot(
+        get_snapshot_fn(restored_job_id),
+        job_kind=job_kind,
+    )
+    if snapshot is None:
+        st.session_state.pop(session_key, None)
+        return None
+    return snapshot
+
+
 def restore_persisted_demo_ui_state() -> None:
     # NOTE: Do not auto-restore completed generation results (contains large
     # base64 images) to avoid significant slowdown on page refresh.
     # Users can manually reload history via the history replay panel.
-    st.session_state.pop("active_generation_job_id", None)
     st.session_state.pop("bundle_file", None)
     st.session_state.pop("json_file", None)
 
@@ -1445,24 +1483,29 @@ def restore_persisted_demo_ui_state() -> None:
     if not payload:
         return
 
-    _skip_restore_keys = {"active_generation_job_id", "bundle_file", "json_file", "results"}
+    _skip_restore_keys = {"bundle_file", "json_file", "results"}
     for key, raw_value in payload.items():
         if key in st.session_state or key in _skip_restore_keys:
             continue
         st.session_state[key] = _deserialize_ui_state_value(key, raw_value)
 
+    generation_snapshot = _restore_active_background_job(
+        session_key="active_generation_job_id",
+        job_kind="generation",
+        get_snapshot_fn=get_generation_job_snapshot,
+    )
+    if generation_snapshot is not None and generation_snapshot.get("status") in {"completed", "cancelled", "failed"}:
+        # 终态任务交给后续 fragment 按现有 finalize 路径收口；这里只保留 job 指针。
+        pass
 
-
-    restored_refine_job_id = st.session_state.get("active_refine_job_id")
-    if restored_refine_job_id and "refined_images" not in st.session_state:
-        refine_snapshot = hydrate_persisted_job_snapshot(
-            get_refine_job_snapshot(restored_refine_job_id),
+    if "refined_images" not in st.session_state:
+        refine_snapshot = _restore_active_background_job(
+            session_key="active_refine_job_id",
             job_kind="refine",
+            get_snapshot_fn=get_refine_job_snapshot,
         )
         if refine_snapshot and refine_snapshot.get("status") in {"completed", "cancelled", "failed"}:
             persist_refine_job_results(refine_snapshot)
-        elif refine_snapshot is None:
-            st.session_state.pop("active_refine_job_id", None)
 
 
 def persist_demo_ui_state() -> None:
@@ -4891,7 +4934,7 @@ def render_generation_sidebar_controls() -> dict:
 
         st.markdown('<p class="sb-section">流水线配置</p>', unsafe_allow_html=True)
 
-        if "tab1_dataset_name" not in st.session_state:
+        if not str(st.session_state.get("tab1_dataset_name", "") or "").strip():
             st.session_state["tab1_dataset_name"] = DEFAULT_DATASET_NAME
         dataset_name = st.text_input(
             "数据集名称",
@@ -5420,8 +5463,53 @@ def render_generation_results_panel(default_task_name: str) -> None:
         st.error(f"创建 ZIP 压缩包失败：{export_error}")
 
 
-@streamlit_fragment(run_every=1.0)
-def render_generation_activity_fragment(*, requested_candidates: int, default_task_name: str) -> None:
+def _build_generation_terminal_notice(snapshot: dict) -> tuple[str, str]:
+    completed_count = len(snapshot.get("results", []))
+    requested_count = int(snapshot.get("requested_candidates", completed_count) or completed_count)
+    failed_count = sum(
+        1
+        for item in snapshot.get("results", [])
+        if isinstance(item, dict) and item.get("status") == "failed"
+    )
+    status = snapshot.get("status")
+    if status == "completed":
+        return "success", f"✅ 生成任务完成：完成 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。"
+    if status == "cancelled":
+        return "warning", f"⛔ 生成任务已停止：保留 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。"
+    if status == "interrupted":
+        return "warning", f"🧭 已恢复最近一次历史快照：当前保留 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。"
+    return "error", f"❌ 后台生成失败：{snapshot.get('error', 'Unknown error')}"
+
+
+def _build_refine_terminal_notice(snapshot: dict) -> tuple[str, str]:
+    completed = len(snapshot.get("refined_images", []))
+    failed = len(snapshot.get("failed_results", []))
+    status = snapshot.get("status")
+    if status == "completed":
+        return "success", f"✅ 后台精修完成：成功 {completed} 张，失败 {failed} 张。"
+    if status == "cancelled":
+        return "warning", f"⛔ 精修已停止：成功 {completed} 张，失败/取消 {failed} 张。"
+    if status == "interrupted":
+        return "warning", f"🧭 已恢复最近一次历史精修快照：成功 {completed} 张，失败 {failed} 张。"
+    return "error", f"❌ 后台精修失败：{snapshot.get('error', 'Unknown error')}"
+
+
+def _render_background_terminal_notice(session_key: str) -> None:
+    notice = st.session_state.pop(session_key, None)
+    if not isinstance(notice, dict):
+        return
+    level = str(notice.get("level", "info") or "info").lower()
+    message = str(notice.get("message", "") or "").strip()
+    if not message:
+        return
+    renderer = getattr(st, level, None)
+    if callable(renderer):
+        renderer(message)
+    else:
+        st.info(message)
+
+
+def _render_generation_activity_content(*, requested_candidates: int, allow_fragment_rerun: bool) -> None:
     active_generation_job_id = st.session_state.get("active_generation_job_id")
     active_generation_snapshot = None
     if active_generation_job_id:
@@ -5431,10 +5519,9 @@ def render_generation_activity_fragment(*, requested_candidates: int, default_ta
         )
 
     finalized_generation_snapshot = None
-    terminal_statuses = {"completed", "cancelled", "failed", "interrupted"}
     if (
         active_generation_snapshot
-        and active_generation_snapshot.get("status") in terminal_statuses
+        and active_generation_snapshot.get("status") in BACKGROUND_TERMINAL_STATUSES
         and active_generation_snapshot.get("worker_done", True)
     ):
         finalized_generation_snapshot = active_generation_snapshot
@@ -5454,6 +5541,14 @@ def render_generation_activity_fragment(*, requested_candidates: int, default_ta
         clear_generation_job(active_generation_job_id)
         active_generation_snapshot = None
         persist_demo_ui_state()
+        if allow_fragment_rerun:
+            notice_level, notice_message = _build_generation_terminal_notice(finalized_generation_snapshot)
+            st.session_state["generation_terminal_notice"] = {
+                "level": notice_level,
+                "message": notice_message,
+            }
+            request_streamlit_rerun(scope="app")
+            return
 
     runtime_panel_action = render_generation_runtime_panel(
         active_generation_snapshot or finalized_generation_snapshot,
@@ -5463,40 +5558,62 @@ def render_generation_activity_fragment(*, requested_candidates: int, default_ta
         request_generation_job_cancel(active_generation_snapshot["job_id"])
         st.warning("已发送停止请求，当前进行中的候选会继续完成，未开始的候选将被跳过。")
         persist_demo_ui_state()
-        st.rerun()
+        request_streamlit_rerun(scope="fragment" if allow_fragment_rerun else "app")
+        return
     if runtime_panel_action == "refresh":
         persist_demo_ui_state()
-        st.rerun()
+        request_streamlit_rerun(scope="fragment" if allow_fragment_rerun else "app")
+        return
 
     if finalized_generation_snapshot:
-        completed_count = len(finalized_generation_snapshot.get("results", []))
-        requested_count = int(finalized_generation_snapshot.get("requested_candidates", completed_count) or completed_count)
-        failed_count = sum(
-            1
-            for item in finalized_generation_snapshot.get("results", [])
-            if isinstance(item, dict) and item.get("status") == "failed"
-        )
-        status = finalized_generation_snapshot.get("status")
-        if status == "completed":
-            st.success(f"✅ 生成任务完成：完成 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。")
-        elif status == "cancelled":
-            st.warning(f"⛔ 生成任务已停止：保留 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。")
-        elif status == "interrupted":
-            st.warning(f"🧭 已恢复最近一次历史快照：当前保留 {completed_count}/{requested_count} 个候选，失败 {failed_count} 个。")
+        notice_level, notice_message = _build_generation_terminal_notice(finalized_generation_snapshot)
+        renderer = getattr(st, notice_level, None)
+        if callable(renderer):
+            renderer(notice_message)
         else:
-            st.error(f"❌ 后台生成失败：{finalized_generation_snapshot.get('error', 'Unknown error')}")
+            st.info(notice_message)
 
     render_generation_live_stream(active_generation_snapshot or finalized_generation_snapshot)
 
 
-@streamlit_fragment(run_every=1.0)
-def render_refine_activity_fragment(
+@streamlit_fragment(run_every=BACKGROUND_FRAGMENT_AUTO_REFRESH_INTERVAL)
+def _render_generation_activity_fragment_running(*, requested_candidates: int, default_task_name: str) -> None:
+    _render_generation_activity_content(
+        requested_candidates=requested_candidates,
+        allow_fragment_rerun=True,
+    )
+
+
+def render_generation_activity_fragment(*, requested_candidates: int, default_task_name: str) -> None:
+    active_generation_job_id = st.session_state.get("active_generation_job_id")
+    active_generation_snapshot = hydrate_persisted_job_snapshot(
+        get_generation_job_snapshot(active_generation_job_id),
+        job_kind="generation",
+    ) if active_generation_job_id else None
+    if (
+        supports_streamlit_fragment()
+        and active_generation_snapshot
+        and active_generation_snapshot.get("status") == "running"
+    ):
+        _render_generation_activity_fragment_running(
+            requested_candidates=requested_candidates,
+            default_task_name=default_task_name,
+        )
+        return
+    _render_generation_activity_content(
+        requested_candidates=requested_candidates,
+        allow_fragment_rerun=False,
+    )
+
+
+def _render_refine_activity_content(
     *,
     requested_images: int,
     fallback_original_bytes: bytes,
     fallback_resolution: str,
     fallback_provider: str,
     fallback_image_model_name: str,
+    allow_fragment_rerun: bool,
 ) -> None:
     active_refine_job_id = st.session_state.get("active_refine_job_id")
     active_refine_snapshot = None
@@ -5507,10 +5624,9 @@ def render_refine_activity_fragment(
         )
 
     finalized_refine_snapshot = None
-    terminal_statuses = {"completed", "cancelled", "failed", "interrupted"}
     if (
         active_refine_snapshot
-        and active_refine_snapshot.get("status") in terminal_statuses
+        and active_refine_snapshot.get("status") in BACKGROUND_TERMINAL_STATUSES
         and active_refine_snapshot.get("worker_done", True)
     ):
         finalized_refine_snapshot = active_refine_snapshot
@@ -5521,6 +5637,14 @@ def render_refine_activity_fragment(
         clear_refine_job(active_refine_job_id)
         active_refine_snapshot = None
         persist_demo_ui_state()
+        if allow_fragment_rerun:
+            notice_level, notice_message = _build_refine_terminal_notice(finalized_refine_snapshot)
+            st.session_state["refine_terminal_notice"] = {
+                "level": notice_level,
+                "message": notice_message,
+            }
+            request_streamlit_rerun(scope="app")
+            return
 
     refine_panel_action = render_refine_runtime_panel(
         active_refine_snapshot or finalized_refine_snapshot,
@@ -5530,29 +5654,81 @@ def render_refine_activity_fragment(
         request_refine_job_cancel(active_refine_snapshot["job_id"])
         st.warning("已发送停止请求，系统会在当前请求结束后停止后续重试。")
         persist_demo_ui_state()
-        st.rerun()
+        request_streamlit_rerun(scope="fragment" if allow_fragment_rerun else "app")
+        return
     if refine_panel_action == "refresh":
         persist_demo_ui_state()
-        st.rerun()
+        request_streamlit_rerun(scope="fragment" if allow_fragment_rerun else "app")
+        return
 
     if finalized_refine_snapshot:
-        completed = len(finalized_refine_snapshot.get("refined_images", []))
-        failed = len(finalized_refine_snapshot.get("failed_results", []))
-        status = finalized_refine_snapshot.get("status")
-        if status == "completed":
-            st.success(f"✅ 后台精修完成：成功 {completed} 张，失败 {failed} 张。")
-        elif status == "cancelled":
-            st.warning(f"⛔ 精修已停止：成功 {completed} 张，失败/取消 {failed} 张。")
-        elif status == "interrupted":
-            st.warning(f"🧭 已恢复最近一次历史精修快照：成功 {completed} 张，失败 {failed} 张。")
+        notice_level, notice_message = _build_refine_terminal_notice(finalized_refine_snapshot)
+        renderer = getattr(st, notice_level, None)
+        if callable(renderer):
+            renderer(notice_message)
         else:
-            st.error(f"❌ 后台精修失败：{finalized_refine_snapshot.get('error', 'Unknown error')}")
+            st.info(notice_message)
 
     render_refine_results_section(
         fallback_original_bytes=fallback_original_bytes,
         fallback_resolution=fallback_resolution,
         fallback_provider=fallback_provider,
         fallback_image_model_name=fallback_image_model_name,
+    )
+
+
+@streamlit_fragment(run_every=BACKGROUND_FRAGMENT_AUTO_REFRESH_INTERVAL)
+def _render_refine_activity_fragment_running(
+    *,
+    requested_images: int,
+    fallback_original_bytes: bytes,
+    fallback_resolution: str,
+    fallback_provider: str,
+    fallback_image_model_name: str,
+) -> None:
+    _render_refine_activity_content(
+        requested_images=requested_images,
+        fallback_original_bytes=fallback_original_bytes,
+        fallback_resolution=fallback_resolution,
+        fallback_provider=fallback_provider,
+        fallback_image_model_name=fallback_image_model_name,
+        allow_fragment_rerun=True,
+    )
+
+
+def render_refine_activity_fragment(
+    *,
+    requested_images: int,
+    fallback_original_bytes: bytes,
+    fallback_resolution: str,
+    fallback_provider: str,
+    fallback_image_model_name: str,
+) -> None:
+    active_refine_job_id = st.session_state.get("active_refine_job_id")
+    active_refine_snapshot = hydrate_persisted_job_snapshot(
+        get_refine_job_snapshot(active_refine_job_id),
+        job_kind="refine",
+    ) if active_refine_job_id else None
+    if (
+        supports_streamlit_fragment()
+        and active_refine_snapshot
+        and active_refine_snapshot.get("status") == "running"
+    ):
+        _render_refine_activity_fragment_running(
+            requested_images=requested_images,
+            fallback_original_bytes=fallback_original_bytes,
+            fallback_resolution=fallback_resolution,
+            fallback_provider=fallback_provider,
+            fallback_image_model_name=fallback_image_model_name,
+        )
+        return
+    _render_refine_activity_content(
+        requested_images=requested_images,
+        fallback_original_bytes=fallback_original_bytes,
+        fallback_resolution=fallback_resolution,
+        fallback_provider=fallback_provider,
+        fallback_image_model_name=fallback_image_model_name,
+        allow_fragment_rerun=False,
     )
 
 
@@ -5701,6 +5877,7 @@ def render_generation_workspace() -> None:
     if task_name == "plot":
         render_plot_rerender_workspace()
 
+    _render_background_terminal_notice("generation_terminal_notice")
     render_generation_activity_fragment(
         requested_candidates=int(num_candidates),
         default_task_name=task_name,
@@ -5981,6 +6158,7 @@ def render_refine_workspace() -> None:
     else:
         st.info("请上传图像，或先在生成结果中点击“送去精修”载入候选方案。")
 
+    _render_background_terminal_notice("refine_terminal_notice")
     render_refine_activity_fragment(
         requested_images=int(refine_num_images),
         fallback_original_bytes=selected_image_bytes,

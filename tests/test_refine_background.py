@@ -333,6 +333,54 @@ class RefineBackgroundJobTest(unittest.TestCase):
         self.assertEqual(snapshot["snapshot_source"], "disk")
         self.assertTrue(snapshot["event_history"])
 
+    def test_refine_activity_wrapper_prefers_fragment_runner_while_job_running(self):
+        original_supports = demo.supports_streamlit_fragment
+        original_get_snapshot = demo.get_refine_job_snapshot
+        original_hydrate = demo.hydrate_persisted_job_snapshot
+        original_fragment_runner = demo._render_refine_activity_fragment_running
+        original_plain_renderer = demo._render_refine_activity_content
+        demo.st.session_state["active_refine_job_id"] = "refine_fragment_running"
+        calls = []
+
+        demo.supports_streamlit_fragment = lambda: True
+        demo.get_refine_job_snapshot = lambda job_id: {
+            "job_id": job_id,
+            "status": "running",
+            "worker_done": False,
+        }
+        demo.hydrate_persisted_job_snapshot = lambda snapshot, job_kind: snapshot
+        demo._render_refine_activity_fragment_running = lambda **kwargs: calls.append(("fragment", kwargs))
+        demo._render_refine_activity_content = lambda **kwargs: calls.append(("plain", kwargs))
+
+        try:
+            demo.render_refine_activity_fragment(
+                requested_images=1,
+                fallback_original_bytes=b"input",
+                fallback_resolution="2K",
+                fallback_provider="gemini",
+                fallback_image_model_name="gemini-3.1-flash-image-preview",
+            )
+        finally:
+            demo.supports_streamlit_fragment = original_supports
+            demo.get_refine_job_snapshot = original_get_snapshot
+            demo.hydrate_persisted_job_snapshot = original_hydrate
+            demo._render_refine_activity_fragment_running = original_fragment_runner
+            demo._render_refine_activity_content = original_plain_renderer
+
+        self.assertEqual(
+            calls,
+            [(
+                "fragment",
+                {
+                    "requested_images": 1,
+                    "fallback_original_bytes": b"input",
+                    "fallback_resolution": "2K",
+                    "fallback_provider": "gemini",
+                    "fallback_image_model_name": "gemini-3.1-flash-image-preview",
+                },
+            )],
+        )
+
     def test_render_refine_results_section_renders_even_with_uploaded_source(self):
         original_st = demo.st
         fake_st = _FakeRenderStreamlit()

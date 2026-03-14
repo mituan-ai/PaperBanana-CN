@@ -1,0 +1,400 @@
+# Agent Memory
+
+## Architecture Snapshot
+- `agents/` contains the business stages of the pipeline.
+- `utils/paperviz_processor.py` orchestrates stage execution and evaluation.
+- `utils/generation_utils.py` currently owns most provider/runtime plumbing.
+- `demo.py` is the main user-facing product surface.
+- `visualize/` must stay compatible with historical result files.
+
+## Current Decisions
+- First optimization wave focuses on deterministic bugs and consistency gaps:
+  - retriever error-context crash
+  - critic parse-failure semantics
+  - missing defaults in vanilla Gemini image path
+  - critic round hard-coding across generation, export, and visualization
+  - CLI parameter parity improvements
+- We are not attempting a full provider abstraction rewrite in the first wave.
+- Environment policy for this workspace:
+  - Prefer the user's existing global `uv tool` environment, not the system-installed Python interpreter.
+  - The canonical shared runtime for this repo is `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe`.
+  - Local development is on Windows; shell commands should be written for PowerShell first.
+  - Do not rely on `rg`/`rg.exe` in this workspace because it is not usable in the local Windows environment.
+  - Prefer PowerShell-native equivalents such as `Get-ChildItem`, `Select-String`, and `Get-Content` for file discovery, content search, and inspection.
+  - Do not create a new project-local `.venv` unless the user explicitly requests it.
+  - A `.venv` was mistakenly created on 2026-03-09 during dataset setup and was immediately removed after the user corrected the preference.
+  - A direct editable install was also mistakenly made into `C:\Users\86166\AppData\Local\Programs\Python\Python313`; prefer the `uv tool install --editable .` environment instead.
+- Packaging direction as of 2026-03-11:
+  - `pyproject.toml` now declares the PyPI distribution name `paperbanana-pro` and Hatchling build metadata for a normalized package release flow.
+  - The currently supported public install contract is repo-first editable: `uv sync --locked` plus `uv tool install --editable . --force`.
+  - `[project.scripts]` keeps both console commands, but public docs should treat `paperbanana = "cli:main"` as the primary user-facing command and `paperbanana-pro = "cli:main"` as the compatibility alias.
+  - Until the shared tool environment is explicitly migrated, local development should still treat `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe` as the canonical runtime.
+- Real-provider validation policy for this workspace:
+  - Default text model for real smoke/live tests: `gemini-3.1-flash-lite-preview`.
+  - Default image model for real smoke/live tests: `gemini-3.1-flash-image-preview`.
+  - Team shorthand note: the user's spoken `banana2` in this workspace refers to `gemini-3.1-flash-image-preview`, not Evolink's `nano-banana-2-lite`.
+  - Evolink currently has no local key and is treated as a placeholder path only; do not plan real validation around Evolink unless the user explicitly changes that setup.
+- Upstream reference policy for this workspace:
+  - Besides `dwzhu-pku/PaperBanana`, also treat `Mylszd/PaperBanana-CN` as a relevant upstream/reference repo when tracing historical behavior.
+  - `manual retrieval` in both upstream repos is hard-coded to `data/PaperBananaBench/{task}/agent_selected_12.json`.
+  - That file should be treated as an offline curated few-shot subset, not as a guaranteed public dataset artifact.
+  - When the local dataset lacks `agent_selected_12.json`, the correct product behavior is graceful fallback or an explicitly configured replacement, not assuming the dataset is corrupted.
+
+## Compatibility Rules
+- Result keys like `target_*_critic_descN` remain the source of truth for historical runs.
+- New metadata may be added, but old files should still render.
+- Result items should now carry `dataset_name`, `task_name`, and `exp_mode` when produced by the current pipeline so viewers and evaluators stop guessing basic run context.
+- GUI remains Streamlit for now.
+
+## Validation Status
+- 2026-03-13 Windows CI unit-test diagnostics hardening:
+  - traced the public GitHub Actions failures on `repo-first-windows` to the `Run unit tests` step in `.github/workflows/ci.yml`, but unauthenticated GitHub job pages still only exposed `Process completed with exit code 1` without the failing unittest traceback
+  - added `scripts/ci_unittest_runner.py` as the repo-first diagnostic test runner for CI, with:
+    - environment snapshot output and `environment.json`
+    - discovered test inventory in stdout and `discovered-tests.txt`
+    - per-test `START` / `PASS` / `FAIL` / `ERROR` timestamps
+    - `faulthandler` hang dumps for long stalls
+    - machine-readable `summary.json` for repeated local stress runs
+  - updated `.github/workflows/ci.yml` to replace plain `uv run python -m unittest discover -s tests` with the new diagnostic runner and to upload `artifacts/ci/unit-tests` on failure
+  - local reproduction status after the hardening:
+    - `uv run python scripts/ci_unittest_runner.py --output-dir artifacts/local/unit-tests-smoke`
+    - copied workspace into a fresh temp directory, ran `uv sync --locked --python 3.12`, then `uv run python scripts/ci_unittest_runner.py --output-dir artifacts/local/unit-tests-ci-env --repeat 5` with `CI=true`, `GITHUB_ACTIONS=true`, and GitHub-style workspace/temp env vars
+    - stressed the highest-risk modules with `uv run python scripts/ci_unittest_runner.py tests.test_generation_background tests.test_refine_background tests.test_paperviz_processor tests.test_log_config --output-dir artifacts/local/unit-tests-suspects --repeat 30`
+  - current conclusion: the historical GitHub failure is still not reproducible locally; the strongest evidence now points to either a transient GitHub Windows runner issue or a still-rare flake that requires the new CI diagnostics to catch the exact failing test next time
+- 2026-03-13 Refine upload hardening:
+  - traced the refine-upload failure to a product-contract gap in `demo.py`: the refine workspace read `st.file_uploader(...)` directly, immediately `Image.open(...)`-ed the returned bytes for preview, and wrote source/version-history entries before any image validation
+  - this made the upload path fragile in two ways: transient uploader state could leave the page with no stable uploaded-image cache, and any corrupted / partial / non-image bytes could crash the refine preview or poison `refine_version_history` for later renders
+  - fixed by introducing a validated upload cache in session state (`refine_uploaded_*`), verifying uploaded bytes before they become the selected refine source, and excluding cached upload bytes from disk UI-state persistence
+  - hardened refine preview, refine results, and refine version-history rendering so invalid images surface as recoverable user-facing errors instead of uncaught `PIL.UnidentifiedImageError`, and added automatic cleanup of corrupted history entries
+  - updated refine workbench tests to use real PNG bytes instead of arbitrary placeholder bytes, and added regression coverage for invalid upload validation plus corrupted version-history cleanup
+  - validated with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py tests\test_demo_workbench_state.py`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_demo_workbench_state`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_refine_background`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'`
+    - live Streamlit + Playwright regression on `http://127.0.0.1:8503`: invalid uploaded bytes now show a recoverable error banner (`不是可识别的 PNG/JPG 图片`) instead of crashing the refine page
+- 2026-03-09 Wave 1 syntax check passed via `python -m compileall AGENTS.md docs main.py demo.py agents utils visualize`.
+- 2026-03-09 Completed in Wave 1:
+  - fixed retriever `candidate_id` propagation for auto retrieval
+  - fixed critic parse failure semantics to stop cleanly instead of pretending `No changes needed`
+  - added safe defaults for vanilla Gemini image generation
+  - removed hard-coded critic round assumptions from generation/display/export paths
+  - improved CLI parameter parity for provider/image model/concurrency
+  - fixed referenced-eval prompt hot reload import and latest-critic selection
+  - bounded refine retries with attempt/time caps to avoid endless hangs
+  - decoupled refine provider/api/model settings from the generation tab
+  - surfaced refine per-variant failures in the UI and result metadata
+- 2026-03-09 Completed in Wave 2:
+  - added `utils/config_loader.py` as the shared entry for env/local-secret/YAML loading
+  - added `configs/local/*.txt` support for local API key storage, with gitignore coverage
+  - aligned `ExpConfig` with provider-specific default model resolution so CLI and GUI no longer disagree by default
+  - updated config template and README to document secret-file precedence and Evolink defaults
+  - added `utils/demo_task_utils.py` to centralize demo task metadata, sample input construction, and result-stage key resolution
+  - productized `plot` in the main Streamlit demo with task-aware inputs, plot code display, and plot ZIP export support
+  - added unit tests for demo task helpers and provider-specific `ExpConfig` defaults
+  - added `utils/run_report.py` and wired CLI output summaries/failure manifests into `main.py`
+  - added `scripts/live_smoke_test.py` for cheap live validation against configured providers
+  - fixed Gemini image-generation compatibility with the current `google-genai` SDK by removing deprecated `ImageConfig` usage and moving render hints into the prompt
+  - reduced noisy Evolink missing-key logs during Gemini-only runs
+  - validated live smoke on 2026-03-09 with:
+    - `diagram` via `gemini-3.1-flash-lite-preview` + `gemini-3.1-flash-image-preview`: passed
+    - `plot` via `gemini-3.1-flash-lite-preview`: passed
+    - `diagram` via `evolink` + `nano-banana-2-lite`: blocked by missing local Evolink API key
+- 2026-03-09 Completed in Wave 3:
+  - added `utils/runtime_settings.py` to centralize provider defaults, local-key resolution, and provider runtime initialization for demo/CLI/tests
+  - added `utils/pipeline_state.py` to centralize pipeline key naming, final-stage resolution, critic-round discovery, and render options
+  - added `utils/result_paths.py` so viewers share one GT path-resolution strategy
+  - refactored `demo.py` and `scripts/live_smoke_test.py` to use shared runtime-settings helpers instead of hand-rolled provider initialization
+  - refactored `VisualizerAgent` and `VanillaAgent` to use `BaseAgent.call_text_api` / `call_image_api`, removing duplicated provider branching
+  - fixed the remaining Gemini image-generation regression in `BaseAgent.call_image_api` and `VanillaAgent` by removing old `ImageConfig` assumptions
+  - added structured plot execution diagnostics in `utils/plot_executor.py`, and surfaced them to `CriticAgent` when plot rendering fails
+  - added cached reference metadata/image loading in `PlannerAgent`
+  - added cached style-guide loading in `PolishAgent`, and short-circuited polish when the model says `No changes needed`
+  - fixed `PolishAgent` to actually use its dedicated polish system prompt during image generation
+  - updated both visualizers to consume shared final-stage and GT-path helpers
+  - added focused tests for runtime settings, pipeline state helpers, base image API routing, and plot execution diagnostics
+  - revalidated live smoke on 2026-03-09 after the refactor:
+    - `diagram` via `gemini-3.1-flash-lite-preview` + `gemini-3.1-flash-image-preview`: passed (`results/smoke/diagram/20260309_210722_gemini_diagram.json`)
+    - `plot` via `gemini-3.1-flash-lite-preview`: passed (`results/smoke/plot/20260309_210752_gemini_plot.json`)
+    - `diagram` via `evolink` + `nano-banana-2-lite`: still blocked by missing local Evolink API key
+- 2026-03-09 Completed in Wave 4:
+  - added `utils/pipeline_registry.py` so supported `exp_mode` values are declared in one registry instead of hard-coded across call sites
+  - refactored `PaperVizProcessor.process_single_query()` to execute registry-driven stage specs instead of one large `if/elif` block
+  - added `utils/concurrency.py` and replaced the old no-op `auto` concurrency logic with workload-aware heuristics
+  - fixed `main.py --exp_mode` default from invalid `dev` to valid `dev_full`, and wired CLI choices to the registry
+  - added shared task-type detection for viewers via `utils.pipeline_state.detect_task_type_from_result`
+  - revalidated the post-registry refactor on 2026-03-09 with:
+    - `diagram` via `gemini-3.1-flash-lite-preview` + `gemini-3.1-flash-image-preview`: passed (`results/smoke/diagram/20260309_211635_gemini_diagram.json`)
+    - `plot` via `gemini-3.1-flash-lite-preview`: passed (`results/smoke/plot/20260309_211703_gemini_plot.json`)
+  - added focused tests for pipeline registry, processor registry execution, and auto concurrency heuristics
+- 2026-03-09 Completed in Wave 5:
+  - upgraded the refine tab to run jobs in a background thread so the page is no longer blocked by synchronous `asyncio.run(...)`
+  - added user-visible stop support for refine jobs via cooperative cancel events and retry-loop cancellation checks
+  - preserved refine progress, recent status lines, provider/model metadata, and finished outputs through session state
+  - added unit tests for background refine job completion and cancellation without requiring real provider calls
+  - pointed `requirements.txt` at editable package install so `pyproject.toml` becomes the dependency source of truth for normal installs
+- 2026-03-09 Completed in Wave 6:
+  - added `utils/dataset_paths.py` to centralize dataset-root, split-file, reference-file, and asset-path resolution
+  - refactored `main.py` to resolve dataset split inputs through shared dataset helpers instead of hand-built `data/PaperBananaBench/...` paths
+  - refactored `RetrieverAgent`, `PlannerAgent`, `PolishAgent`, and `utils/eval_toolkits.py` to honor `ExpConfig.dataset_name` for references and GT assets
+  - updated `utils/result_paths.py` and both Streamlit viewers to resolve GT assets using per-result `dataset_name` metadata when available
+  - updated demo candidate generation to accept a user-provided dataset name for retrieval/reference assets instead of hard-coding `PaperBananaBench`
+  - updated `scripts/live_smoke_test.py` to accept/store `--dataset_name` so smoke runs can validate custom dataset asset layouts
+  - added pipeline result metadata defaults for `dataset_name`, `task_name`, and `exp_mode` in `PaperVizProcessor`
+  - added focused tests for dataset-aware path helpers and result metadata propagation
+  - validated on 2026-03-09 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`33` tests passed)
+- 2026-03-09 Completed in Wave 7:
+  - added `utils/result_bundle.py` as the shared loader/writer for legacy result arrays, JSONL files, old smoke wrappers, and the new portable bundle schema
+  - standardized portable bundle files around `schema` / `schema_version` / `manifest` / `summary` / `failures` / `results`
+  - updated `main.py` to keep writing the legacy array JSON while also emitting a companion `.bundle.json` with run manifest metadata
+  - updated `demo.py` to save a portable bundle alongside the legacy demo JSON and expose both downloads in the UI
+  - updated `scripts/live_smoke_test.py` to emit the same standardized bundle schema that viewers now load
+  - updated both Streamlit viewers to load legacy files and wrapped bundles through one shared loader, and to surface run-manifest metadata in the sidebar
+  - hardened `utils/run_report.py` and `utils/pipeline_state.py` so summary generation and task-type inference also tolerate wrapped bundle payloads when they are passed directly
+  - added focused tests for legacy JSON arrays, JSONL files, old wrapped smoke payloads, and standardized bundle writing
+  - validated on 2026-03-09 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`39` tests passed)
+- 2026-03-10 Completed in Wave 8:
+  - added `utils/result_order.py` to centralize stable input indexing, candidate-id fallback, and deterministic result sorting
+  - updated `PaperVizProcessor.process_queries_batch()` to backfill `input_index` / `candidate_id` and yield results in original input order even when tasks complete out of order
+  - updated CLI saves to sort results before writing legacy JSON and bundle outputs, so partial and final exports stay deterministic
+  - updated demo result display and ZIP export to label/download by stable candidate identifiers instead of grid indexes
+  - upgraded run naming in `ExpConfig` and demo exports to include second-level timestamps plus provider/model-aware slugs, reducing overwrite risk during repeated experiments
+  - added focused tests for deterministic batch ordering, candidate-id fallback, result-order helpers, and run-name sanitization
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`45` tests passed)
+- 2026-03-10 Completed in Wave 9:
+  - extended `PipelineSpec` with render-stage metadata so registry can describe displayable stages and the default base render source
+  - added `pipeline_spec` result metadata in `PaperVizProcessor`, making produced results self-describe their stage contract instead of forcing viewers to guess from `exp_mode`
+  - refactored `utils/pipeline_state.py` to resolve final outputs and available render stages from registry metadata, with backward-compatible inference for older result files
+  - refactored `utils/demo_task_utils.py` so demo timelines no longer special-case `demo_full` when deciding whether stylist stages exist
+  - updated both viewers to use registry-derived stage labels / display modes, removing the old `Planner / Vanilla` conflation and hard-coded mode mapping
+  - added focused tests for registry metadata, stylist-stage fallback selection, render-stage entry construction, and pipeline metadata propagation
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`49` tests passed)
+- 2026-03-10 Completed in Wave 10:
+  - added `RuntimeContext` plus `use_runtime_context()` / `close_runtime_context()` in `utils/generation_utils.py`, so provider clients and runtime status hooks can be scoped per run instead of living only in module-level globals
+  - refactored Gemini / Evolink / Anthropic / OpenAI call helpers to resolve clients from the active runtime context first, while keeping the default global context as a backward-compatible fallback
+  - added `build_runtime_context()` in `utils/runtime_settings.py` and updated CLI, Streamlit generation, Streamlit refine jobs, and live smoke runs to create isolated per-run runtime contexts
+  - isolated refine execution from generation execution in `demo.py`, including runtime-context reuse across concurrent refine variants and targeted runtime reinitialization for recoverable socket failures
+  - added `PaperVizProcessor.shutdown()` and wired CLI/demo/smoke `finally` blocks to close both provider runtime resources and agent-owned resources in one place
+  - added focused tests for concurrent runtime-context isolation, owned-vs-unowned provider cleanup, runtime-context builder wiring, and processor shutdown behavior
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`54` tests passed)
+- 2026-03-10 Completed in Wave 11:
+  - upgraded demo candidate generation from a blocking `asyncio.run(...)` button handler to a background job model with `GenerationJobState`, shared job registries, progress/status snapshots, and cooperative cancel handling for unscheduled candidates
+  - refactored `PaperVizProcessor.process_queries_batch()` to schedule work incrementally instead of creating every task up front, enabling generation-stop semantics without losing deterministic result ordering
+  - added demo helpers for portable generation artifact writing/loading so background jobs and history replay both use the same saved bundle/json contract
+  - added demo history replay for saved `.bundle.json` files, allowing prior runs to be loaded back into the main result grid without leaving the app
+  - added candidate-to-refine staging so any generated candidate can become the input source for the refine tab through session state instead of manual re-upload
+  - added a plot rerender workspace in the demo so final Matplotlib code can be loaded, edited, re-rendered locally, and optionally forwarded into the refine tab
+  - added focused tests for generation background jobs, generation cancellation, history bundle loading, candidate-to-refine staging, and processor cancellation behavior
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`59` tests passed)
+- 2026-03-10 Completed in Wave 12:
+  - aligned the Streamlit demo with CLI retrieval semantics by adding `manual` retrieval to the generation UI and allowing `max_critic_rounds=0` for low-cost dry runs
+  - added `utils/plot_input_utils.py` and wired the demo plot flow to parse JSON / CSV / Markdown table inputs, preview structured rows, and require an explicit raw-text override when parsing fails
+  - implemented real plot `manual` retrieval support in `RetrieverAgent` by loading the dataset’s manual reference file instead of silently returning an empty list
+  - replaced full-pool LLM retrieval with a two-stage retriever path: lightweight token-overlap prefiltering followed by the existing LLM rerank on a shortlist, dramatically reducing prompt size for large reference sets
+  - updated auto retrieval to pass `retrieved_examples` directly into the planner, reducing repeated disk reads after the rerank stage
+  - added focused tests for plot input parsing, plot manual retrieval, prefilter shortlist relevance, and auto retrieval example propagation
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py agents utils tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_plot_input_utils tests.test_retriever_agent tests.test_demo_task_utils`
+- 2026-03-10 Completed in Wave 13:
+  - refreshed README install/run guidance to match the current `uv`-first workflow, demo background jobs, bundle/history replay, candidate-to-refine handoff, and current result directory layout
+  - added a testable `get_demo_results_root()` helper and expanded demo history coverage to exercise bundle-file discovery order in background-generation tests
+  - wired `providers.create_provider()` back into runtime initialization for Evolink so the provider factory is no longer a dead abstraction
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`66` tests passed)
+- 2026-03-10 Completed in Wave 14:
+  - checked in `uv.lock` so repository installs can resolve from one shared lockfile instead of relying only on open-ended dependency resolution
+  - updated README and `requirements.txt` to make `uv sync --locked` the documented reproducible local setup path while keeping editable installs available for the shared tool workflow
+  - added dependency metadata regression coverage so `README.md`, `requirements.txt`, `pyproject.toml`, and `uv.lock` stay aligned
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`70` tests passed)
+- 2026-03-10 Live validation:
+  - confirmed the team's real-test defaults should remain `gemini-3.1-flash-lite-preview` for text and `gemini-3.1-flash-image-preview` for image generation/editing
+  - confirmed Evolink remains a placeholder-only path in this workspace; there is no local Evolink key and live validation should not target it unless the user explicitly changes that setup
+  - live smoke passed for `diagram` with `demo_full`, `manual` retrieval requested, and `1` critic round using:
+    - text model `gemini-3.1-flash-lite-preview`
+    - image model `gemini-3.1-flash-image-preview`
+    - output `results/smoke/diagram/20260310_021019_gemini_diagram.json`
+  - live smoke passed for `plot` with `demo_full`, `manual` retrieval requested, and `1` critic round using:
+    - text model `gemini-3.1-flash-lite-preview`
+    - image model `gemini-3.1-flash-image-preview`
+    - output `results/smoke/plot/20260310_021109_gemini_plot.json`
+  - live refine passed via `demo.refine_images_with_count(...)` against the generated diagram artifact, producing:
+    - `results/smoke/refine/20260310_021336_gemini_refine.png`
+  - real refine uncovered and we fixed a bare-mode `NameError` in `demo.refine_images_with_count()` by making `generation_utils` an explicit module dependency and adding regression coverage in `tests/test_refine_background.py`
+  - note: both live smoke runs requested `manual` retrieval but the local dataset currently lacks `data/PaperBananaBench/{diagram,plot}/agent_selected_12.json`, so runtime fell back to `retrieval_setting='none'`
+- 2026-03-10 Manual-retrieval investigation:
+  - local dataset inspection shows `data/PaperBananaBench/{diagram,plot}/` currently contains `ref.json`, `test.json`, and smoke artifacts, but no `agent_selected_12.json`
+  - upstream `dwzhu-pku/PaperBanana` and `Mylszd/PaperBanana-CN` both hard-code `manual` retrieval to `data/PaperBananaBench/{task}/agent_selected_12.json`
+  - in the original upstream code, `diagram` manual mode loads full examples from that file, while `plot` manual mode was still an empty placeholder
+  - our Wave 12 refactor preserved the same filename contract and extended it to `plot`, which means the code path is now complete but still depends on a curated file that is not part of our local extracted dataset
+  - Planner consumes manual references as full few-shot examples (`content + visual_intent + GT image`), so `agent_selected_12.json` should match the `ref.json` item schema rather than only storing IDs
+  - Hugging Face dataset tree for `dwzhu/PaperBananaBench` currently exposes a top-level `PaperBananaBench.zip`; the curated `agent_selected_12.json` subset is therefore best treated as a repo-side/manual-selection convention, not a guaranteed dataset-distribution contract
+  - paper inspection for arXiv:2601.23265 reinforces this interpretation: the paper describes a full reference set (292 reference cases for diagrams; 240 reference examples for plots) and a Retriever that dynamically selects the Top 10 examples, but it does not document any shipped file or benchmark contract named `agent_selected_12.json`
+  - the only explicit manual-selection note in the paper concerns choosing the best generated candidate for figures shown in the manuscript, which is separate from retrieval-time few-shot reference selection
+- 2026-03-10 Completed in Wave 15:
+  - introduced `utils/retrieval_settings.py` so `manual` is now treated as a legacy alias and the canonical retrieval mode is `curated`
+  - introduced `utils/retrieval_profiles.py` to load fixed few-shot profiles from `data/<dataset>/<task>/manual_profiles/<profile>.json`, while preserving backward compatibility for the legacy default file `agent_selected_12.json`
+  - curated profiles now support either full example payloads or ID-only payloads that join back to `ref.json`, which is a better fit for custom datasets and reduces duplicate reference data
+  - updated `ExpConfig`, run naming, result bundles, processor metadata, CLI, live smoke, and demo background jobs to carry `curated_profile` consistently
+  - updated the Streamlit generation UI so fixed few-shot retrieval is surfaced as `curated`, with explicit path/status messaging, while avoiding the old product-facing implication that users could manually pick references in-app
+  - added regression coverage for curated profile loading, legacy alias normalization, custom-profile metadata propagation, and generation background snapshots
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall docs main.py demo.py agents utils visualize scripts tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'` (`75` tests passed)
+
+- 2026-03-10 Completed in Wave 16:
+ - 2026-03-14 Generation streaming recovery:
+  - traced the “点击生成后前端没有任何提示” regression to `demo.py` UI-state restore semantics rather than provider/runtime execution
+  - root cause: `restore_persisted_demo_ui_state()` used to unconditionally clear `active_generation_job_id` and also skipped restoring it from persisted UI state, so every rerun/reload severed the live generation panel from the still-running background job
+  - architectural rule going forward: `active_generation_job_id` / `active_refine_job_id` are lightweight runtime pointers and must be restored together with snapshot validation; they are not equivalent to restoring heavy result payloads
+  - keep the existing policy of not auto-restoring full completed generation results on reload, but do restore active job pointers so runtime panels, event timelines, and streaming previews survive reruns
+  - moved the demo generation runtime panel ahead of the start button flow so background-job progress is visible in the main viewport instead of being hidden below the fold
+  - added candidate-stage tracking to `GenerationJobState`, letting the UI show per-candidate live stages even before a full candidate finishes
+  - bridged key generation loggers (`PaperVizProcessor`, agents, runtime helpers) into generation job `status_history`, so the Streamlit page can display synchronized runtime logs instead of relying on the external console
+  - applied the same foreground-status pattern to refine jobs, including a first-screen runtime card, longer status history retention, clearer startup logging, and disabled duplicate submits while a refine task is already running
+  - reduced duplicate terminal-only progress noise in demo runs by disabling `tqdm` when a UI status callback is present
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py utils tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_generation_background`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_refine_background`
+
+- 2026-03-10 Completed in Wave 17:
+  - manual Playwright validation against a fresh Streamlit instance on `http://localhost:8502` exposed a deeper issue: generation/refine runtime cards still disappeared after click because background job registries lived in `demo.py` module globals
+  - root cause is Streamlit rerun semantics: each rerun re-executes `demo.py`, so plain module-level `GENERATION_JOBS` / `REFINE_JOBS` dicts are not a reliable cross-rerun state channel for background threads
+  - fixed by moving the executor/lock/job-registry bundle behind `get_background_job_runtime()`, backed by `st.cache_resource` in real app runs and a process-local fallback in non-Streamlit unit tests
+  - added regression coverage asserting the background runtime registry is a shared resource, so future refactors do not silently break live progress visibility again
+
+- 2026-03-10 Completed in Wave 18:
+  - switched demo candidate concurrency to an aggressive `auto` policy: the UI and runtime now both honor the user-requested candidate count / max-concurrent limit directly, instead of silently capping most Gemini runs to a much smaller heuristic
+  - extended generation jobs with structured candidate snapshots and an event timeline so the Streamlit page can stream `queued -> scheduled -> stage enter -> preview ready -> candidate ready` updates below the start button
+  - wired `PaperVizProcessor` stage transitions and preview-ready image emissions into the job timeline, so the first successful visualizer image appears in the live stream before the full run completes
+  - updated Gemini retry behavior to use a cost-aware fallback ladder (`gemini-3.1-pro-preview` -> `gemini-3.1-flash-lite-preview` -> `gemini-3-flash-preview` for text; `gemini-3-pro-image-preview` -> `gemini-3.1-flash-image-preview` for image), with cancellable infinite retry for transient/provider-side instability rather than eager terminal failure on flaky Pro calls
+  - changed demo UI-state persistence from a disk file in `results/demo/_ui_state/` to a shared in-process runtime store, so refresh restores config, staged refine inputs, and active job pointers without writing API keys to disk
+  - hardened cached runtime compatibility with `_normalize_background_job_runtime(...)`, allowing hot-reloaded Streamlit processes to backfill newly added runtime keys instead of crashing on stale cached dictionaries
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py utils tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_concurrency tests.test_generation_background tests.test_generation_utils_retry tests.test_refine_background tests.test_runtime_settings`
+  - live Playwright validation on `http://127.0.0.1:8503` confirmed:
+    - `候选数=8`, `并发上限=40`, `auto` now renders `有效并发=8`
+    - a real generation run shows the new `⚡ 流式生成展示` section with event timeline entries for slot wait, scheduling, planner, visualizer, preview-ready, and critic stages
+    - a hard browser refresh during an active run restores the configured models/API key/inputs and reconnects the page to the running job panel and live stream
+    - after refresh, the live stream continues forward and shows the first preview image before the full candidate finishes
+
+- 2026-03-10 Completed in Wave 19:
+  - kept the existing final-result ZIP export but extracted it into a helper so it no longer lives as inline UI-only logic
+  - added a second demo download path for a “full process overview” ZIP that packages each candidate into Chinese-named folders with:
+    - run overview files
+    - final result image / final description / final plot code
+    - per-stage evolution folders (planner / stylist / critic rounds / polish when present)
+    - per-stage rendered image, description, plot code, and critic suggestions where available
+    - per-candidate raw JSON record
+  - used candidate-first directory layout and explicit Chinese stage labels so users can understand a candidate’s full evolution at a glance from the extracted folder tree
+  - added regression coverage for both diagram and plot full-process ZIP structures, including intermediate stage images, critic suggestions, and plot code exports
+  - validated on 2026-03-10 with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py utils tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_generation_background tests.test_demo_task_utils tests.test_concurrency tests.test_generation_utils_retry tests.test_refine_background tests.test_runtime_settings`
+
+- 2026-03-09 Deferred detail:
+  - refine cancellation is cooperative: it can stop future retries and pending variants, but it cannot interrupt a single provider request already in flight.
+  - dependency versions are still not locked; environment reproduction is improved, but not yet fully pinned.
+  - portable bundles currently standardize metadata and result payloads, but they do not inline external GT/reference assets; viewers still expect the referenced dataset files to exist locally.
+- 2026-03-11 Documentation refresh:
+  - rewrote the root `README.md` as a product-first Chinese document under the external name `PaperBanana-Pro`
+  - clarified that the project is now documented as an independently evolved personal project; the packaging direction was later aligned to `paperbanana-pro` with `paperbanana` kept as a compatibility alias
+  - updated public docs to center current GUI/CLI/viewer behavior, bundle outputs, curated retrieval profiles, and Chinese-only product positioning
+  - expanded the README with an upstream-vs-current comparison section grounded in the local `origin/main` baseline (`b644e51`) and added Playwright-captured GUI screenshots for replay/export, evolution timeline, refine handoff, plot parsing, and low-cost live generation
+- 2026-03-11 UI branding alignment:
+  - changed the Streamlit browser tab title from legacy `PaperBanana 并行演示` wording to `PaperBanana-Pro 科研插图工作台`
+  - changed the main demo page title from `PaperBanana 演示` to `PaperBanana-Pro 工作台` so the visible GUI matches the current product name
+  - added `自定义` model options for the Gemini text-model, image-model, and refine-image-model selectors, with persisted manual input state so advanced users can type arbitrary model ids in the GUI
+  - fixed the Streamlit sidebar `curated profile` state bug by separating the widget input key from the canonical stored profile key, avoiding `StreamlitAPIException` when normalizing user input
+  - refreshed the generation sidebar copy so task / pipeline / retrieval controls now use shorter Chinese labels and more actionable explanations instead of raw implementation-oriented names
+  - fixed GUI API-key persistence by making the sidebar rehydrate blank password fields from `configs/local/*.txt` and automatically write non-empty provider keys back to the local secret files, so browser refreshes and cold reloads no longer drop stored keys
+  - removed the remaining bracket-style pseudo-icons such as `[DOWN]` from the Streamlit demo UI, replacing them with emoji-first download labels and adding regression coverage to keep those placeholders out of both the main demo and the viewer entry points
+  - refreshed the two visualization entry points so their titles, file selectors, pagination controls, manifest labels, and debug panels use the same Chinese-first UI tone as the main `PaperBanana-Pro` demo
+  - tightened local-only repository hygiene by deciding that `AGENTS.md` and `.streamlit/credentials.toml` should stay local and be excluded via `.gitignore`; tracked local-only files still need `git rm --cached` once so ignore rules can take effect
+  - corrected the repository-asset boundary for `assets/readme/`: those screenshots are referenced by `README.md`, so they should remain commit-able project documentation instead of being ignored like local secrets
+  - after a stricter git-hygiene pass, the remaining non-ignored changes were confirmed to be repo-facing content only: `README.md`, `pyproject.toml`, `.github/workflows/publish.yml`, and the `assets/readme/` screenshots
+  - aligned the local git remotes with the repo's evolved identity by pointing `origin` at `elpsykongloo/PaperBanana-Pro` and keeping `dwzhu-pku/PaperBanana` as `upstream` for historical reference
+  - grouped the next commit boundary around repo identity and publishable assets only: `.gitignore` hygiene, removal of tracked local-only files, `pyproject.toml`, `cli.py`, `index.html`, `.github/workflows/publish.yml`, and `assets/readme/`, while intentionally leaving `README.md` out of that commit
+
+- 2026-03-11 Completed in Wave 20:
+  - unified demo, CLI, and runtime helper logging around one structured `RuntimeEvent` model in `utils/runtime_events.py`, with fixed fields for stage/retry/preview/error/artifact events
+  - upgraded `utils/log_config.py` so `setup_logging(...)` now supports `mode`, `force`, an optional in-process `event_sink`, third-party logger suppression, duplicate-event collapse, and optional file logging via `PAPERBANANA_LOG_FILE` / `PAPERBANANA_LOG_TO_FILE`
+  - removed the remaining bare `print(...)` debug path from `demo.py`, explicitly bootstrapped Streamlit logging through `setup_logging("INFO", mode="streamlit")`, and replaced legacy text-only job updates with structured event histories for both generation and refine jobs
+  - changed `PaperVizProcessor` to treat structured events as the primary progress channel and removed duplicate stage emissions that previously doubled the GUI event timeline
+  - lowered provider/client initialization chatter and moved verbose retrieval/polish diagnostics behind `DEBUG`, while keeping default `INFO` focused on start/retry/fallback/success/failure summaries
+  - refreshed the generation/refine runtime panels so both render recent high-signal logs plus an expandable full event timeline sourced from `event_history`
+  - eliminated the Streamlit `use_container_width` deprecation path in `demo.py` and the two viewer entry points by switching to `width="stretch"`
+  - added regression coverage for log formatting, duplicate suppression, event-sink wiring, source-level `print` / `use_container_width` bans, processor stage-event deduplication, and updated generation/refine background-job snapshots
+  - real Gemini validation on 2026-03-11 passed for:
+    - `scripts/live_smoke_test.py --task_name diagram --provider gemini --exp_mode demo_planner_critic --retrieval_setting none --max_critic_rounds 1` -> `results/smoke/diagram/20260311_183754_gemini_diagram.json`
+    - `scripts/live_smoke_test.py --task_name plot --provider gemini --exp_mode demo_planner_critic --retrieval_setting none --max_critic_rounds 1` -> `results/smoke/plot/20260311_183733_gemini_plot.json`
+    - real `demo.start_generation_background_job(...)` + `demo.start_refine_background_job(...)` in bare mode against Gemini after fixing a live-only refine regression where `GenerateContentConfig.candidate_count=None` triggered a `None > 8` comparison inside `call_gemini_with_retry_async(...)`
+    - `main.py --dataset_name PaperBananaBench --task_name diagram --split_name smoke_cli --exp_mode demo_planner_critic --provider gemini --retrieval_setting none --max_critic_rounds 0 --concurrency_mode manual --max_concurrent 1`
+- 2026-03-11 Repo-first release-contract hardening:
+  - deleted `Dockerfile` and `.dockerignore`; the repository no longer advertises Docker support until a real container workflow is reintroduced
+  - moved the old PyPI publish workflow out of `.github/workflows/` into `.github/workflows-disabled/` so publication is explicitly archived instead of silently broken
+  - added a new Windows CI workflow that validates the actually supported contract: `uv sync --locked`, `compileall`, `unittest discover`, `uv tool install --editable .`, `paperbanana --help`, `paperbanana-pro --help`, and `paperbanana run --help` from outside the repo root
+  - updated `README.md` and `cli.py` so the project now consistently documents repo-first editable as the only officially supported install path, moves standalone global installation / PyPI publication into TODO, and treats `paperbanana` as the primary user-facing command
+  - unified default provider selection to `gemini` across `ExpConfig`, CLI parsing, demo defaults, and runtime helpers
+  - made provider resolution strict: unknown providers now raise instead of silently falling back to Gemini, and Evolink `base_url` now travels through `RuntimeSettings` into the per-run runtime context
+  - removed model-name-based provider guessing in `BaseAgent`, so custom model ids no longer switch image generation from Gemini to OpenAI behind the user's back
+  - added explicit local-key clearing for both generation and refine providers in the demo while keeping the existing auto-persist-to-`configs/local/*.txt` behavior
+  - moved refine controls out of the shared Streamlit sidebar into the refine tab body, eliminating cross-tab sidebar state leakage
+  - refreshed pipeline/user-facing labels to Chinese product wording, stopped exposing raw `target_*` artifact keys as preview labels, and standardized human-visible candidate numbering to 1-based labels in the demo and viewers
+  - updated `show_pipeline_evolution.py` and `show_referenced_eval.py` to prefer `candidate_id`, search across legacy fallback identifiers, surface plot descriptions and Matplotlib code separately, and hide the old debug-only re-eval panel from the public viewer UI
+  - validation passed with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall cli.py demo.py main.py utils visualize tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests`
+    - `uv tool install --editable . --force`
+    - `paperbanana-pro --help`
+- 2026-03-12 Refine-tab UI polish:
+  - removed the remaining Streamlit widget warning for `tab1_model_name_selector` by switching preset/custom model selectors to pure session-state initialization without passing a conflicting widget default/index
+  - tightened the generation/refine API-key row into a full-width password field plus a second row for local-secret status and the clear action, so the `Google API Key / 本地密钥 / 清除` area no longer wraps awkwardly on narrower widths
+  - added a small DOM hook via `st.html(..., unsafe_allow_javascript=True)` that watches the active tab and automatically collapses the shared left sidebar whenever the `✨ 精修图像` tab becomes active
+  - validated with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py tests\test_demo_model_inputs.py`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_demo_model_inputs`
+- 2026-03-12 Generation progress sync:
+  - traced the stale `1/5` runtime-progress bug to `PaperVizProcessor.process_queries_batch(...)` buffering completed results by input order before yielding them upstream, while the demo candidate cards were already updating from real-time `candidate_result` events
+  - fixed generation job progress to synchronize against the count of terminal candidate snapshots (`completed` / `failed` / `cancelled`) and keep `progress_done` monotonic even if the slower ordered-yield callback reports a smaller number later
+  - added a regression test that reproduces the exact mismatch pattern: four candidates reach terminal state via events while the ordered progress callback still says `1/5`, and verifies the stored job snapshot now reports `4/5`
+  - validated with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py tests\test_generation_background.py`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_generation_background`
+- 2026-03-12 Sidebar restore on generation tab:
+  - refined the shared Streamlit sidebar DOM hook so it now records whether the sidebar was auto-collapsed by the `✨ 精修图像` tab instead of only reacting to the current expanded state
+  - when the user switches back to `📊 生成候选方案`, the hook will auto-expand the sidebar only if it was previously auto-collapsed by the refine-tab behavior, avoiding accidental overrides of a user’s own manual collapse choice on the generation tab
+  - aligned the selector set with the current Streamlit frontend contract by explicitly targeting `data-testid="stExpandSidebarButton"` for the collapsed-state reopen control
+- 2026-03-12 Demo workspace contract hardening (Wave 21 / Batch 1):
+  - replaced the old two-heavy-tab demo layout with an explicit `工作区` mode switch and conditional rendering, so generation and refine no longer share one large rerunning tab tree
+  - moved generation and refine submissions into `st.form(...)`, reducing accidental reruns while users edit inputs and making “only submit on click” the default interaction contract
+  - introduced a fragment-compatible refresh wrapper and split the running-state panels into local activity fragments, removing the old `time.sleep(1.0) + st.rerun()` polling loop from both generation and refine workspaces
+  - added durable demo job persistence in `utils/demo_job_store.py`: generation/refine job snapshots, event timelines, and a safe subset of UI session state now persist to disk under `results/demo/`, while API keys stay memory/local-secret-file only
+  - on restore, disk-backed jobs that were still marked `running` are now surfaced as `interrupted` snapshots with a recovery hint instead of silently disappearing, which makes app restart behavior explicit to the user
+  - split generation controls into a mainline product flow plus sidebar advanced settings, added quality/cost presets and centralized preflight reporting so missing inputs / missing API key / parse failures are summarized before launch
+  - added regression coverage for preflight validation plus disk fallback of generation/refine job snapshots and UI-state restore semantics
+  - validated with:
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall D:\PaperBanana`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests`
+- 2026-03-14 Streamlit 局部刷新经验：
+  - 后台任务“能看到实时进度”不等于实现方式正确；如果用浏览器层 `location.reload()` 驱动轮询，UI 会出现白屏、滚动跳动、焦点丢失和浏览器插件/翻译反复触发，这本质上是整页重载，不是局部流式更新
+  - 在当前仓库锁定的 `streamlit==1.55.0` 环境里，应优先使用 `st.fragment(run_every=...)` 实现后台任务活动区的局部刷新；`st.components.v1.html(...)` 适合嵌入 HTML，不适合承担执行流控制
+  - 推荐结构是“页面主体静止 + 活动区 fragment 轮询 + 终态只做一次全页同步”；运行中按钮优先走 fragment 范围 rerun，任务结束时再做一次 app 级 rerun 去同步 fragment 外的结果区
+  - 这类修复需要同时补两类回归：一类验证运行态确实走 fragment 路径，另一类直接防止源码重新引入 `location.reload()` 之类的浏览器级轮询 hack
