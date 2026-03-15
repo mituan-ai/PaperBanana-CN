@@ -22,6 +22,12 @@ class _FakeInteractiveStreamlit:
         self.selectbox_calls = []
         self.html_calls = []
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
     def selectbox(self, label, options, **kwargs):
         self.selectbox_calls.append(
             {
@@ -180,8 +186,25 @@ class DemoModelInputTest(unittest.TestCase):
             "local-google-key",
         )
 
+    def test_prepare_api_key_widget_state_keeps_widget_key_synced_with_canonical_value(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = "saved-google-key"
+        self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")] = ""
+
+        restored = demo.prepare_api_key_widget_state(
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            provider_defaults={"api_key_default": "saved-google-key"},
+        )
+
+        self.assertEqual(restored, "saved-google-key")
+        self.assertEqual(
+            self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")],
+            "saved-google-key",
+        )
+
     def test_prepare_api_key_widget_state_honors_pending_clear_request(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "persisted-key"
+        self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")] = "persisted-key"
         self.fake_streamlit.session_state["tab1_api_key_clear_requested"] = True
 
         restored = demo.prepare_api_key_widget_state(
@@ -192,7 +215,39 @@ class DemoModelInputTest(unittest.TestCase):
 
         self.assertEqual(restored, "")
         self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "")
+        self.assertEqual(
+            self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")],
+            "",
+        )
         self.assertNotIn("tab1_api_key_clear_requested", self.fake_streamlit.session_state)
+
+    def test_render_provider_api_key_controls_uses_separate_widget_key(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = "saved-google-key"
+        original_persist = demo.persist_provider_api_key_input
+        captured_calls = []
+        demo.persist_provider_api_key_input = lambda provider, api_key: captured_calls.append((provider, api_key))
+
+        try:
+            restored = demo.render_provider_api_key_controls(
+                provider="gemini",
+                provider_defaults={
+                    "api_key_label": "Google API Key",
+                    "api_key_help": "Google AI Studio API 密钥",
+                    "api_key_default": "saved-google-key",
+                },
+                session_key="tab1_api_key",
+                clear_request_key="tab1_api_key_clear_requested",
+                clear_button_key="tab1_clear_provider_api_key",
+            )
+        finally:
+            demo.persist_provider_api_key_input = original_persist
+
+        self.assertEqual(restored, "saved-google-key")
+        self.assertEqual(
+            self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")],
+            "saved-google-key",
+        )
+        self.assertEqual(captured_calls, [("gemini", "saved-google-key")])
 
     def test_build_api_key_storage_notice_reflects_local_secret_state(self):
         self.assertEqual(

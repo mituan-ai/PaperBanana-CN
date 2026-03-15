@@ -306,6 +306,17 @@ THUMBNAIL_MAX_SIZE = (480, 480)
 THUMBNAIL_JPEG_QUALITY = 70
 SINGLE_CANDIDATE_LIVE_PREVIEW_WIDTH = 720
 DOUBLE_CANDIDATE_LIVE_PREVIEW_WIDTH = 560
+REFINE_WORKSPACE_PREVIEW_WIDTH = 520
+REFINE_ORIGINAL_PREVIEW_WIDTH = 620
+SINGLE_REFINE_RESULT_PREVIEW_WIDTH = 500
+DOUBLE_REFINE_RESULT_PREVIEW_WIDTH = 400
+REFINE_HISTORY_PREVIEW_WIDTH = 220
+REFINE_HISTORY_PREVIEW_COLS = 4
+REFINE_STATUS_LINE_PREVIEW_COUNT = 6
+REFINE_WORKSPACE_VIEW_OPTIONS = ["工作台", "结果与状态", "版本历史"]
+REFINE_INTERNAL_VERSION_KEY_RE = re.compile(r"^v\d+$")
+REFINE_DISPLAY_VERSION_LABEL_RE = re.compile(r"^第\s*\d+\s*版$")
+REFINE_TASK_STATUS_RE = re.compile(r"^\[精修\]\[任务\s*(\d+)\]\s*(.+)$")
 
 
 def image_to_jpeg_thumbnail(img, max_size=THUMBNAIL_MAX_SIZE, quality=THUMBNAIL_JPEG_QUALITY):
@@ -337,6 +348,32 @@ def get_generation_live_row_layout(candidate_count: int):
     if normalized_count == 2:
         return [0.25, 1, 1, 0.25]
     return min(3, normalized_count)
+
+
+def get_refine_result_grid_columns(result_count: int) -> int:
+    """根据精修结果数量返回预览网格列数。"""
+    normalized_count = max(1, int(result_count))
+    if normalized_count == 1:
+        return 1
+    if normalized_count == 2:
+        return 2
+    return 3
+
+
+def get_refine_result_preview_width(result_count: int):
+    """根据精修结果数量返回预览宽度策略。"""
+    return SINGLE_REFINE_RESULT_PREVIEW_WIDTH if int(result_count) == 1 else "stretch"
+
+
+def get_refine_history_grid_columns(history_count: int) -> int:
+    """根据版本历史数量返回预览网格列数。"""
+    normalized_count = max(1, int(history_count))
+    return min(REFINE_HISTORY_PREVIEW_COLS, normalized_count)
+
+
+def get_refine_history_preview_width(history_count: int):
+    """根据版本历史数量返回预览宽度策略。"""
+    return REFINE_HISTORY_PREVIEW_WIDTH if int(history_count) == 1 else "stretch"
 
 
 def safe_log_text(value, max_len=2000):
@@ -703,6 +740,88 @@ def sanitize_refine_version_history() -> list[str]:
     return removed_labels
 
 
+def is_refine_auto_label(label: str, version_key: str) -> bool:
+    """判断一个版本标签是否只是系统自动生成的占位名。"""
+    normalized_label = clean_text(label).strip()
+    normalized_key = str(version_key or "").strip()
+    if not normalized_label:
+        return True
+    if normalized_key and normalized_label == normalized_key:
+        return True
+    return bool(
+        REFINE_INTERNAL_VERSION_KEY_RE.fullmatch(normalized_label)
+        or REFINE_DISPLAY_VERSION_LABEL_RE.fullmatch(normalized_label)
+    )
+
+
+def build_refine_version_display_map(history: list[dict] | None = None) -> dict[str, str]:
+    """为精修历史构建更易读的显示名称映射。"""
+    history = history if history is not None else get_refine_version_history()
+    display_map: dict[str, str] = {}
+    generated_version_index = 0
+    extra_source_index = 0
+
+    for history_index, entry in enumerate(history):
+        version_key = str(entry.get("version_key", "") or "")
+        if not version_key:
+            continue
+
+        stored_label = clean_text(str(entry.get("label", "") or "")).strip()
+        source_label = clean_text(str(entry.get("source_label", "") or "")).strip()
+        parent_version_key = str(entry.get("parent_version_key", "") or "")
+        if parent_version_key:
+            generated_version_index += 1
+            auto_label = f"第{generated_version_index}版"
+        elif history_index == 0:
+            auto_label = "原图"
+        elif source_label:
+            auto_label = source_label
+        else:
+            extra_source_index += 1
+            auto_label = f"输入图{extra_source_index}"
+
+        display_map[version_key] = (
+            stored_label if stored_label and not is_refine_auto_label(stored_label, version_key) else auto_label
+        )
+    return display_map
+
+
+def get_refine_version_display_label(
+    *,
+    version_key: str = "",
+    entry: dict | None = None,
+    display_map: dict | None = None,
+    history: list[dict] | None = None,
+) -> str:
+    """返回精修版本在界面中展示的友好名称。"""
+    resolved_entry = entry
+    resolved_history = history
+    if resolved_entry is None and version_key:
+        resolved_entry = find_refine_version_entry(version_key)
+    if resolved_entry is not None and not version_key:
+        version_key = str(resolved_entry.get("version_key", "") or "")
+    if display_map is None:
+        display_map = build_refine_version_display_map(resolved_history)
+    if version_key and version_key in display_map:
+        return display_map[version_key]
+    if resolved_entry is not None:
+        fallback_label = clean_text(str(resolved_entry.get("label", "") or "")).strip()
+        if fallback_label:
+            return fallback_label
+    return clean_text(str(version_key or "版本") or "版本")
+
+
+def get_next_refine_generated_label(history: list[dict] | None = None) -> str:
+    """为新的精修结果生成下一个用户可读标签。"""
+    history = history if history is not None else get_refine_version_history()
+    generated_count = sum(
+        1
+        for entry in history
+        if str(entry.get("parent_version_key", "") or "").strip()
+    )
+    return f"第{generated_count + 1}版"
+
+
 COMMON_ASPECT_RATIOS = [
     "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
 ]
@@ -849,18 +968,29 @@ def hydrate_api_key_session_state(
     return current_value
 
 
+def get_api_key_widget_key(session_key: str) -> str:
+    """为 API Key 输入框生成独立 widget key。"""
+    return f"{session_key}_input"
+
+
 def prepare_api_key_widget_state(
     *,
     session_key: str,
     clear_request_key: str,
     provider_defaults: dict[str, str],
 ) -> str:
+    widget_key = get_api_key_widget_key(session_key)
     if st.session_state.pop(clear_request_key, False):
         st.session_state[session_key] = ""
-    return hydrate_api_key_session_state(
+        st.session_state[widget_key] = ""
+    resolved_value = hydrate_api_key_session_state(
         session_key=session_key,
         provider_defaults=provider_defaults,
     )
+    current_widget_value = str(st.session_state.get(widget_key, "") or "").strip()
+    if current_widget_value != resolved_value:
+        st.session_state[widget_key] = resolved_value
+    return resolved_value
 
 
 def persist_provider_api_key_input(provider: str, api_key: str) -> None:
@@ -952,7 +1082,8 @@ def render_provider_api_key_controls(
     clear_request_key: str,
     clear_button_key: str,
 ) -> str:
-    prepare_api_key_widget_state(
+    widget_key = get_api_key_widget_key(session_key)
+    prepared_value = prepare_api_key_widget_state(
         session_key=session_key,
         clear_request_key=clear_request_key,
         provider_defaults=provider_defaults,
@@ -960,9 +1091,13 @@ def render_provider_api_key_controls(
     api_key = st.text_input(
         provider_defaults["api_key_label"],
         type="password",
-        key=session_key,
+        key=widget_key,
+        value=prepared_value,
         help=provider_defaults["api_key_help"],
     )
+    normalized_api_key = str(api_key or "").strip()
+    if str(st.session_state.get(session_key, "") or "").strip() != normalized_api_key:
+        st.session_state[session_key] = normalized_api_key
     notice_col, clear_col = st.columns([4, 1], vertical_alignment="center")
     with notice_col:
         st.caption(build_api_key_storage_notice(provider_defaults))
@@ -978,8 +1113,8 @@ def render_provider_api_key_controls(
                 session_key=session_key,
                 clear_request_key=clear_request_key,
             )
-    persist_provider_api_key_input(provider, api_key)
-    return api_key
+    persist_provider_api_key_input(provider, normalized_api_key)
+    return normalized_api_key
 
 
 def inject_refine_tab_sidebar_autocollapse_hook() -> None:
@@ -1396,6 +1531,7 @@ PERSISTED_UI_STATE_KEYS = {
     "refine_image_model_name",
     "refine_image_model_name_selector",
     "refine_image_model_name_custom",
+    "refine_workspace_view",
     "edit_prompt",
     "refine_input_source",
     "refine_staged_input_mime_type",
@@ -2274,10 +2410,11 @@ def activate_refine_version(version_key: str) -> bool:
     entry = find_refine_version_entry(version_key)
     if not entry:
         return False
+    display_label = get_refine_version_display_label(entry=entry)
     stage_refine_source_image(
         entry.get("image_bytes", b""),
         input_mime_type=entry.get("input_mime_type", "image/png"),
-        source_label=entry.get("label", "历史版本"),
+        source_label=display_label or "历史版本",
         default_prompt=entry.get("edit_prompt", ""),
     )
     st.session_state["refine_active_version_key"] = version_key
@@ -2323,11 +2460,12 @@ def append_refine_snapshot_to_version_history(
         if any(entry.get("image_digest") == image_digest for entry in history):
             continue
         version_key, _ = _next_refine_version_key()
+        display_label = get_next_refine_generated_label(history)
         history.append(
             {
                 "version_key": version_key,
                 "parent_version_key": parent_version_key,
-                "label": version_key,
+                "label": display_label,
                 "source_label": source_label,
                 "edit_prompt": clean_text(edit_prompt),
                 "created_at": snapshot.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
@@ -2357,9 +2495,14 @@ def stage_refine_source_image(
     st.session_state["refine_staged_image_bytes"] = image_bytes
     st.session_state["refine_staged_input_mime_type"] = normalize_image_mime_type(input_mime_type)
     st.session_state["refine_staged_source_label"] = source_label
-    st.session_state["refine_input_source"] = "候选方案"
+    _queue_refine_widget_state_updates(
+        {
+            "refine_input_source": "候选方案",
+            "refine_workspace_view": REFINE_WORKSPACE_VIEW_OPTIONS[0],
+        }
+    )
     if default_prompt and not st.session_state.get("edit_prompt", "").strip():
-        st.session_state["edit_prompt"] = default_prompt
+        _queue_refine_widget_state_updates({"edit_prompt": default_prompt})
 
 
 def clear_staged_refine_source() -> None:
@@ -2370,7 +2513,12 @@ def clear_staged_refine_source() -> None:
     ):
         st.session_state.pop(key, None)
     if st.session_state.get("refine_input_source") == "候选方案":
-        st.session_state["refine_input_source"] = "上传图像"
+        _queue_refine_widget_state_updates(
+            {
+                "refine_input_source": "上传图像",
+                "refine_workspace_view": REFINE_WORKSPACE_VIEW_OPTIONS[0],
+            }
+        )
 
 
 def extract_result_image_payload(
@@ -4600,9 +4748,10 @@ def render_refine_version_history_panel() -> None:
     st.divider()
     st.markdown("## 🧬 精修版本历史")
     st.caption("每次精修结果都会形成独立版本分支。你可以从任意历史版本继续精修，或回退到它的父版本。")
+    display_map = build_refine_version_display_map(history)
 
     history_options = {
-        f"{entry.get('label', entry.get('version_key', '版本'))} | {entry.get('created_at', 'N/A')}": str(
+        f"{get_refine_version_display_label(entry=entry, display_map=display_map, history=history)} | {entry.get('created_at', 'N/A')}": str(
             entry.get("version_key", "")
         )
         for entry in history
@@ -4661,9 +4810,14 @@ def render_refine_version_history_panel() -> None:
             persist_demo_ui_state()
             st.rerun()
 
-    preview_cols = 3
+    preview_cols = get_refine_history_grid_columns(len(history))
+    preview_width = get_refine_history_preview_width(len(history))
     for row_start in range(0, len(history), preview_cols):
-        cols = st.columns(preview_cols)
+        if preview_cols == 1:
+            _, center_col, _ = st.columns([1, 2, 1], gap="large")
+            cols = [center_col]
+        else:
+            cols = st.columns(preview_cols, gap="medium")
         for col_offset in range(preview_cols):
             history_index = row_start + col_offset
             if history_index >= len(history):
@@ -4671,17 +4825,31 @@ def render_refine_version_history_panel() -> None:
             entry = history[history_index]
             with cols[col_offset]:
                 with st.container(border=True):
-                    st.markdown(f"**{entry.get('label', entry.get('version_key', '版本'))}**")
-                    parent_text = str(entry.get("parent_version_key", "") or "原始输入")
+                    display_label = get_refine_version_display_label(
+                        entry=entry,
+                        display_map=display_map,
+                        history=history,
+                    )
+                    parent_version_key = str(entry.get("parent_version_key", "") or "")
+                    parent_text = (
+                        get_refine_version_display_label(
+                            version_key=parent_version_key,
+                            display_map=display_map,
+                            history=history,
+                        )
+                        if parent_version_key
+                        else "原始输入"
+                    )
+                    st.markdown(f"**{display_label}**")
                     st.caption(f"来源：{entry.get('source_label', 'N/A')} | 父版本：{parent_text}")
                     image_bytes = entry.get("image_bytes", b"")
                     if image_bytes:
                         preview_image, preview_error = load_refine_preview_image(
                             image_bytes,
-                            source_label=str(entry.get("label", entry.get("version_key", "版本")) or "历史版本"),
+                            source_label=str(display_label or "历史版本"),
                         )
                         if preview_image is not None:
-                            st.image(preview_image, width="stretch")
+                            st.image(preview_image, width=preview_width)
                         elif preview_error:
                             st.caption(preview_error)
                     if entry.get("edit_prompt"):
@@ -4717,6 +4885,8 @@ def render_refine_results_section(
     )
     failed_refine_results = st.session_state.get("refine_failed_results", [])
     latest_version_keys = list(st.session_state.get("refine_latest_version_keys", []) or [])
+    history = get_refine_version_history()
+    display_map = build_refine_version_display_map(history)
     st.caption(
         f"生成时间：{st.session_state.get('refine_timestamp', 'N/A')} | "
         f"分辨率：{final_resolution} | 张数：{final_count} | "
@@ -4727,7 +4897,13 @@ def render_refine_results_section(
         for version_key in latest_version_keys:
             entry = find_refine_version_entry(version_key)
             if entry is not None:
-                latest_labels.append(str(entry.get("label", version_key) or version_key))
+                latest_labels.append(
+                    get_refine_version_display_label(
+                        entry=entry,
+                        display_map=display_map,
+                        history=history,
+                    )
+                )
         if latest_labels:
             st.info(
                 f"当前结果已写入版本链：{' / '.join(latest_labels)}。你可以直接继续精修某个版本，或在下方版本历史里切换分支。"
@@ -4749,7 +4925,9 @@ def render_refine_results_section(
             source_label="精修前图像",
         )
         if original_preview_image is not None:
-            st.image(original_preview_image, width="stretch")
+            _, center_col, _ = st.columns([1, 2, 1], gap="large")
+            with center_col:
+                st.image(original_preview_image, width=REFINE_ORIGINAL_PREVIEW_WIDTH)
         elif original_preview_error:
             st.warning(original_preview_error)
 
@@ -4768,11 +4946,14 @@ def render_refine_results_section(
             file_name = f"refined_{final_resolution}_{idx}.png"
             zip_file.writestr(file_name, img_bytes)
 
-    # 两列网格预览，缩小占位（仅影响预览，不影响下载原图）
-    preview_cols = 2
-    preview_width_px = 420
+    preview_cols = get_refine_result_grid_columns(len(refined_images))
+    preview_width = get_refine_result_preview_width(len(refined_images))
     for row_start in range(0, len(refined_images), preview_cols):
-        cols = st.columns(preview_cols, gap="large")
+        if preview_cols == 1:
+            _, center_col, _ = st.columns([1, 2, 1], gap="large")
+            cols = [center_col]
+        else:
+            cols = st.columns(preview_cols, gap="medium")
         for col_offset in range(preview_cols):
             item_pos = row_start + col_offset
             if item_pos >= len(refined_images):
@@ -4791,12 +4972,14 @@ def render_refine_results_section(
                     source_label=f"精修结果 {idx}",
                 )
                 if refined_image is not None:
-                    st.image(refined_image, width=preview_width_px)
+                    st.image(refined_image, width=preview_width)
                 elif refined_preview_error:
                     st.warning(refined_preview_error)
                 version_key = latest_version_keys[item_pos] if item_pos < len(latest_version_keys) else ""
                 if version_key:
-                    st.caption(f"版本：{version_key}")
+                    st.caption(
+                        f"版本：{get_refine_version_display_label(version_key=version_key, display_map=display_map, history=history)}"
+                    )
                     if st.button(
                         "↺ 继续精修此版本",
                         key=f"refine_continue_{version_key}_{item_pos}",
@@ -4848,6 +5031,22 @@ def _queue_generation_widget_state_updates(updates: dict) -> None:
 
 def _apply_pending_generation_widget_state_updates() -> None:
     pending_updates = st.session_state.pop("_pending_generation_widget_updates", None)
+    if not isinstance(pending_updates, dict):
+        return
+    for key, value in pending_updates.items():
+        st.session_state[str(key)] = value
+
+
+def _queue_refine_widget_state_updates(updates: dict) -> None:
+    pending_updates = st.session_state.get("_pending_refine_widget_updates", {})
+    if not isinstance(pending_updates, dict):
+        pending_updates = {}
+    pending_updates.update({str(key): value for key, value in dict(updates or {}).items()})
+    st.session_state["_pending_refine_widget_updates"] = pending_updates
+
+
+def _apply_pending_refine_widget_state_updates() -> None:
+    pending_updates = st.session_state.pop("_pending_refine_widget_updates", None)
     if not isinstance(pending_updates, dict):
         return
     for key, value in pending_updates.items():
@@ -4928,28 +5127,30 @@ def render_preflight_summary(report: dict) -> None:
         st.caption(" · ".join(notes))
 
 
+def render_sidebar_section_styles() -> None:
+    """渲染侧边栏统一样式。"""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.5rem; }
+        [data-testid="stSidebar"] hr { margin: 0.25rem 0; }
+        .sb-section {
+            font-size: 0.7rem; font-weight: 700;
+            color: #c47d15;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            margin: 14px 0 4px 0; padding: 0 0 4px 0;
+            border-bottom: 2px solid #f5deb3;
+        }
+        .sb-section:first-of-type { margin-top: 6px; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_generation_sidebar_controls() -> dict:
     with st.sidebar:
-        st.markdown(
-            """
-            <style>
-            /* ── sidebar global spacing ── */
-            [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.5rem; }
-            [data-testid="stSidebar"] hr { margin: 0.25rem 0; }
-
-            /* ── section label ── */
-            .sb-section {
-                font-size: 0.7rem; font-weight: 700;
-                color: #c47d15;
-                text-transform: uppercase; letter-spacing: 0.08em;
-                margin: 14px 0 4px 0; padding: 0 0 4px 0;
-                border-bottom: 2px solid #f5deb3;
-            }
-            .sb-section:first-of-type { margin-top: 6px; }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        render_sidebar_section_styles()
         st.markdown('<p class="sb-section">基本设置</p>', unsafe_allow_html=True)
         ensure_session_choice_state(
             "tab1_task_name",
@@ -5206,6 +5407,7 @@ def render_generation_sidebar_controls() -> dict:
                 "tab1_image_model_name_selector": provider_defaults["image_model_name"],
                 "tab1_image_model_name_custom": "",
                 "tab1_api_key": provider_defaults["api_key_default"],
+                get_api_key_widget_key("tab1_api_key"): provider_defaults["api_key_default"],
             }
             new_resolution_options = ["1K", "2K", "4K"] if provider == "gemini" else ["2K", "4K"]
             if st.session_state.get("tab1_image_resolution") not in new_resolution_options:
@@ -5280,6 +5482,122 @@ def render_generation_sidebar_controls() -> dict:
         "api_key": api_key,
         "model_name": model_name,
         "image_model_name": image_model_name,
+    }
+
+
+def render_refine_sidebar_controls() -> dict:
+    """渲染精修页侧边栏设置。"""
+    with st.sidebar:
+        render_sidebar_section_styles()
+        st.markdown("## 高级设置")
+        st.caption("当前处于精修工作台，生成侧高级设置已隐藏。")
+
+        st.markdown('<p class="sb-section">输出设置</p>', unsafe_allow_html=True)
+        ensure_session_choice_state("refine_resolution", ["2K", "4K"], "2K")
+        refine_resolution = st.selectbox(
+            "目标分辨率",
+            ["2K", "4K"],
+            key="refine_resolution",
+            help="更高分辨率会增加耗时，但通常能得到更细致的结果。",
+        )
+        ensure_session_choice_state(
+            "refine_aspect_ratio",
+            COMMON_ASPECT_RATIOS,
+            COMMON_ASPECT_RATIOS[0],
+        )
+        refine_aspect_ratio = st.selectbox(
+            "宽高比",
+            COMMON_ASPECT_RATIOS,
+            key="refine_aspect_ratio",
+            help="指定精修后图像的目标宽高比。",
+        )
+        ensure_session_int_state(
+            "refine_num_images",
+            3,
+            min_value=1,
+            max_value=12,
+        )
+        refine_num_images = int(
+            st.number_input(
+                "精修张数",
+                min_value=1,
+                max_value=12,
+                step=1,
+                key="refine_num_images",
+                help="并发生成多少张不同版本，便于横向挑选。",
+            )
+        )
+        st.caption(
+            f"当前任务将输出 {refine_num_images} 张 {refine_resolution} 结果，宽高比为 {refine_aspect_ratio}。"
+        )
+
+        st.markdown('<p class="sb-section">Provider</p>', unsafe_allow_html=True)
+        ensure_session_choice_state(
+            "refine_provider",
+            ["gemini", "evolink", "openrouter"],
+            str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
+        )
+        refine_provider = st.selectbox(
+            "精修 Provider",
+            ["gemini", "evolink", "openrouter"],
+            key="refine_provider",
+            help="精修链路可单独选择 Provider，不依赖生成页设置。",
+        )
+        refine_provider_defaults = get_provider_ui_defaults(refine_provider)
+        if "refine_api_key" not in st.session_state:
+            st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
+        if "refine_image_model_name" not in st.session_state:
+            st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
+        if "refine_prev_provider" not in st.session_state:
+            st.session_state["refine_prev_provider"] = refine_provider
+        if st.session_state["refine_prev_provider"] != refine_provider:
+            st.session_state["refine_prev_provider"] = refine_provider
+            st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
+            st.session_state[get_api_key_widget_key("refine_api_key")] = refine_provider_defaults["api_key_default"]
+            st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
+            st.session_state["refine_image_model_name_selector"] = refine_provider_defaults["image_model_name"]
+            st.session_state["refine_image_model_name_custom"] = ""
+            st.rerun()
+        refine_api_key = render_provider_api_key_controls(
+            provider=refine_provider,
+            provider_defaults=refine_provider_defaults,
+            session_key="refine_api_key",
+            clear_request_key="refine_api_key_clear_requested",
+            clear_button_key="refine_clear_provider_api_key",
+        )
+        if refine_provider == "gemini":
+            refine_image_model_name = render_preset_or_custom_model_input(
+                "精修图像模型",
+                GEMINI_IMAGE_MODELS,
+                value_key="refine_image_model_name",
+                selector_key="refine_image_model_name_selector",
+                custom_value_key="refine_image_model_name_custom",
+                default_value=refine_provider_defaults["image_model_name"],
+                select_help="精修流程使用的图像模型。可选择预设模型，或选“自定义”后手动输入。",
+                custom_help="请输入精修流程使用的自定义图像模型名称。",
+            )
+        else:
+            refine_image_model_name = st.text_input(
+                "精修图像模型",
+                key="refine_image_model_name",
+                help="精修流程使用的图像模型",
+            )
+
+        st.markdown('<p class="sb-section">当前会话</p>', unsafe_allow_html=True)
+        staged_refine_bytes = bytes(st.session_state.get("refine_staged_image_bytes", b"") or b"")
+        cached_uploaded_bytes = bytes(st.session_state.get("refine_uploaded_image_bytes", b"") or b"")
+        active_refine_job_id = st.session_state.get("active_refine_job_id")
+        st.caption(f"候选来源：{'已载入' if staged_refine_bytes else '未载入'}")
+        st.caption(f"上传缓存：{'已缓存' if cached_uploaded_bytes else '未缓存'}")
+        st.caption(f"后台任务：{'运行中' if active_refine_job_id else '空闲'}")
+
+    return {
+        "resolution": refine_resolution,
+        "aspect_ratio": refine_aspect_ratio,
+        "num_images": refine_num_images,
+        "provider": refine_provider,
+        "api_key": refine_api_key,
+        "image_model_name": refine_image_model_name,
     }
 
 
@@ -5935,9 +6253,239 @@ def render_generation_workspace() -> None:
     render_generation_history_panel(task_name)
 
 
+def render_refine_workbench_panel(
+    *,
+    refine_is_running: bool,
+    refine_resolution: str,
+    refine_aspect_ratio: str,
+    refine_num_images: int,
+    refine_provider: str,
+    refine_api_key: str,
+    refine_image_model_name: str,
+) -> tuple[bytes, str]:
+    """渲染精修工作台主面板，并返回当前选中的输入图像。"""
+    staged_refine_bytes = bytes(st.session_state.get("refine_staged_image_bytes", b"") or b"")
+    cached_uploaded_bytes = bytes(st.session_state.get("refine_uploaded_image_bytes", b"") or b"")
+    current_source_kind = "候选方案" if staged_refine_bytes else "上传图像" if cached_uploaded_bytes else "未选择"
+    version_count = len(get_refine_version_history())
+    result_count = len(st.session_state.get("refined_images", []) or [])
+
+    with st.container(border=True):
+        st.markdown("### 🧭 精修工作台")
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("当前来源", current_source_kind)
+        metric_cols[1].metric("版本数", version_count)
+        metric_cols[2].metric("已有结果", result_count)
+        metric_cols[3].metric("后台状态", "运行中" if refine_is_running else "空闲")
+
+    if refine_is_running:
+        st.info("后台精修任务运行中；当前工作台仍可查看输入图像，实时进度请切换到“结果与状态”。")
+
+    preview_image = None
+    preview_error = None
+    selected_image_bytes = b""
+    selected_input_mime_type = "image/png"
+    selected_source_label = "上传图像"
+    submit_refine = False
+    edit_prompt = st.session_state.get("edit_prompt", "")
+
+    workbench_col1, workbench_col2 = st.columns([1.08, 0.92], gap="large")
+    with workbench_col1:
+        with st.container(border=True):
+            st.markdown("### 输入图像")
+            st.caption("支持上传图片，或直接复用生成页/版本历史送来的候选版本。")
+
+            upload_widget_nonce = int(st.session_state.get("refine_upload_widget_nonce", 0) or 0)
+            upload_widget_key = f"refine_uploaded_file_input_{upload_widget_nonce}"
+            previous_upload_present = bool(st.session_state.get("refine_uploaded_widget_present", False))
+            source_options = ["上传图像"]
+            if staged_refine_bytes:
+                source_options.append("候选方案")
+            default_refine_source = st.session_state.get(
+                "refine_input_source",
+                "候选方案" if staged_refine_bytes else "上传图像",
+            )
+            if default_refine_source not in source_options:
+                default_refine_source = source_options[0]
+            refine_input_source = st.radio(
+                "图像来源",
+                source_options,
+                index=source_options.index(default_refine_source),
+                key="refine_input_source",
+                horizontal=True,
+                label_visibility="collapsed",
+            )
+            uploaded_file = st.file_uploader(
+                "选择一个图像文件",
+                type=["png", "jpg", "jpeg"],
+                help="上传您想要精修的图表。",
+                key=upload_widget_key,
+            )
+            if uploaded_file is not None:
+                upload_error = cache_refine_uploaded_file(uploaded_file)
+                if upload_error:
+                    persist_demo_ui_state()
+                    st.rerun()
+            elif previous_upload_present:
+                clear_cached_refine_upload(clear_error=True, reset_widget=False)
+
+            cached_uploaded_bytes = bytes(st.session_state.get("refine_uploaded_image_bytes", b"") or b"")
+            cached_uploaded_filename = str(st.session_state.get("refine_uploaded_filename", "") or "")
+            cached_uploaded_size = int(st.session_state.get("refine_uploaded_file_size", 0) or 0)
+            cached_upload_error = str(st.session_state.get("refine_upload_error", "") or "")
+            if cached_uploaded_bytes:
+                upload_col1, upload_col2 = st.columns([4, 1])
+                with upload_col1:
+                    size_mb = cached_uploaded_size / (1024 * 1024) if cached_uploaded_size else 0.0
+                    display_name = cached_uploaded_filename or "已上传图像"
+                    st.caption(f"已缓存上传图像：{display_name}（{size_mb:.2f} MB）")
+                with upload_col2:
+                    if st.button("清除上传", width="stretch", key="clear_refine_uploaded_image"):
+                        clear_cached_refine_upload(clear_error=True, reset_widget=True)
+                        persist_demo_ui_state()
+                        st.rerun()
+            elif cached_upload_error:
+                st.error(cached_upload_error)
+
+            if staged_refine_bytes:
+                staged_label = st.session_state.get("refine_staged_source_label", "候选方案")
+                staged_col1, staged_col2 = st.columns([4, 1])
+                with staged_col1:
+                    st.caption(f"已载入候选来源：{staged_label}")
+                with staged_col2:
+                    if st.button("清除候选", width="stretch", key="clear_refine_staged_source"):
+                        clear_staged_refine_source()
+                        persist_demo_ui_state()
+                        st.rerun()
+
+            if refine_input_source == "候选方案" and staged_refine_bytes:
+                selected_image_bytes = staged_refine_bytes
+                selected_input_mime_type = st.session_state.get("refine_staged_input_mime_type", "image/png")
+                selected_source_label = st.session_state.get("refine_staged_source_label", "候选方案")
+            elif cached_uploaded_bytes:
+                selected_image_bytes = cached_uploaded_bytes
+                selected_input_mime_type = st.session_state.get("refine_uploaded_input_mime_type", "image/png")
+                selected_source_label = "上传图像"
+
+            st.session_state["refine_selected_image_bytes"] = selected_image_bytes
+            st.session_state["refine_selected_input_mime_type"] = selected_input_mime_type
+            st.session_state["refine_selected_source_label"] = selected_source_label
+
+            if selected_image_bytes:
+                preview_image, preview_error = load_refine_preview_image(
+                    selected_image_bytes,
+                    source_label=selected_source_label,
+                )
+                if preview_image is not None:
+                    active_version_key = ensure_refine_source_version(
+                        selected_image_bytes,
+                        input_mime_type=selected_input_mime_type,
+                        source_label=selected_source_label,
+                    )
+                    current_active_entry = find_refine_version_entry(
+                        st.session_state.get("refine_active_version_key", "")
+                    )
+                    if active_version_key and (
+                        current_active_entry is None
+                        or current_active_entry.get("image_digest") != _compute_image_digest(selected_image_bytes)
+                    ):
+                        st.session_state["refine_active_version_key"] = active_version_key
+                else:
+                    st.error(preview_error or "当前图像无法预览，请重新选择。")
+                    recovery_col1, recovery_col2 = st.columns(2)
+                    with recovery_col1:
+                        if selected_source_label == "上传图像" and st.button(
+                            "清除损坏上传",
+                            width="stretch",
+                            key="clear_invalid_refine_upload",
+                        ):
+                            clear_cached_refine_upload(clear_error=True, reset_widget=True)
+                            persist_demo_ui_state()
+                            st.rerun()
+                    with recovery_col2:
+                        if selected_source_label != "上传图像" and st.button(
+                            "清除当前候选",
+                            width="stretch",
+                            key="clear_invalid_refine_source",
+                        ):
+                            clear_staged_refine_source()
+                            persist_demo_ui_state()
+                            st.rerun()
+
+            if preview_image is not None:
+                st.caption(f"当前预览：{selected_source_label}")
+                _, preview_col, _ = st.columns([0.05, 0.9, 0.05])
+                with preview_col:
+                    st.image(preview_image, width=REFINE_WORKSPACE_PREVIEW_WIDTH)
+            else:
+                st.info("请上传图像，或先在生成结果/版本历史中点击“送去精修”载入候选方案。")
+
+    with workbench_col2:
+        with st.container(border=True):
+            st.markdown("### 编辑指令")
+            st.caption(
+                f"本次输出：{refine_resolution} · {refine_aspect_ratio} · {int(refine_num_images)} 张 · Provider={refine_provider}"
+            )
+            with st.form("refine_request_form", clear_on_submit=False):
+                edit_prompt = st.text_area(
+                    "描述您想要的修改",
+                    height=220,
+                    placeholder="例如：保持语义不变，增强标题和标签清晰度，优化对齐、留白和整体视觉层次。",
+                    help="描述您想要的修改，或使用“保持内容不变”仅进行放大与清晰化。",
+                    key="edit_prompt",
+                )
+                submit_refine = st.form_submit_button(
+                    "✨ 精修图像",
+                    type="primary",
+                    width="stretch",
+                    disabled=refine_is_running or preview_image is None,
+                )
+
+            with st.expander("查看指令建议", expanded=False):
+                st.markdown(
+                    "- 保持语义不变，优化清晰度、对齐、留白和视觉层次。\n"
+                    "- 放大标题与图例文字，确保论文截图中仍清晰可读。\n"
+                    "- 保持主色不变，仅修复边缘锯齿和文本模糊。"
+                )
+
+            if preview_image is None:
+                st.info("先选择一张可预览的输入图像，右侧按钮才会启用。")
+
+    if submit_refine:
+        if not edit_prompt:
+            st.error("请提供编辑指令！")
+        elif refine_is_running:
+            st.warning("当前已有精修任务在后台运行，请先等待完成或停止当前任务。")
+        else:
+            job_id = start_refine_background_job(
+                image_bytes=selected_image_bytes,
+                edit_prompt=edit_prompt,
+                num_images=int(refine_num_images),
+                aspect_ratio=refine_aspect_ratio,
+                image_size=refine_resolution,
+                api_key=refine_api_key,
+                provider=refine_provider,
+                image_model_name=refine_image_model_name,
+                input_mime_type=selected_input_mime_type,
+            )
+            st.session_state["refined_images"] = []
+            st.session_state["refine_failed_results"] = []
+            st.session_state["active_refine_job_id"] = job_id
+            st.session_state["last_refine_completed_job_id"] = None
+            _queue_refine_widget_state_updates(
+                {"refine_workspace_view": REFINE_WORKSPACE_VIEW_OPTIONS[1]}
+            )
+            persist_demo_ui_state()
+            st.rerun()
+
+    return selected_image_bytes, selected_input_mime_type
+
+
 def render_refine_workspace() -> None:
+    _apply_pending_refine_widget_state_updates()
+    refine_settings = render_refine_sidebar_controls()
     st.markdown("### 精修并放大图表（2K / 4K）")
-    st.caption("上传候选方案或任意图表，说明希望保留和调整的部分，输出更清晰的高分辨率版本。")
+    st.caption("布局已切成和主页面一致的“侧边栏参数 + 主工作台”体验，减少长页面滚动。")
 
     active_refine_job_id = st.session_state.get("active_refine_job_id")
     active_refine_snapshot = hydrate_persisted_job_snapshot(
@@ -5947,275 +6495,52 @@ def render_refine_workspace() -> None:
     refine_is_running = bool(
         active_refine_snapshot and active_refine_snapshot.get("status") == "running"
     )
-
-    with st.container(border=True):
-        st.markdown("## ✨ 精修参数")
-        st.caption("精修设置不再与生成侧边栏共享；这里的配置只影响当前精修任务。")
-
-        refine_settings_col1, refine_settings_col2 = st.columns(2)
-        with refine_settings_col1:
-            ensure_session_choice_state("refine_resolution", ["2K", "4K"], "2K")
-            refine_resolution = st.selectbox(
-                "目标分辨率",
-                ["2K", "4K"],
-                key="refine_resolution",
-                help="更高分辨率会增加耗时，但通常能得到更细致的结果。",
-            )
-            ensure_session_choice_state(
-                "refine_aspect_ratio",
-                COMMON_ASPECT_RATIOS,
-                COMMON_ASPECT_RATIOS[0],
-            )
-            refine_aspect_ratio = st.selectbox(
-                "宽高比",
-                COMMON_ASPECT_RATIOS,
-                key="refine_aspect_ratio",
-                help="指定精修后图像的目标宽高比。",
-            )
-            ensure_session_int_state(
-                "refine_num_images",
-                3,
-                min_value=1,
-                max_value=12,
-            )
-            refine_num_images = st.number_input(
-                "精修张数",
-                min_value=1,
-                max_value=12,
-                step=1,
-                key="refine_num_images",
-                help="并发生成多少张不同版本，便于横向挑选。",
-            )
-
-        with refine_settings_col2:
-            ensure_session_choice_state(
-                "refine_provider",
-                ["gemini", "evolink", "openrouter"],
-                str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
-            )
-            refine_provider = st.selectbox(
-                "精修 Provider",
-                ["gemini", "evolink", "openrouter"],
-                key="refine_provider",
-                help="精修链路可单独选择 Provider，不依赖生成页设置。",
-            )
-            refine_provider_defaults = get_provider_ui_defaults(refine_provider)
-            if "refine_api_key" not in st.session_state:
-                st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
-            if "refine_image_model_name" not in st.session_state:
-                st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
-            if "refine_prev_provider" not in st.session_state:
-                st.session_state["refine_prev_provider"] = refine_provider
-            if st.session_state["refine_prev_provider"] != refine_provider:
-                st.session_state["refine_prev_provider"] = refine_provider
-                st.session_state["refine_api_key"] = refine_provider_defaults["api_key_default"]
-                st.session_state["refine_image_model_name"] = refine_provider_defaults["image_model_name"]
-                st.session_state["refine_image_model_name_selector"] = refine_provider_defaults["image_model_name"]
-                st.session_state["refine_image_model_name_custom"] = ""
-                st.rerun()
-            refine_api_key = render_provider_api_key_controls(
-                provider=refine_provider,
-                provider_defaults=refine_provider_defaults,
-                session_key="refine_api_key",
-                clear_request_key="refine_api_key_clear_requested",
-                clear_button_key="refine_clear_provider_api_key",
-            )
-            if refine_provider == "gemini":
-                refine_image_model_name = render_preset_or_custom_model_input(
-                    "精修图像模型",
-                    GEMINI_IMAGE_MODELS,
-                    value_key="refine_image_model_name",
-                    selector_key="refine_image_model_name_selector",
-                    custom_value_key="refine_image_model_name_custom",
-                    default_value=refine_provider_defaults["image_model_name"],
-                    select_help="精修流程使用的图像模型。可选择预设模型，或选“自定义”后手动输入。",
-                    custom_help="请输入精修流程使用的自定义图像模型名称。",
-                )
-            else:
-                refine_image_model_name = st.text_input(
-                    "精修图像模型",
-                    key="refine_image_model_name",
-                    help="精修流程使用的图像模型",
-                )
-
-    st.divider()
-    st.markdown("## 📤 上传图像")
-    staged_refine_bytes = st.session_state.get("refine_staged_image_bytes", b"")
-    upload_widget_nonce = int(st.session_state.get("refine_upload_widget_nonce", 0) or 0)
-    upload_widget_key = f"refine_uploaded_file_input_{upload_widget_nonce}"
-    previous_upload_present = bool(st.session_state.get("refine_uploaded_widget_present", False))
-    source_options = ["上传图像"]
-    if staged_refine_bytes:
-        source_options.append("候选方案")
-    default_refine_source = st.session_state.get(
-        "refine_input_source",
-        "候选方案" if staged_refine_bytes else "上传图像",
-    )
-    if default_refine_source not in source_options:
-        default_refine_source = source_options[0]
-    refine_input_source = st.radio(
-        "图像来源",
-        source_options,
-        index=source_options.index(default_refine_source),
-        key="refine_input_source",
-        horizontal=True,
-    )
-    uploaded_file = st.file_uploader(
-        "选择一个图像文件",
-        type=["png", "jpg", "jpeg"],
-        help="上传您想要精修的图表",
-        key=upload_widget_key,
-    )
-    if uploaded_file is not None:
-        upload_error = cache_refine_uploaded_file(uploaded_file)
-        if upload_error:
-            persist_demo_ui_state()
-            st.rerun()
-    elif previous_upload_present:
-        clear_cached_refine_upload(clear_error=True, reset_widget=False)
-
-    cached_uploaded_bytes = bytes(st.session_state.get("refine_uploaded_image_bytes", b"") or b"")
-    cached_uploaded_filename = str(st.session_state.get("refine_uploaded_filename", "") or "")
-    cached_uploaded_size = int(st.session_state.get("refine_uploaded_file_size", 0) or 0)
-    cached_upload_error = str(st.session_state.get("refine_upload_error", "") or "")
-    if cached_uploaded_bytes:
-        upload_col1, upload_col2 = st.columns([4, 1])
-        with upload_col1:
-            size_mb = cached_uploaded_size / (1024 * 1024) if cached_uploaded_size else 0.0
-            display_name = cached_uploaded_filename or "已上传图像"
-            st.caption(f"已缓存上传图像：{display_name}（{size_mb:.2f} MB）")
-        with upload_col2:
-            if st.button("🧹 清除上传图像", width="stretch", key="clear_refine_uploaded_image"):
-                clear_cached_refine_upload(clear_error=True, reset_widget=True)
-                persist_demo_ui_state()
-                st.rerun()
-    elif cached_upload_error:
-        st.error(cached_upload_error)
-    if staged_refine_bytes:
-        staged_label = st.session_state.get("refine_staged_source_label", "候选方案")
-        staged_col1, staged_col2 = st.columns([4, 1])
-        with staged_col1:
-            st.caption(f"已载入候选来源：{staged_label}")
-        with staged_col2:
-            if st.button("🧹 清除候选来源", width="stretch"):
-                clear_staged_refine_source()
-                st.rerun()
-
-    selected_image_bytes = b""
-    selected_input_mime_type = "image/png"
-    selected_source_label = "上传图像"
-    if refine_input_source == "候选方案" and staged_refine_bytes:
-        selected_image_bytes = staged_refine_bytes
-        selected_input_mime_type = st.session_state.get("refine_staged_input_mime_type", "image/png")
-        selected_source_label = st.session_state.get("refine_staged_source_label", "候选方案")
-    elif cached_uploaded_bytes:
-        selected_image_bytes = cached_uploaded_bytes
-        selected_input_mime_type = st.session_state.get("refine_uploaded_input_mime_type", "image/png")
-        selected_source_label = "上传图像"
-
-    st.session_state["refine_selected_image_bytes"] = selected_image_bytes
-    st.session_state["refine_selected_input_mime_type"] = selected_input_mime_type
-    st.session_state["refine_selected_source_label"] = selected_source_label
-    preview_image = None
-    preview_error = None
-    if selected_image_bytes:
-        preview_image, preview_error = load_refine_preview_image(
-            selected_image_bytes,
-            source_label=selected_source_label,
-        )
-        if preview_image is not None:
-            active_version_key = ensure_refine_source_version(
-                selected_image_bytes,
-                input_mime_type=selected_input_mime_type,
-                source_label=selected_source_label,
-            )
-            current_active_entry = find_refine_version_entry(
-                st.session_state.get("refine_active_version_key", "")
-            )
-            if active_version_key and (
-                current_active_entry is None
-                or current_active_entry.get("image_digest") != _compute_image_digest(selected_image_bytes)
-            ):
-                st.session_state["refine_active_version_key"] = active_version_key
-        else:
-            st.error(preview_error or "当前图像无法预览，请重新选择。")
-            recovery_col1, recovery_col2 = st.columns(2)
-            with recovery_col1:
-                if selected_source_label == "上传图像" and st.button(
-                    "🧹 清除损坏上传图像",
-                    width="stretch",
-                    key="clear_invalid_refine_upload",
-                ):
-                    clear_cached_refine_upload(clear_error=True, reset_widget=True)
-                    persist_demo_ui_state()
-                    st.rerun()
-            with recovery_col2:
-                if selected_source_label != "上传图像" and st.button(
-                    "🧹 清除当前候选来源",
-                    width="stretch",
-                    key="clear_invalid_refine_source",
-                ):
-                    clear_staged_refine_source()
-                    persist_demo_ui_state()
-                    st.rerun()
-    if preview_image is not None:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("### 原始图像")
-            st.caption(f"来源：{selected_source_label}")
-            st.image(preview_image, width="stretch")
-
-        with col2:
-            with st.form("refine_request_form", clear_on_submit=False):
-                st.markdown("### 编辑指令")
-                edit_prompt = st.text_area(
-                    "描述您想要的修改",
-                    height=200,
-                    placeholder="例如：'将配色方案改为学术论文风格' 或 '将文字放大加粗' 或 '保持内容不变但输出更高分辨率'",
-                    help="描述您想要的修改，或使用'保持内容不变'仅进行放大",
-                    key="edit_prompt",
-                )
-                submit_refine = st.form_submit_button(
-                    "✨ 精修图像",
-                    type="primary",
-                    width="stretch",
-                    disabled=refine_is_running,
-                )
-            if submit_refine:
-                if not edit_prompt:
-                    st.error("请提供编辑指令！")
-                elif refine_is_running:
-                    st.warning("当前已有精修任务在后台运行，请先等待完成或停止当前任务。")
-                else:
-                    job_id = start_refine_background_job(
-                        image_bytes=selected_image_bytes,
-                        edit_prompt=edit_prompt,
-                        num_images=int(refine_num_images),
-                        aspect_ratio=refine_aspect_ratio,
-                        image_size=refine_resolution,
-                        api_key=refine_api_key,
-                        provider=refine_provider,
-                        image_model_name=refine_image_model_name,
-                        input_mime_type=selected_input_mime_type,
-                    )
-                    st.session_state["refined_images"] = []
-                    st.session_state["refine_failed_results"] = []
-                    st.session_state["active_refine_job_id"] = job_id
-                    st.session_state["last_refine_completed_job_id"] = None
-                    persist_demo_ui_state()
-                    st.rerun()
-    else:
-        st.info("请上传图像，或先在生成结果中点击“送去精修”载入候选方案。")
-
     _render_background_terminal_notice("refine_terminal_notice")
-    render_refine_activity_fragment(
-        requested_images=int(refine_num_images),
-        fallback_original_bytes=selected_image_bytes,
-        fallback_resolution=refine_resolution,
-        fallback_provider=refine_provider,
-        fallback_image_model_name=refine_image_model_name,
+    default_refine_view = st.session_state.get(
+        "refine_workspace_view",
+        REFINE_WORKSPACE_VIEW_OPTIONS[1] if refine_is_running else REFINE_WORKSPACE_VIEW_OPTIONS[0],
     )
-    render_refine_version_history_panel()
+    ensure_session_choice_state(
+        "refine_workspace_view",
+        REFINE_WORKSPACE_VIEW_OPTIONS,
+        default_refine_view if default_refine_view in REFINE_WORKSPACE_VIEW_OPTIONS else REFINE_WORKSPACE_VIEW_OPTIONS[0],
+    )
+    current_refine_view = st.radio(
+        "精修视图",
+        REFINE_WORKSPACE_VIEW_OPTIONS,
+        key="refine_workspace_view",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    selected_image_bytes = bytes(st.session_state.get("refine_selected_image_bytes", b"") or b"")
+    selected_input_mime_type = st.session_state.get("refine_selected_input_mime_type", "image/png")
+    if current_refine_view == REFINE_WORKSPACE_VIEW_OPTIONS[0]:
+        selected_image_bytes, selected_input_mime_type = render_refine_workbench_panel(
+            refine_is_running=refine_is_running,
+            refine_resolution=refine_settings["resolution"],
+            refine_aspect_ratio=refine_settings["aspect_ratio"],
+            refine_num_images=int(refine_settings["num_images"]),
+            refine_provider=refine_settings["provider"],
+            refine_api_key=refine_settings["api_key"],
+            refine_image_model_name=refine_settings["image_model_name"],
+        )
+    elif current_refine_view == REFINE_WORKSPACE_VIEW_OPTIONS[1]:
+        if not active_refine_job_id and not st.session_state.get("refined_images"):
+            st.info("当前还没有后台精修任务或结果；先去“工作台”选择图像并发起一次精修。")
+        else:
+            render_refine_activity_fragment(
+                requested_images=int(refine_settings["num_images"]),
+                fallback_original_bytes=selected_image_bytes,
+                fallback_resolution=refine_settings["resolution"],
+                fallback_provider=refine_settings["provider"],
+                fallback_image_model_name=refine_settings["image_model_name"],
+            )
+    else:
+        if not get_refine_version_history():
+            st.info("当前还没有可切换的历史版本；先去“工作台”启动一次精修，或从生成结果送入候选图像。")
+        else:
+            render_refine_version_history_panel()
 
 
 def main():
@@ -6255,9 +6580,6 @@ def main():
     if workspace_mode == WORKSPACE_MODE_OPTIONS[0]:
         render_generation_workspace()
     else:
-        with st.sidebar:
-            st.title("高级设置")
-            st.caption("当前处于精修工作台，生成侧高级设置已隐藏。")
         render_refine_workspace()
 
     persist_demo_ui_state()

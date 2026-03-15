@@ -46,6 +46,11 @@
 - Result items should now carry `dataset_name`, `task_name`, and `exp_mode` when produced by the current pipeline so viewers and evaluators stop guessing basic run context.
 - GUI remains Streamlit for now.
 
+## Tool Quota Limits
+- `generate_image` (gemini-3.1-flash-image) 配额：**每 5 小时 100 次调用**，与其他工具配额刷新频率一致。
+- 批量生图任务应据此规划：单次窗口最多生成约 95 张（留余量），超额后需等待下一个 5 小时窗口。
+- 配额耗尽时 API 返回 `429 RESOURCE_EXHAUSTED`，`quotaResetTimeStamp` 字段可用于计算精确恢复时间。
+
 ## Validation Status
 - 2026-03-13 Windows CI unit-test diagnostics hardening:
   - traced the public GitHub Actions failures on `repo-first-windows` to the `Run unit tests` step in `.github/workflows/ci.yml`, but unauthenticated GitHub job pages still only exposed `Process completed with exit code 1` without the failing unittest traceback
@@ -398,3 +403,21 @@
   - 在当前仓库锁定的 `streamlit==1.55.0` 环境里，应优先使用 `st.fragment(run_every=...)` 实现后台任务活动区的局部刷新；`st.components.v1.html(...)` 适合嵌入 HTML，不适合承担执行流控制
   - 推荐结构是“页面主体静止 + 活动区 fragment 轮询 + 终态只做一次全页同步”；运行中按钮优先走 fragment 范围 rerun，任务结束时再做一次 app 级 rerun 去同步 fragment 外的结果区
   - 这类修复需要同时补两类回归：一类验证运行态确实走 fragment 路径，另一类直接防止源码重新引入 `location.reload()` 之类的浏览器级轮询 hack
+- 2026-03-15 精修版本历史状态修复：
+  - 版本历史“设为当前输入版本 / 回退到父版本”触发的崩溃根因不是历史数据损坏，而是 `activate_refine_version -> stage_refine_source_image` 在精修页组件已经实例化后，直接改写了 `refine_input_source` / `edit_prompt` 这类 widget key，命中了 Streamlit 的运行期限制
+  - 对这类“按钮点击后要切换下一轮 widget 默认值”的需求，精修页需要和生成页一样走“待应用更新队列”，先写入 `_pending_refine_widget_updates`，再在 `render_refine_workspace()` 顶部统一 flush，避免同轮渲染直接改 widget state
+  - 这次修复同时覆盖了三条路径：历史版本激活、候选送去精修、清除候选来源；以后若再引入会改 `refine_input_source` / `edit_prompt` 的动作，也应复用这套 pending 机制
+  - 顺手收口了精修结果区的预览布局：单张结果使用居中大图，多张结果按自适应网格显示，避免单图场景过小、多图场景过松
+  - 本地验证已通过：
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest tests.test_demo_workbench_state tests.test_refine_background`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m compileall demo.py tests`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py'`
+- 2026-03-15 精修工作台布局重排：
+  - 将精修参数整体迁移到侧边栏，和生成主页面保持一致，主区域只保留“工作台 / 结果与状态 / 版本历史”三段视图，明显缩短了默认页面长度
+  - 新工作台首页改为紧凑双栏：左侧负责来源切换、上传和预览，右侧负责编辑指令与输出摘要；输入图预览改为固定上限宽度，避免大图把首屏撑满
+  - `结果与状态` 视图补了空状态提示，避免用户切过去只看到空白；版本历史也改为更紧凑的网格策略，单版本居中、多版本密排
+  - 已用本地 Streamlit + Playwright 进行了页面级确认：精修模式现在展示为“侧边栏参数 + 分段工作台”的主页面式体验，空状态提示和分段切换均正常
+- 2026-03-15 精修版本命名可读性修复：
+  - `v17`、`v20` 这类值本质上只是持久化用的内部 `version_key`，因为精修历史会跨页面/跨会话保留，所以它们会继续累加，不适合直接暴露给用户
+  - 新增了“内部 key / 界面显示名”分层：界面统一显示 `原图 / 第1版 / 第2版 ...`，历史卡片、结果区版本提示、历史切换入口都不再直接展示内部 `vNN`
+  - 激活历史版本时，送回工作台的来源名称也会使用新的显示名，避免“继续精修 v20”这类让人困惑的文案

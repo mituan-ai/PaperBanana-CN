@@ -100,6 +100,142 @@ class DemoWorkbenchStateTest(unittest.TestCase):
         self.assertEqual(len(child_nodes), 2)
         self.assertTrue(all(item.get("edit_prompt") == "放大并优化布局" for item in child_nodes))
 
+    def test_stage_refine_source_image_queues_widget_state_updates(self):
+        original_bytes = make_test_png_bytes((66, 77, 88))
+
+        demo.stage_refine_source_image(
+            original_bytes,
+            input_mime_type="image/png",
+            source_label="候选 02",
+            default_prompt="保持内容不变，增强清晰度",
+        )
+
+        self.assertEqual(demo.st.session_state["refine_staged_image_bytes"], original_bytes)
+        self.assertEqual(demo.st.session_state["refine_staged_source_label"], "候选 02")
+        self.assertNotIn("refine_input_source", demo.st.session_state)
+        self.assertEqual(
+            demo.st.session_state["_pending_refine_widget_updates"]["refine_input_source"],
+            "候选方案",
+        )
+        self.assertEqual(
+            demo.st.session_state["_pending_refine_widget_updates"]["refine_workspace_view"],
+            "工作台",
+        )
+        self.assertEqual(
+            demo.st.session_state["_pending_refine_widget_updates"]["edit_prompt"],
+            "保持内容不变，增强清晰度",
+        )
+
+    def test_activate_refine_version_stages_history_version_via_pending_widget_updates(self):
+        original_bytes = make_test_png_bytes((90, 20, 30))
+        version_key = demo.ensure_refine_source_version(
+            original_bytes,
+            input_mime_type="image/png",
+            source_label="上传图像",
+        )
+
+        activated = demo.activate_refine_version(version_key)
+
+        self.assertTrue(activated)
+        self.assertEqual(demo.st.session_state["refine_active_version_key"], version_key)
+        self.assertEqual(demo.st.session_state["refine_staged_image_bytes"], original_bytes)
+        self.assertEqual(
+            demo.st.session_state["_pending_refine_widget_updates"]["refine_input_source"],
+            "候选方案",
+        )
+        self.assertEqual(
+            demo.st.session_state["_pending_refine_widget_updates"]["refine_workspace_view"],
+            "工作台",
+        )
+
+    def test_build_refine_version_display_map_uses_human_readable_labels(self):
+        demo.st.session_state["refine_version_history"] = [
+            {
+                "version_key": "v16",
+                "parent_version_key": "",
+                "label": "原图",
+                "source_label": "上传图像",
+                "variant_index": 0,
+            },
+            {
+                "version_key": "v17",
+                "parent_version_key": "v16",
+                "label": "v17",
+                "source_label": "上传图像",
+                "variant_index": 1,
+            },
+            {
+                "version_key": "v20",
+                "parent_version_key": "v16",
+                "label": "v20",
+                "source_label": "上传图像",
+                "variant_index": 2,
+            },
+        ]
+
+        display_map = demo.build_refine_version_display_map()
+
+        self.assertEqual(display_map["v16"], "原图")
+        self.assertEqual(display_map["v17"], "第1版")
+        self.assertEqual(display_map["v20"], "第2版")
+
+    def test_append_refine_snapshot_stores_human_readable_label_for_new_versions(self):
+        original_bytes = make_test_png_bytes((210, 30, 30))
+        demo.ensure_refine_source_version(
+            original_bytes,
+            input_mime_type="image/png",
+            source_label="上传图像",
+        )
+
+        created_keys = demo.append_refine_snapshot_to_version_history(
+            {
+                "created_at": "2026-03-15 19:18:02",
+                "provider": "gemini",
+                "image_model_name": "gemini-image",
+                "resolution": "4K",
+                "input_mime_type": "image/png",
+                "original_image_bytes": original_bytes,
+                "refined_images": [
+                    {"index": 1, "bytes": make_test_png_bytes((30, 210, 30))},
+                ],
+            },
+            edit_prompt="增强标题清晰度",
+        )
+
+        created_entry = demo.find_refine_version_entry(created_keys[0])
+        self.assertIsNotNone(created_entry)
+        self.assertEqual(created_entry.get("label"), "第1版")
+
+    def test_activate_refine_version_uses_display_label_as_source_label(self):
+        original_bytes = make_test_png_bytes((11, 22, 33))
+        refined_bytes = make_test_png_bytes((44, 55, 66))
+        demo.st.session_state["refine_version_history"] = [
+            {
+                "version_key": "v16",
+                "parent_version_key": "",
+                "label": "原图",
+                "source_label": "上传图像",
+                "input_mime_type": "image/png",
+                "image_bytes": original_bytes,
+                "variant_index": 0,
+            },
+            {
+                "version_key": "v20",
+                "parent_version_key": "v16",
+                "label": "v20",
+                "source_label": "上传图像",
+                "input_mime_type": "image/png",
+                "image_bytes": refined_bytes,
+                "edit_prompt": "增强标题",
+                "variant_index": 1,
+            },
+        ]
+
+        activated = demo.activate_refine_version("v20")
+
+        self.assertTrue(activated)
+        self.assertEqual(demo.st.session_state["refine_staged_source_label"], "第1版")
+
     def test_append_refine_snapshot_prefers_selected_source_label(self):
         original_bytes = make_test_png_bytes((123, 45, 67))
         demo.st.session_state["refine_staged_source_label"] = "候选 01"
@@ -210,6 +346,26 @@ class DemoWorkbenchStateTest(unittest.TestCase):
         self.assertEqual(demo.st.session_state["tab1_exp_mode"], "demo_planner_critic")
         self.assertEqual(demo.st.session_state["tab1_image_resolution"], "2K")
         self.assertNotIn("_pending_generation_widget_updates", demo.st.session_state)
+
+    def test_apply_pending_refine_widget_state_updates_flushes_queue(self):
+        demo.st.session_state["_pending_refine_widget_updates"] = {
+            "refine_input_source": "候选方案",
+            "edit_prompt": "继续优化层次",
+            "refine_workspace_view": "结果与状态",
+        }
+
+        demo._apply_pending_refine_widget_state_updates()
+
+        self.assertEqual(demo.st.session_state["refine_input_source"], "候选方案")
+        self.assertEqual(demo.st.session_state["edit_prompt"], "继续优化层次")
+        self.assertEqual(demo.st.session_state["refine_workspace_view"], "结果与状态")
+        self.assertNotIn("_pending_refine_widget_updates", demo.st.session_state)
+
+    def test_refine_history_layout_helpers_match_compact_workspace_expectation(self):
+        self.assertEqual(demo.get_refine_history_grid_columns(1), 1)
+        self.assertEqual(demo.get_refine_history_grid_columns(7), demo.REFINE_HISTORY_PREVIEW_COLS)
+        self.assertEqual(demo.get_refine_history_preview_width(1), demo.REFINE_HISTORY_PREVIEW_WIDTH)
+        self.assertEqual(demo.get_refine_history_preview_width(3), "stretch")
 
 
 if __name__ == "__main__":

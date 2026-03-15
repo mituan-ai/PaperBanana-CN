@@ -40,8 +40,9 @@ class _FakeRenderStreamlit:
     def __init__(self):
         self.session_state = {}
         self.markdown_calls = []
-        self.image_calls = 0
+        self.image_calls = []
         self.download_calls = 0
+        self.columns_calls = []
 
     def divider(self):
         return None
@@ -59,7 +60,7 @@ class _FakeRenderStreamlit:
         return None
 
     def image(self, *args, **kwargs):
-        self.image_calls += 1
+        self.image_calls.append({"args": args, "kwargs": dict(kwargs)})
 
     def download_button(self, *args, **kwargs):
         self.download_calls += 1
@@ -69,6 +70,13 @@ class _FakeRenderStreamlit:
         return _DummyContextManager()
 
     def columns(self, spec, **kwargs):
+        normalized_spec = spec if isinstance(spec, int) else list(spec)
+        self.columns_calls.append(
+            {
+                "spec": normalized_spec,
+                "kwargs": dict(kwargs),
+            }
+        )
         count = spec if isinstance(spec, int) else len(spec)
         return [_DummyContextManager() for _ in range(count)]
 
@@ -411,8 +419,50 @@ class RefineBackgroundJobTest(unittest.TestCase):
             demo.st = original_st
 
         self.assertIn("## 🎨 精修结果", fake_st.markdown_calls)
-        self.assertGreaterEqual(fake_st.image_calls, 1)
+        self.assertGreaterEqual(len(fake_st.image_calls), 2)
+        self.assertEqual(fake_st.columns_calls[0]["spec"], [1, 2, 1])
+        self.assertEqual(
+            fake_st.image_calls[0]["kwargs"].get("width"),
+            demo.REFINE_ORIGINAL_PREVIEW_WIDTH,
+        )
+        self.assertEqual(fake_st.columns_calls[1]["spec"], [1, 2, 1])
+        self.assertEqual(
+            fake_st.image_calls[1]["kwargs"].get("width"),
+            demo.SINGLE_REFINE_RESULT_PREVIEW_WIDTH,
+        )
         self.assertGreaterEqual(fake_st.download_calls, 1)
+
+    def test_render_refine_results_section_uses_dense_grid_for_multiple_results(self):
+        original_st = demo.st
+        fake_st = _FakeRenderStreamlit()
+        fake_st.session_state.update(
+            {
+                "refined_images": [
+                    {"index": 1, "bytes": _build_png_bytes()},
+                    {"index": 2, "bytes": _build_png_bytes()},
+                    {"index": 3, "bytes": _build_png_bytes()},
+                ],
+                "refine_original_image_bytes": _build_png_bytes(),
+                "refine_timestamp": "2026-03-10 03:00:00",
+            }
+        )
+
+        demo.st = fake_st
+        try:
+            demo.render_refine_results_section(
+                fallback_original_bytes=b"",
+                fallback_resolution="2K",
+                fallback_provider="gemini",
+                fallback_image_model_name="gemini-3.1-flash-image-preview",
+            )
+        finally:
+            demo.st = original_st
+
+        self.assertGreaterEqual(len(fake_st.columns_calls), 2)
+        self.assertEqual(fake_st.columns_calls[1]["spec"], 3)
+        self.assertEqual(fake_st.columns_calls[1]["kwargs"].get("gap"), "medium")
+        result_image_widths = [call["kwargs"].get("width") for call in fake_st.image_calls[1:]]
+        self.assertTrue(all(width == "stretch" for width in result_image_widths))
 
 
 if __name__ == "__main__":
