@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero_banner.png" alt="PaperBanana-Pro" width="680">
+  <img src="assets/hero_banner.png" alt="PaperBanana-Pro" width="420">
 </p>
 
 <h1 align="center">PaperBanana-Pro · 纸香蕉</h1>
