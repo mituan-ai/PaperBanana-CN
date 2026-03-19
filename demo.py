@@ -6315,11 +6315,11 @@ def render_generation_sidebar_controls() -> dict:
 
         action_cols = st.columns([1, 1, 1], gap="small")
         with action_cols[0]:
-            save_clicked = st.button("💾 保存", key="tab1_save_connection", use_container_width=True, help="保存当前连接草稿。")
+            save_clicked = st.button("💾 保存", key="tab1_save_connection", width="stretch", help="保存当前连接草稿。")
         with action_cols[1]:
-            refresh_clicked = st.button("↻ 刷新", key="tab1_refresh_models", use_container_width=True, help="重新拉取或更新可用模型列表。")
+            refresh_clicked = st.button("↻ 刷新", key="tab1_refresh_models", width="stretch", help="重新拉取或更新可用模型列表。")
         with action_cols[2]:
-            test_clicked = st.button("🧪 测试", key="tab1_test_connection", use_container_width=True, help="验证文本链路与图像链路是否可用。")
+            test_clicked = st.button("🧪 测试", key="tab1_test_connection", width="stretch", help="验证文本链路与图像链路是否可用。")
 
         if save_clicked:
             ok, message, _ = save_connection_draft(
@@ -6358,7 +6358,7 @@ def render_generation_sidebar_controls() -> dict:
         if provider not in BUILTIN_CONNECTION_IDS and provider != CUSTOM_CONNECTION_CREATE_OPTION:
             delete_col, _ = st.columns([1, 2])
             with delete_col:
-                delete_clicked = st.button("删除自定义连接", key="tab1_delete_custom_connection", use_container_width=True)
+                delete_clicked = st.button("删除自定义连接", key="tab1_delete_custom_connection", width="stretch")
             if delete_clicked:
                 delete_custom_connection(provider, base_dir=REPO_ROOT)
                 st.session_state["tab1_provider"] = DEFAULT_PROVIDER
@@ -6578,11 +6578,11 @@ def render_refine_sidebar_controls() -> dict:
             )
         action_cols = st.columns([1, 1, 1], gap="small")
         with action_cols[0]:
-            save_clicked = st.button("💾 保存", key="refine_save_connection", use_container_width=True, help="保存当前连接草稿。")
+            save_clicked = st.button("💾 保存", key="refine_save_connection", width="stretch", help="保存当前连接草稿。")
         with action_cols[1]:
-            refresh_clicked = st.button("↻ 刷新", key="refine_refresh_models", use_container_width=True, help="重新拉取或更新可用模型列表。")
+            refresh_clicked = st.button("↻ 刷新", key="refine_refresh_models", width="stretch", help="重新拉取或更新可用模型列表。")
         with action_cols[2]:
-            test_clicked = st.button("🧪 测试", key="refine_test_connection", use_container_width=True, help="验证当前连接的图像链路与兼容性。")
+            test_clicked = st.button("🧪 测试", key="refine_test_connection", width="stretch", help="验证当前连接的图像链路与兼容性。")
 
         if save_clicked:
             ok, message, _ = save_connection_draft(
@@ -6619,7 +6619,7 @@ def render_refine_sidebar_controls() -> dict:
             emit_connection_action_feedback(message)
 
         if refine_provider not in BUILTIN_CONNECTION_IDS and refine_provider != CUSTOM_CONNECTION_CREATE_OPTION:
-            delete_clicked = st.button("删除自定义连接", key="refine_delete_custom_connection", use_container_width=True)
+            delete_clicked = st.button("删除自定义连接", key="refine_delete_custom_connection", width="stretch")
             if delete_clicked:
                 delete_custom_connection(refine_provider, base_dir=REPO_ROOT)
                 st.session_state["refine_provider"] = DEFAULT_PROVIDER
