@@ -6194,11 +6194,25 @@ def render_generation_sidebar_controls() -> dict:
                 disabled=False,
                 help="仅自定义连接可编辑，建议使用小写英文和连字符。",
             )
-        base_url = st.text_input(
-            "Base URL",
-            key=state_keys["base_url"],
-            help="OpenAI 兼容服务请填写完整 base URL；内置连接也可临时覆盖。",
-        )
+        if is_builtin_connection:
+            with st.expander("高级连接参数", expanded=False):
+                base_url = st.text_input(
+                    "Base URL",
+                    key=state_keys["base_url"],
+                    help="OpenAI 兼容服务请填写完整 base URL；内置连接也可临时覆盖。",
+                )
+                extra_headers_json = st.text_area(
+                    "额外请求头（JSON）",
+                    key=state_keys["extra_headers_json"],
+                    height=100,
+                    help="用于某些自建网关的附加请求头，例如组织信息或路由标记。",
+                )
+        else:
+            base_url = st.text_input(
+                "Base URL",
+                key=state_keys["base_url"],
+                help="OpenAI 兼容服务请填写完整 base URL；内置连接也可临时覆盖。",
+            )
         if not is_builtin_connection:
             st.text_input(
                 "API Key 环境变量",
@@ -6206,12 +6220,12 @@ def render_generation_sidebar_controls() -> dict:
                 disabled=False,
                 help="可选。若配置了环境变量名，将优先读取该环境变量中的密钥。",
             )
-        extra_headers_json = st.text_area(
-            "额外请求头（JSON）",
-            key=state_keys["extra_headers_json"],
-            height=100,
-            help="用于某些自建网关的附加请求头，例如组织信息或路由标记。",
-        )
+            extra_headers_json = st.text_area(
+                "额外请求头（JSON）",
+                key=state_keys["extra_headers_json"],
+                height=100,
+                help="用于某些自建网关的附加请求头，例如组织信息或路由标记。",
+            )
         persist_secret = st.checkbox(
             "将 API Key 保存到本地",
             key=state_keys["persist_secret"],
@@ -6475,11 +6489,25 @@ def render_refine_sidebar_controls() -> dict:
                 disabled=False,
                 help="仅自定义连接可编辑。",
             )
-        refine_base_url = st.text_input(
-            "Base URL",
-            key=state_keys["base_url"],
-            help="当前精修连接的 base URL。",
-        )
+        if is_builtin_connection:
+            with st.expander("高级连接参数", expanded=False):
+                refine_base_url = st.text_input(
+                    "Base URL",
+                    key=state_keys["base_url"],
+                    help="当前精修连接的 base URL。",
+                )
+                refine_extra_headers_json = st.text_area(
+                    "额外请求头（JSON）",
+                    key=state_keys["extra_headers_json"],
+                    height=90,
+                    help="用于某些 OpenAI 兼容网关的附加请求头。",
+                )
+        else:
+            refine_base_url = st.text_input(
+                "Base URL",
+                key=state_keys["base_url"],
+                help="当前精修连接的 base URL。",
+            )
         if not is_builtin_connection:
             st.text_input(
                 "API Key 环境变量",
@@ -6487,12 +6515,12 @@ def render_refine_sidebar_controls() -> dict:
                 disabled=False,
                 help="可选。若配置，将优先读取该环境变量。",
             )
-        refine_extra_headers_json = st.text_area(
-            "额外请求头（JSON）",
-            key=state_keys["extra_headers_json"],
-            height=90,
-            help="用于某些 OpenAI 兼容网关的附加请求头。",
-        )
+            refine_extra_headers_json = st.text_area(
+                "额外请求头（JSON）",
+                key=state_keys["extra_headers_json"],
+                height=90,
+                help="用于某些 OpenAI 兼容网关的附加请求头。",
+            )
         st.checkbox(
             "将 API Key 保存到本地",
             key=state_keys["persist_secret"],
