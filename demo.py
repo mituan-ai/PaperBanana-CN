@@ -1083,7 +1083,7 @@ def render_provider_api_key_controls(
     clear_button_key: str,
 ) -> str:
     widget_key = get_api_key_widget_key(session_key)
-    prepared_value = prepare_api_key_widget_state(
+    prepare_api_key_widget_state(
         session_key=session_key,
         clear_request_key=clear_request_key,
         provider_defaults=provider_defaults,
@@ -1092,7 +1092,6 @@ def render_provider_api_key_controls(
         provider_defaults["api_key_label"],
         type="password",
         key=widget_key,
-        value=prepared_value,
         help=provider_defaults["api_key_help"],
     )
     normalized_api_key = str(api_key or "").strip()

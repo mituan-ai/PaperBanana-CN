@@ -16,10 +16,14 @@ if "streamlit" not in sys.modules:
 demo = importlib.import_module("demo")
 
 
+_TEXT_INPUT_SENTINEL = object()
+
+
 class _FakeInteractiveStreamlit:
     def __init__(self):
         self.session_state = {}
         self.selectbox_calls = []
+        self.text_input_calls = []
         self.html_calls = []
 
     def __enter__(self):
@@ -42,9 +46,21 @@ class _FakeInteractiveStreamlit:
             self.session_state[key] = options[index]
         return self.session_state[key]
 
-    def text_input(self, label, value="", key=None, help=None, **kwargs):
+    def text_input(self, label, *args, value=_TEXT_INPUT_SENTINEL, key=None, help=None, **kwargs):
+        explicit_value = bool(args) or value is not _TEXT_INPUT_SENTINEL
+        resolved_value = args[0] if args else ("" if value is _TEXT_INPUT_SENTINEL else value)
+        self.text_input_calls.append(
+            {
+                "label": label,
+                "value": resolved_value,
+                "value_provided": explicit_value,
+                "key": key,
+                "help": help,
+                "kwargs": dict(kwargs),
+            }
+        )
         if key not in self.session_state:
-            self.session_state[key] = value
+            self.session_state[key] = resolved_value
         return self.session_state[key]
 
     def columns(self, spec, **kwargs):
@@ -247,6 +263,8 @@ class DemoModelInputTest(unittest.TestCase):
             self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")],
             "saved-google-key",
         )
+        self.assertEqual(len(self.fake_streamlit.text_input_calls), 1)
+        self.assertFalse(self.fake_streamlit.text_input_calls[0]["value_provided"])
         self.assertEqual(captured_calls, [("gemini", "saved-google-key")])
 
     def test_build_api_key_storage_notice_reflects_local_secret_state(self):
