@@ -170,6 +170,10 @@ class GenerationBackgroundJobTest(unittest.TestCase):
     def test_demo_ui_state_round_trip_survives_session_reset(self):
         demo.st.session_state["tab1_provider"] = "gemini"
         demo.st.session_state["tab1_api_key"] = "runtime-key"
+        demo.st.session_state["tab1_base_url"] = "https://example.com/v1"
+        demo.st.session_state["tab1_connection_display_name"] = "自定义显示名"
+        demo.st.session_state["tab1_connection_id"] = "gemini"
+        demo.st.session_state["tab1_extra_headers_json"] = '{"Authorization":"Bearer secret"}'
         demo.st.session_state["tab1_model_name"] = "gemini-3.1-pro-preview"
         demo.st.session_state["tab1_model_name_selector"] = demo.CUSTOM_MODEL_OPTION
         demo.st.session_state["tab1_model_name_custom"] = "custom-text-model"
@@ -188,6 +192,9 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         demo.restore_persisted_demo_ui_state()
 
         self.assertEqual(demo.st.session_state["tab1_provider"], "gemini")
+        self.assertEqual(demo.st.session_state["tab1_base_url"], "https://example.com/v1")
+        self.assertEqual(demo.st.session_state["tab1_connection_display_name"], "自定义显示名")
+        self.assertEqual(demo.st.session_state["tab1_connection_id"], "gemini")
         self.assertEqual(demo.st.session_state["tab1_model_name"], "gemini-3.1-pro-preview")
         self.assertEqual(demo.st.session_state["tab1_model_name_selector"], demo.CUSTOM_MODEL_OPTION)
         self.assertEqual(demo.st.session_state["tab1_model_name_custom"], "custom-text-model")
@@ -197,6 +204,7 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertEqual(demo.st.session_state["tab1_num_candidates"], 8)
         self.assertEqual(demo.st.session_state["refine_staged_image_bytes"], b"preview-bytes")
         self.assertNotIn("tab1_api_key", demo.st.session_state)
+        self.assertNotIn("tab1_extra_headers_json", demo.st.session_state)
         self.assertNotIn("active_generation_job_id", demo.st.session_state)
 
     def test_restore_persisted_demo_ui_state_keeps_running_generation_job_id_when_snapshot_exists(self):
@@ -425,6 +433,94 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertEqual(snapshot["bundle_file"], "D:/tmp/demo_generation.bundle.json")
             self.assertEqual(snapshot["curated_profile"], "default")
         finally:
+            demo.process_parallel_candidates = original_process
+            demo.save_demo_generation_artifacts = original_save
+            if job_id:
+                demo.clear_generation_job(job_id)
+
+    def test_background_generation_job_passes_connection_metadata_to_runtime_and_artifacts(self):
+        original_resolve = demo.resolve_runtime_settings
+        original_create_inputs = demo.create_sample_inputs
+        original_process = demo.process_parallel_candidates
+        original_save = demo.save_demo_generation_artifacts
+        captured = {}
+        job_id = None
+
+        demo.resolve_runtime_settings = lambda *args, **kwargs: types.SimpleNamespace(
+            provider="openai_compatible",
+            connection_id="custom-openai",
+            provider_display_name="自定义连接",
+            api_key="local-test-key",
+            model_name="custom-text",
+            image_model_name="custom-image",
+            base_url="https://example.com/v1",
+            extra_headers={"X-Test": "demo"},
+            concurrency_mode="manual",
+            max_concurrent=1,
+            max_critic_rounds=1,
+        )
+        demo.create_sample_inputs = lambda **kwargs: [{"candidate_id": 0}]
+
+        async def fake_process_parallel_candidates(data_list, **kwargs):
+            captured["process_kwargs"] = dict(kwargs)
+            return [
+                {
+                    "candidate_id": 0,
+                    "task_name": "diagram",
+                    "dataset_name": "PaperBananaBench",
+                    "exp_mode": "demo_planner_critic",
+                    "eval_image_field": "target_diagram_desc0_base64_jpg",
+                    "target_diagram_desc0_base64_jpg": _build_png_base64(),
+                }
+            ], 1
+
+        def fake_save_demo_generation_artifacts(**kwargs):
+            captured["artifact_kwargs"] = dict(kwargs)
+            return {
+                "summary": {"total_candidates": 1},
+                "failures": [],
+                "json_file": "D:/tmp/custom_generation.json",
+                "bundle_file": "D:/tmp/custom_generation.bundle.json",
+                "manifest": {},
+            }
+
+        demo.process_parallel_candidates = fake_process_parallel_candidates
+        demo.save_demo_generation_artifacts = fake_save_demo_generation_artifacts
+        try:
+            job_id = demo.start_generation_background_job(
+                dataset_name="PaperBananaBench",
+                task_name="diagram",
+                exp_mode="demo_planner_critic",
+                retrieval_setting="none",
+                curated_profile="default",
+                provider="custom-openai",
+                connection_id="custom-openai",
+                api_key="local-test-key",
+                model_name="custom-text",
+                image_model_name="custom-image",
+                base_url="https://example.com/v1",
+                extra_headers={"X-Test": "demo"},
+                concurrency_mode="manual",
+                max_concurrent=1,
+                num_candidates=1,
+                max_critic_rounds=1,
+                aspect_ratio="16:9",
+                image_resolution="2K",
+                content="paper method",
+                visual_intent="draw a pipeline",
+            )
+            snapshot = self._wait_for_terminal_snapshot(job_id)
+
+            self.assertEqual(snapshot["connection_id"], "custom-openai")
+            self.assertEqual(snapshot["provider_display_name"], "自定义连接")
+            self.assertEqual(captured["process_kwargs"]["connection_id"], "custom-openai")
+            self.assertEqual(captured["process_kwargs"]["base_url"], "https://example.com/v1")
+            self.assertEqual(captured["process_kwargs"]["extra_headers"], {"X-Test": "demo"})
+            self.assertEqual(captured["artifact_kwargs"]["connection_id"], "custom-openai")
+            self.assertEqual(captured["artifact_kwargs"]["provider_display_name"], "自定义连接")
+        finally:
+            demo.resolve_runtime_settings = original_resolve
+            demo.create_sample_inputs = original_create_inputs
             demo.process_parallel_candidates = original_process
             demo.save_demo_generation_artifacts = original_save
             if job_id:

@@ -15,8 +15,37 @@ evolink:
   image_model_name: evolink-image
 """
 
+PROVIDER_REGISTRY_YAML = """version: 1
+connections:
+  - connection_id: custom-openai
+    display_name: 自定义 OpenAI
+    provider_type: openai_compatible
+    protocol_family: openai
+    base_url: https://example.com/v1
+    text_model: custom-text
+    image_model: custom-image
+    model_discovery_mode: hybrid
+    model_allowlist:
+      - custom-text
+      - custom-image
+    extra_headers:
+      X-Test: abc
+    supports_text: true
+    supports_image: true
+    enabled: true
+"""
+
 
 class ExpConfigProviderDefaultsTest(unittest.TestCase):
+    def _write_custom_connection_fixture(self, work_dir: Path) -> None:
+        config_dir = work_dir / "configs"
+        local_provider_dir = config_dir / "local" / "providers"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        local_provider_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "model_config.yaml").write_text(CONFIG_YAML, encoding="utf-8")
+        (config_dir / "provider_registry.yaml").write_text(PROVIDER_REGISTRY_YAML, encoding="utf-8")
+        (local_provider_dir / "custom-openai.txt").write_text("custom-local-key\n", encoding="utf-8")
+
     def test_exp_config_defaults_to_gemini_provider(self):
         exp_config = ExpConfig(dataset_name="PaperBananaBench")
 
@@ -95,6 +124,27 @@ class ExpConfigProviderDefaultsTest(unittest.TestCase):
         self.assertIn("gemini-3-1-pro-image-pre", run_name)
         self.assertNotIn("/", run_name)
         self.assertNotIn(" ", run_name)
+
+    def test_exp_name_prefers_connection_id_when_using_custom_connection(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            work_dir = Path(tmp_dir)
+            self._write_custom_connection_fixture(work_dir)
+
+            exp_config = ExpConfig(
+                dataset_name="PaperBananaBench",
+                task_name="diagram",
+                provider="gemini",
+                connection_id="custom-openai",
+                retrieval_setting="auto",
+                exp_mode="demo_full",
+                split_name="test",
+                timestamp="0310_123456",
+                work_dir=work_dir,
+            )
+
+            self.assertEqual(exp_config.provider, "openai_compatible")
+            self.assertEqual(exp_config.connection_id, "custom-openai")
+            self.assertIn("custom-opena", exp_config.exp_name)
 
     def test_manual_alias_normalizes_to_curated_profile(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

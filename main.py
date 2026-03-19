@@ -171,10 +171,16 @@ async def main():
         help='image model name to use (default: "")',
     )
     parser.add_argument(
+        "--connection_id",
+        type=str,
+        default="",
+        help="provider connection id to use; overrides --provider when set",
+    )
+    parser.add_argument(
         "--provider",
         type=str,
         default=DEFAULT_PROVIDER,
-        choices=["gemini", "evolink"],
+        choices=["gemini", "evolink", "openrouter"],
         help=f"provider to use (default: {DEFAULT_PROVIDER})",
     )
     parser.add_argument(
@@ -216,6 +222,7 @@ async def main():
         model_name=args.model_name,
         image_model_name=args.image_model_name,
         provider=args.provider,
+        connection_id=args.connection_id,
         work_dir=Path(__file__).parent,
     )
     
@@ -234,8 +241,9 @@ async def main():
     
     logger.info(f"📁 输入文件: {input_filename}  输出文件: {output_filename}")
     logger.info(
-        "⚙️ 运行配置 | provider=%s | text_model=%s | image_model=%s | retrieval=%s | critic_rounds=%s | concurrency=%s/%s",
+        "⚙️ 运行配置 | provider=%s | connection=%s | text_model=%s | image_model=%s | retrieval=%s | critic_rounds=%s | concurrency=%s/%s",
         exp_config.provider,
+        exp_config.connection_id,
         exp_config.model_name,
         exp_config.image_model_name,
         exp_config.retrieval_setting,

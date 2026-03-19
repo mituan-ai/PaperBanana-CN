@@ -113,6 +113,60 @@ class BaseAgentImageApiTest(unittest.TestCase):
 
 
 class BaseAgentProviderValidationTest(unittest.TestCase):
+    def test_text_api_routes_openai_compatible_to_openai_chat(self):
+        captured = {}
+
+        async def fake_call_openai_with_retry_async(**kwargs):
+            captured.update(kwargs)
+            return ["ok"]
+
+        original = generation_utils.call_openai_with_retry_async
+        generation_utils.call_openai_with_retry_async = fake_call_openai_with_retry_async
+        try:
+            exp_config = types.SimpleNamespace(
+                provider="openai_compatible",
+                temperature=0.5,
+            )
+            agent = _DummyAgent(
+                model_name="custom-text-model",
+                system_prompt="System prompt",
+                exp_config=exp_config,
+            )
+
+            result = asyncio.run(agent.call_text_api([{"type": "text", "text": "hello"}]))
+
+            self.assertEqual(result, ["ok"])
+            self.assertEqual(captured["model_name"], "custom-text-model")
+        finally:
+            generation_utils.call_openai_with_retry_async = original
+
+    def test_image_api_routes_openai_compatible_to_openai_images(self):
+        captured = {}
+
+        async def fake_call_openai_image_generation_with_retry_async(**kwargs):
+            captured.update(kwargs)
+            return ["fake-image-b64"]
+
+        original = generation_utils.call_openai_image_generation_with_retry_async
+        generation_utils.call_openai_image_generation_with_retry_async = fake_call_openai_image_generation_with_retry_async
+        try:
+            exp_config = types.SimpleNamespace(
+                provider="openai_compatible",
+                temperature=0.5,
+            )
+            agent = _DummyAgent(
+                model_name="custom-image-model",
+                system_prompt="System prompt",
+                exp_config=exp_config,
+            )
+
+            result = asyncio.run(agent.call_image_api(prompt="Draw a diagram."))
+
+            self.assertEqual(result, ["fake-image-b64"])
+            self.assertEqual(captured["model_name"], "custom-image-model")
+        finally:
+            generation_utils.call_openai_image_generation_with_retry_async = original
+
     def test_text_api_rejects_unknown_provider(self):
         exp_config = types.SimpleNamespace(
             provider="mystery-provider",

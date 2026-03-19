@@ -23,7 +23,7 @@ import logging
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 from functools import partial
 from ast import literal_eval
@@ -69,9 +69,11 @@ evolink_base_url = get_config_val(
 
 @dataclass
 class RuntimeContext:
+    connection_id: str = ""
     provider: str = ""
     api_key: str = ""
     base_url: str = ""
+    extra_headers: dict[str, str] = field(default_factory=dict)
     event_hook: Optional[Callable[[dict[str, Any]], None]] = None
     status_hook: Optional[Callable[[str], None]] = None
     cancel_check: Optional[Callable[[], bool]] = None
@@ -132,28 +134,36 @@ def _create_anthropic_client(api_key: str):
         return None
 
 
-def _create_openai_client(api_key: str):
+def _create_openai_client(api_key: str, base_url: str = "", extra_headers: Optional[dict[str, str]] = None):
     if not api_key:
         return None
     try:
         from openai import AsyncOpenAI
-        return AsyncOpenAI(api_key=api_key)
+        kwargs = {"api_key": api_key}
+        if str(base_url or "").strip():
+            kwargs["base_url"] = str(base_url).strip()
+        if extra_headers:
+            kwargs["default_headers"] = extra_headers
+        return AsyncOpenAI(**kwargs)
     except ImportError:
         logger.warning("⚠️  未安装 openai，OpenAI Client 不可用")
         return None
 
 
-def _create_openrouter_client(api_key: str, base_url: str = ""):
+def _create_openrouter_client(
+    api_key: str,
+    base_url: str = "",
+    extra_headers: Optional[dict[str, str]] = None,
+):
     """OpenRouter 使用 OpenAI 兼容接口，只需指定不同的 base_url。"""
     if not api_key:
         return None
     resolved_url = str(base_url or "https://openrouter.ai/api/v1").strip()
-    try:
-        from openai import AsyncOpenAI
-        return AsyncOpenAI(api_key=api_key, base_url=resolved_url)
-    except ImportError:
-        logger.warning("⚠️  未安装 openai，OpenRouter Client 不可用")
-        return None
+    return _create_openai_client(
+        api_key,
+        base_url=resolved_url,
+        extra_headers=extra_headers,
+    )
 
 
 def get_default_runtime_context() -> RuntimeContext | None:
@@ -203,19 +213,25 @@ def get_openai_client():
 
 def create_runtime_context(
     *,
+    connection_id: str = "",
     provider: str = "",
     api_key: str = "",
     event_hook: Optional[Callable[[dict[str, Any]], None]] = None,
     status_hook: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     base_url: str = "",
+    extra_headers: Optional[dict[str, str]] = None,
 ) -> RuntimeContext:
     normalized_provider = str(provider or "").strip().lower()
-    resolved_base_url = base_url or evolink_base_url
+    resolved_base_url = str(base_url or "").strip()
+    if normalized_provider == "evolink" and not resolved_base_url:
+        resolved_base_url = evolink_base_url
     context = RuntimeContext(
+        connection_id=str(connection_id or "").strip(),
         provider=normalized_provider,
         api_key=str(api_key or "").strip(),
         base_url=resolved_base_url,
+        extra_headers=dict(extra_headers or {}),
         event_hook=event_hook,
         status_hook=status_hook,
         cancel_check=cancel_check,
@@ -229,9 +245,17 @@ def create_runtime_context(
     elif normalized_provider == "anthropic" and context.api_key:
         context.anthropic_client = _create_anthropic_client(context.api_key)
     elif normalized_provider == "openai" and context.api_key:
-        context.openai_client = _create_openai_client(context.api_key)
-    elif normalized_provider == "openrouter" and context.api_key:
-        context.openai_client = _create_openrouter_client(context.api_key, resolved_base_url)
+        context.openai_client = _create_openai_client(
+            context.api_key,
+            base_url=context.base_url,
+            extra_headers=context.extra_headers,
+        )
+    elif normalized_provider in {"openrouter", "openai_compatible"} and context.api_key:
+        context.openai_client = _create_openrouter_client(
+            context.api_key,
+            resolved_base_url,
+            context.extra_headers,
+        )
 
     return context
 
@@ -267,9 +291,17 @@ def reinitialize_runtime_context(context: RuntimeContext | None) -> RuntimeConte
     elif context.provider == "anthropic" and context.api_key:
         context.anthropic_client = _create_anthropic_client(context.api_key)
     elif context.provider == "openai" and context.api_key:
-        context.openai_client = _create_openai_client(context.api_key)
-    elif context.provider == "openrouter" and context.api_key:
-        context.openai_client = _create_openrouter_client(context.api_key, context.base_url)
+        context.openai_client = _create_openai_client(
+            context.api_key,
+            base_url=context.base_url,
+            extra_headers=context.extra_headers,
+        )
+    elif context.provider in {"openrouter", "openai_compatible"} and context.api_key:
+        context.openai_client = _create_openrouter_client(
+            context.api_key,
+            context.base_url,
+            context.extra_headers,
+        )
     return context
 
 

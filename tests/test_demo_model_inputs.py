@@ -276,6 +276,73 @@ class DemoModelInputTest(unittest.TestCase):
             demo.build_api_key_storage_notice({"api_key_default": ""}),
             "密钥只保存在当前电脑；输入后会自动写入本地 txt。",
         )
+        self.assertEqual(
+            demo.build_api_key_storage_notice({"api_key_default": "saved-key"}, persist_secret=False),
+            "当前输入仅在本次会话生效，不会写入本地 txt。",
+        )
+
+    def test_render_provider_api_key_controls_skips_persist_when_session_only(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = "session-only-key"
+        original_persist = demo.persist_provider_api_key_input
+        captured_calls = []
+        demo.persist_provider_api_key_input = lambda provider, api_key: captured_calls.append((provider, api_key))
+
+        try:
+            restored = demo.render_provider_api_key_controls(
+                provider="gemini",
+                provider_defaults={
+                    "api_key_label": "Google API Key",
+                    "api_key_help": "Google AI Studio API 密钥",
+                    "api_key_default": "session-only-key",
+                },
+                session_key="tab1_api_key",
+                clear_request_key="tab1_api_key_clear_requested",
+                clear_button_key="tab1_clear_provider_api_key",
+                persist_secret=False,
+            )
+        finally:
+            demo.persist_provider_api_key_input = original_persist
+
+        self.assertEqual(restored, "session-only-key")
+        self.assertEqual(captured_calls, [])
+
+    def test_build_connection_draft_supports_unsaved_custom_connection(self):
+        state_keys = demo._build_connection_state_keys("tab1")
+        self.fake_streamlit.session_state.update(
+            {
+                state_keys["connection_id"]: "draft-openai",
+                state_keys["display_name"]: "草稿连接",
+                state_keys["base_url"]: "https://example.com/v1",
+                state_keys["api_key_env_var"]: "DRAFT_API_KEY",
+                state_keys["extra_headers_json"]: '{\"X-Test\":\"demo\"}',
+                state_keys["supports_text"]: True,
+                state_keys["supports_image"]: False,
+                state_keys["enabled"]: True,
+                state_keys["model_discovery_mode"]: "hybrid",
+                state_keys["model_allowlist"]: "draft-text\ndraft-image",
+                state_keys["probe_results"]: {},
+            }
+        )
+
+        connection = demo.build_connection_draft(
+            prefix="tab1",
+            selected_connection_id=demo.CUSTOM_CONNECTION_CREATE_OPTION,
+            api_key="draft-key",
+            model_name="draft-text",
+            image_model_name="draft-image",
+        )
+
+        self.assertEqual(connection.connection_id, "draft-openai")
+        self.assertEqual(connection.provider_type, demo.CUSTOM_PROVIDER_TYPE)
+        self.assertEqual(connection.base_url, "https://example.com/v1")
+        self.assertEqual(connection.extra_headers, {"X-Test": "demo"})
+        self.assertEqual(connection.api_key, "draft-key")
+
+    def test_parse_extra_headers_json_safe_returns_error_instead_of_raising(self):
+        headers, error_message = demo.parse_extra_headers_json_safe("{not-json}")
+
+        self.assertEqual(headers, {})
+        self.assertIn("额外请求头格式错误", error_message)
 
     def test_inject_refine_tab_sidebar_autocollapse_hook_registers_dom_script(self):
         demo.inject_refine_tab_sidebar_autocollapse_hook()

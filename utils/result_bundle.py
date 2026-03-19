@@ -114,6 +114,8 @@ def build_run_manifest(
         "retrieval_setting": "",
         "curated_profile": "",
         "provider": "",
+        "connection_id": "",
+        "provider_display_name": "",
         "model_name": "",
         "image_model_name": "",
         "concurrency_mode": "",
@@ -143,6 +145,8 @@ def build_run_manifest(
                     getattr(exp_config, "curated_profile", "") or ""
                 ),
                 "provider": str(getattr(exp_config, "provider", "") or ""),
+                "connection_id": str(getattr(exp_config, "connection_id", "") or ""),
+                "provider_display_name": str(getattr(exp_config, "provider_display_name", "") or ""),
                 "model_name": str(getattr(exp_config, "model_name", "") or ""),
                 "image_model_name": str(
                     getattr(exp_config, "image_model_name", "") or ""
@@ -200,6 +204,8 @@ def infer_manifest_from_results(
         retrieval_setting=_first_non_empty(candidate_sources, "retrieval_setting") or "",
         curated_profile=_first_non_empty(candidate_sources, "curated_profile") or "",
         provider=_first_non_empty(candidate_sources, "provider") or "",
+        connection_id=_first_non_empty(candidate_sources, "connection_id") or "",
+        provider_display_name=_first_non_empty(candidate_sources, "provider_display_name") or "",
         model_name=_first_non_empty(candidate_sources, "model_name") or "",
         image_model_name=_first_non_empty(candidate_sources, "image_model_name") or "",
         concurrency_mode=_first_non_empty(candidate_sources, "concurrency_mode") or "",

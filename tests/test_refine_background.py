@@ -185,6 +185,55 @@ class RefineBackgroundJobTest(unittest.TestCase):
             demo.refine_images_with_count = original
             demo.clear_refine_job(job_id)
 
+    def test_background_refine_job_passes_connection_metadata_to_runtime(self):
+        original_resolve = demo.resolve_runtime_settings
+        original_refine = demo.refine_images_with_count
+        captured = {}
+        job_id = None
+
+        demo.resolve_runtime_settings = lambda *args, **kwargs: types.SimpleNamespace(
+            api_key="local-test-key",
+            provider="evolink",
+            connection_id="custom-image-gateway",
+            provider_display_name="自定义图像网关",
+            image_model_name="custom-image-model",
+            base_url="https://example.com/v1",
+            extra_headers={"X-Test": "demo"},
+        )
+
+        async def fake_refine_images_with_count(**kwargs):
+            captured.update(kwargs)
+            return [(b"image-bytes", "ok")]
+
+        demo.refine_images_with_count = fake_refine_images_with_count
+        try:
+            job_id = demo.start_refine_background_job(
+                image_bytes=b"input",
+                edit_prompt="make it better",
+                num_images=1,
+                aspect_ratio="16:9",
+                image_size="2K",
+                api_key="local-test-key",
+                provider="custom-image-gateway",
+                connection_id="custom-image-gateway",
+                image_model_name="custom-image-model",
+                base_url="https://example.com/v1",
+                extra_headers={"X-Test": "demo"},
+                input_mime_type="image/png",
+            )
+            snapshot = self._wait_for_terminal_snapshot(job_id)
+
+            self.assertEqual(snapshot["connection_id"], "custom-image-gateway")
+            self.assertEqual(snapshot["provider_display_name"], "自定义图像网关")
+            self.assertEqual(captured["connection_id"], "custom-image-gateway")
+            self.assertEqual(captured["base_url"], "https://example.com/v1")
+            self.assertEqual(captured["extra_headers"], {"X-Test": "demo"})
+        finally:
+            demo.resolve_runtime_settings = original_resolve
+            demo.refine_images_with_count = original_refine
+            if job_id:
+                demo.clear_refine_job(job_id)
+
     def test_request_cancel_marks_job_cancelled(self):
         original = demo.refine_images_with_count
 
@@ -283,7 +332,11 @@ class RefineBackgroundJobTest(unittest.TestCase):
         demo.resolve_runtime_settings = lambda *args, **kwargs: types.SimpleNamespace(
             api_key="local-test-key",
             provider="gemini",
+            connection_id="gemini",
+            provider_display_name="Gemini",
             image_model_name="gemini-3.1-flash-image-preview",
+            base_url="",
+            extra_headers={},
         )
         demo.build_runtime_context = lambda *args, **kwargs: runtime_context_obj
         demo.generation_utils = _FakeGenerationUtils()

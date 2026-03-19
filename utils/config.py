@@ -98,6 +98,8 @@ class ExpConfig:
     model_name: str = ""
     image_model_name: str = ""
     provider: str = DEFAULT_PROVIDER
+    connection_id: str = ""
+    provider_display_name: str = ""
     work_dir: Path = Path(__file__).parent.parent
     timezone: str = "America/Los_Angeles"
 
@@ -107,6 +109,7 @@ class ExpConfig:
     def __post_init__(self):
         self.runtime_settings = resolve_runtime_settings(
             self.provider,
+            connection_id=self.connection_id,
             model_name=self.model_name,
             image_model_name=self.image_model_name,
             concurrency_mode=self.concurrency_mode,
@@ -114,7 +117,9 @@ class ExpConfig:
             max_critic_rounds=self.max_critic_rounds,
             base_dir=self.work_dir,
         )
+        self.connection_id = self.runtime_settings.connection_id
         self.provider = self.runtime_settings.provider
+        self.provider_display_name = self.runtime_settings.provider_display_name
         self.model_name = self.runtime_settings.model_name
         self.image_model_name = self.runtime_settings.image_model_name
         self.concurrency_mode = self.runtime_settings.concurrency_mode
@@ -129,7 +134,7 @@ class ExpConfig:
 
         self.exp_name = build_run_name(
             timestamp=self.timestamp,
-            provider=self.provider,
+            provider=self.connection_id or self.provider,
             model_name=self.model_name,
             image_model_name=self.image_model_name,
             retrieval_setting=self.retrieval_setting,

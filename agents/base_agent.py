@@ -117,7 +117,7 @@ class BaseAgent(ABC):
                 error_context=error_context,
             )
 
-        if provider == "openrouter":
+        if provider in {"openrouter", "openai_compatible"}:
             return await generation_utils.call_openai_with_retry_async(
                 model_name=_model,
                 contents=contents,
@@ -220,7 +220,7 @@ class BaseAgent(ABC):
                 error_context=error_context,
             )
 
-        if provider == "openrouter":
+        if provider in {"openrouter", "openai_compatible"}:
             return await generation_utils.call_openai_image_generation_with_retry_async(
                 model_name=_model,
                 prompt=prompt,

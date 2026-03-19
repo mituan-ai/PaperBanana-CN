@@ -8,6 +8,12 @@
 - `visualize/` must stay compatible with historical result files.
 
 ## Current Decisions
+- 2026-03-19 Provider connection 改造第一阶段已收口为“连接对象”模型：
+  - 运行时不再把 `provider` 直接等同于固定枚举；GUI、CLI、后台任务会先解析成 `ProviderConnection`，再映射到具体 `provider_type` 执行。
+  - 连接注册表落在 `configs/provider_registry.yaml`；内置连接继续兼容 `configs/local/*.txt` 与 `model_config.yaml`；自定义 OpenAI-compatible 连接的密钥落在 `configs/local/providers/<connection_id>.txt`。
+  - `configs/local/provider_connection_meta.json` 缓存最近一次探针结果，至少保留 discovery / text / image 三类状态。
+  - `/models` 发现失败不阻塞连接保存；文本探针失败判定生成链路不可用；图像探针失败只影响图像链路；未声明图像能力时返回 `skipped`。
+  - `--provider` 进入兼容期，仅作为内置连接别名；`--connection_id` 优先级更高，内部统一走同一套 runtime resolver。
 - First optimization wave focuses on deterministic bugs and consistency gaps:
   - retriever error-context crash
   - critic parse-failure semantics
@@ -52,6 +58,13 @@
 - 配额耗尽时 API 返回 `429 RESOURCE_EXHAUSTED`，`quotaResetTimeStamp` 字段可用于计算精确恢复时间。
 
 ## Validation Status
+- 2026-03-19 Provider connection / probe wave:
+  - 新增 `utils/provider_connections.py` 与 `configs/provider_registry.yaml`，并把 `demo.py`、`main.py`、`utils/runtime_settings.py`、`utils/config.py`、`utils/result_bundle.py`、`agents/base_agent.py`、`agents/retriever_agent.py` 接到统一连接解析链路。
+  - 生成页与精修页现在共用连接编辑器状态模型，支持 `Base URL`、额外请求头、模型发现、手动探针，以及“仅本次会话使用 API Key”。
+  - 精修正式运行仍只放行 Gemini / Evolink 图像编辑链路；其他连接可保存、发现模型、测试连通性，但会在启动精修前给出明确阻断提示。
+  - 已验证：
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana-pro\Scripts\python.exe -m compileall demo.py utils agents main.py`
+    - `C:\Users\86166\AppData\Roaming\uv\tools\paperbanana-pro\Scripts\python.exe -m unittest tests.test_provider_connections tests.test_runtime_settings tests.test_demo_model_inputs tests.test_generation_background tests.test_refine_background tests.test_base_agent tests.test_exp_config tests.test_result_bundle tests.test_main_provider_connections`
 - 2026-03-13 Windows CI unit-test diagnostics hardening:
   - traced the public GitHub Actions failures on `repo-first-windows` to the `Run unit tests` step in `.github/workflows/ci.yml`, but unauthenticated GitHub job pages still only exposed `Process completed with exit code 1` without the failing unittest traceback
   - added `scripts/ci_unittest_runner.py` as the repo-first diagnostic test runner for CI, with:

@@ -134,6 +134,8 @@ class ResultBundleTest(unittest.TestCase):
                 exp_mode="demo_planner_critic",
                 split_name="demo",
                 provider="gemini",
+                connection_id="custom-openai",
+                provider_display_name="自定义 OpenAI",
             )
 
             write_result_bundle(path, results, manifest=manifest)
@@ -144,6 +146,8 @@ class ResultBundleTest(unittest.TestCase):
             self.assertEqual(payload["manifest"]["producer"], "demo")
             self.assertEqual(payload["manifest"]["dataset_name"], "BundleBench")
             self.assertEqual(payload["manifest"]["result_count"], 1)
+            self.assertEqual(payload["manifest"]["connection_id"], "custom-openai")
+            self.assertEqual(payload["manifest"]["provider_display_name"], "自定义 OpenAI")
             self.assertEqual(companion_bundle_path(Path(temp_dir) / "run.json").name, "run.bundle.json")
 
     def test_load_result_bundle_bytes_supports_uploaded_bundle(self):
