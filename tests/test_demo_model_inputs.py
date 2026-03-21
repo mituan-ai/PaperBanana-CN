@@ -5,6 +5,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 if "streamlit" not in sys.modules:
@@ -280,6 +281,14 @@ class DemoModelInputTest(unittest.TestCase):
             demo.build_api_key_storage_notice({"api_key_default": "saved-key"}, persist_secret=False),
             "当前输入仅在本次会话生效，不会写入本地 txt。",
         )
+        self.assertEqual(
+            demo.build_api_key_storage_notice(
+                {"api_key_default": ""},
+                persist_secret=True,
+                allow_local_persist=False,
+            ),
+            "当前是未保存的自定义连接草稿；API Key 会先保留在本次会话，保存连接后才会写入本地 txt。",
+        )
 
     def test_render_provider_api_key_controls_skips_persist_when_session_only(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "session-only-key"
@@ -305,6 +314,117 @@ class DemoModelInputTest(unittest.TestCase):
 
         self.assertEqual(restored, "session-only-key")
         self.assertEqual(captured_calls, [])
+
+    def test_render_provider_api_key_controls_skips_persist_for_unsaved_custom_draft(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = "draft-key"
+        original_persist = demo.persist_provider_api_key_input
+        captured_calls = []
+        demo.persist_provider_api_key_input = lambda provider, api_key: captured_calls.append((provider, api_key))
+
+        try:
+            restored = demo.render_provider_api_key_controls(
+                provider="custom-openai",
+                provider_defaults={
+                    "api_key_label": "兼容 API Key",
+                    "api_key_help": "OpenAI 兼容接口密钥",
+                    "api_key_default": "draft-key",
+                },
+                session_key="tab1_api_key",
+                clear_request_key="tab1_api_key_clear_requested",
+                clear_button_key="tab1_clear_provider_api_key",
+                persist_secret=True,
+                allow_local_persist=False,
+            )
+        finally:
+            demo.persist_provider_api_key_input = original_persist
+
+        self.assertEqual(restored, "draft-key")
+        self.assertEqual(captured_calls, [])
+
+    def test_sync_connection_runtime_input_state_resets_inputs_when_selection_changes(self):
+        self.fake_streamlit.session_state.update(
+            {
+                "tab1_api_key": "old-key",
+                demo.get_api_key_widget_key("tab1_api_key"): "old-key",
+                "tab1_model_name": "old-text",
+                "tab1_image_model_name": "old-image",
+                "tab1_model_name_selector": "旧选择器",
+                "tab1_model_name_custom": "旧自定义文本",
+                "tab1_image_model_name_selector": "旧图像选择器",
+                "tab1_image_model_name_custom": "旧自定义图像",
+                "tab1_runtime_input_connection_id": "gemini",
+            }
+        )
+
+        demo.sync_connection_runtime_input_state(
+            prefix="tab1",
+            selected_connection_id="custom-openai",
+            provider_defaults={
+                "api_key_default": "new-key",
+                "model_name": "new-text",
+                "image_model_name": "new-image",
+            },
+        )
+
+        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "new-key")
+        self.assertEqual(
+            self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")],
+            "new-key",
+        )
+        self.assertEqual(self.fake_streamlit.session_state["tab1_model_name"], "new-text")
+        self.assertEqual(self.fake_streamlit.session_state["tab1_image_model_name"], "new-image")
+        self.assertNotIn("tab1_model_name_selector", self.fake_streamlit.session_state)
+        self.assertNotIn("tab1_model_name_custom", self.fake_streamlit.session_state)
+        self.assertNotIn("tab1_image_model_name_selector", self.fake_streamlit.session_state)
+        self.assertNotIn("tab1_image_model_name_custom", self.fake_streamlit.session_state)
+        self.assertEqual(
+            self.fake_streamlit.session_state["tab1_runtime_input_connection_id"],
+            "custom-openai",
+        )
+
+    def test_sync_connection_runtime_input_state_keeps_current_values_when_selection_unchanged(self):
+        self.fake_streamlit.session_state.update(
+            {
+                "tab1_api_key": "keep-key",
+                demo.get_api_key_widget_key("tab1_api_key"): "keep-key",
+                "tab1_model_name": "keep-text",
+                "tab1_runtime_input_connection_id": "gemini",
+            }
+        )
+
+        demo.sync_connection_runtime_input_state(
+            prefix="tab1",
+            selected_connection_id="gemini",
+            provider_defaults={
+                "api_key_default": "new-key",
+                "model_name": "new-text",
+                "image_model_name": "new-image",
+            },
+        )
+
+        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "keep-key")
+        self.assertEqual(self.fake_streamlit.session_state["tab1_model_name"], "keep-text")
+
+    def test_save_connection_draft_deletes_builtin_secret_when_persist_disabled(self):
+        state_keys = demo._build_connection_state_keys("tab1")
+        self.fake_streamlit.session_state[state_keys["persist_secret"]] = False
+        deleted_providers = []
+
+        with patch.object(demo, "delete_provider_api_key", side_effect=lambda provider, base_dir=None: deleted_providers.append(provider)):
+            with patch.object(demo, "write_provider_api_key") as mocked_write:
+                ok, message, defaults = demo.save_connection_draft(
+                    prefix="tab1",
+                    selected_connection_id="gemini",
+                    api_key="temporary-key",
+                    model_name="gemini-3.1-pro-preview",
+                    image_model_name="gemini-3-pro-image-preview",
+                )
+
+        self.assertTrue(ok)
+        self.assertEqual(message, "已保存内置连接配置。")
+        self.assertIn("connection_id", defaults)
+        self.assertEqual(deleted_providers, ["gemini"])
+        mocked_write.assert_not_called()
 
     def test_build_connection_draft_supports_unsaved_custom_connection(self):
         state_keys = demo._build_connection_state_keys("tab1")

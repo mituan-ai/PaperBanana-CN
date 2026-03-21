@@ -193,6 +193,7 @@ try:
         probe_connection,
         run_async_probe,
         upsert_custom_connection,
+        write_custom_provider_api_key,
         write_connection_probe_result,
     )
     from utils.plot_input_utils import parse_plot_input_text
@@ -1149,6 +1150,32 @@ def prepare_api_key_widget_state(
     return resolved_value
 
 
+def sync_connection_runtime_input_state(
+    *,
+    prefix: str,
+    selected_connection_id: str,
+    provider_defaults: dict[str, Any],
+) -> None:
+    """连接切换时同步 API Key 和模型输入，避免沿用上一条连接的残留状态。"""
+    tracked_connection_key = f"{prefix}_runtime_input_connection_id"
+    normalized_selected = str(selected_connection_id or "").strip()
+    if str(st.session_state.get(tracked_connection_key, "") or "").strip() == normalized_selected:
+        return
+
+    api_key_session_key = f"{prefix}_api_key"
+    api_key_value = str(provider_defaults.get("api_key_default", "") or "").strip()
+    st.session_state[api_key_session_key] = api_key_value
+    st.session_state[get_api_key_widget_key(api_key_session_key)] = api_key_value
+
+    st.session_state[f"{prefix}_model_name"] = str(provider_defaults.get("model_name", "") or "").strip()
+    st.session_state[f"{prefix}_image_model_name"] = str(provider_defaults.get("image_model_name", "") or "").strip()
+    st.session_state.pop(f"{prefix}_model_name_selector", None)
+    st.session_state.pop(f"{prefix}_model_name_custom", None)
+    st.session_state.pop(f"{prefix}_image_model_name_selector", None)
+    st.session_state.pop(f"{prefix}_image_model_name_custom", None)
+    st.session_state[tracked_connection_key] = normalized_selected
+
+
 def persist_provider_api_key_input(provider: str, api_key: str) -> None:
     normalized_value = str(api_key or "").strip()
     if not normalized_value:
@@ -1179,9 +1206,12 @@ def build_api_key_storage_notice(
     provider_defaults: dict[str, str],
     *,
     persist_secret: bool = True,
+    allow_local_persist: bool = True,
 ) -> str:
     if not persist_secret:
         return "当前输入仅在本次会话生效，不会写入本地 txt。"
+    if not allow_local_persist:
+        return "当前是未保存的自定义连接草稿；API Key 会先保留在本次会话，保存连接后才会写入本地 txt。"
     if str(provider_defaults.get("api_key_default", "") or "").strip():
         return "已在本机保存当前 Provider 的密钥，刷新页面后仍会保留。"
     return "密钥只保存在当前电脑；输入后会自动写入本地 txt。"
@@ -1328,6 +1358,7 @@ def render_provider_api_key_controls(
     clear_request_key: str,
     clear_button_key: str,
     persist_secret: bool = True,
+    allow_local_persist: bool = True,
 ) -> str:
     widget_key = get_api_key_widget_key(session_key)
     prepare_api_key_widget_state(
@@ -1346,7 +1377,13 @@ def render_provider_api_key_controls(
         st.session_state[session_key] = normalized_api_key
     notice_col, clear_col = st.columns([4, 1], vertical_alignment="center")
     with notice_col:
-        st.caption(build_api_key_storage_notice(provider_defaults, persist_secret=persist_secret))
+        st.caption(
+            build_api_key_storage_notice(
+                provider_defaults,
+                persist_secret=persist_secret,
+                allow_local_persist=allow_local_persist,
+            )
+        )
     with clear_col:
         if st.button(
             "清除",
@@ -1359,7 +1396,7 @@ def render_provider_api_key_controls(
                 session_key=session_key,
                 clear_request_key=clear_request_key,
             )
-    if persist_secret:
+    if persist_secret and allow_local_persist:
         persist_provider_api_key_input(provider, normalized_api_key)
     return normalized_api_key
 
@@ -1503,6 +1540,8 @@ def save_connection_draft(
         normalized_api_key = str(api_key or "").strip()
         if bool(st.session_state.get(state_keys["persist_secret"], True)):
             write_provider_api_key(selected_connection_id, normalized_api_key, base_dir=REPO_ROOT)
+        else:
+            delete_provider_api_key(selected_connection_id, base_dir=REPO_ROOT)
         defaults = _apply_connection_defaults_to_session(prefix, selected_connection_id)
         st.session_state[state_keys["probe_results"]] = defaults.get("probe_results", {})
         return True, "已保存内置连接配置。", defaults
@@ -6168,16 +6207,11 @@ def render_generation_sidebar_controls() -> dict:
         runtime_connection_id = get_selected_connection_runtime_id("tab1", provider)
         connection_pending_save = provider == CUSTOM_CONNECTION_CREATE_OPTION
         is_builtin_connection = bool(provider_defaults.get("builtin", False))
-        if "tab1_api_key" not in st.session_state:
-            st.session_state["tab1_api_key"] = provider_defaults.get("api_key_default", "")
-        if "tab1_model_name" not in st.session_state:
-            st.session_state["tab1_model_name"] = provider_defaults.get("model_name", "")
-        if "tab1_image_model_name" not in st.session_state:
-            st.session_state["tab1_image_model_name"] = provider_defaults.get("image_model_name", "")
-        if "tab1_model_name_selector" not in st.session_state:
-            st.session_state["tab1_model_name_selector"] = provider_defaults.get("model_name", "")
-        if "tab1_image_model_name_selector" not in st.session_state:
-            st.session_state["tab1_image_model_name_selector"] = provider_defaults.get("image_model_name", "")
+        sync_connection_runtime_input_state(
+            prefix="tab1",
+            selected_connection_id=provider,
+            provider_defaults=provider_defaults,
+        )
         if state_keys["persist_secret"] not in st.session_state:
             st.session_state[state_keys["persist_secret"]] = True
 
@@ -6231,6 +6265,7 @@ def render_generation_sidebar_controls() -> dict:
             key=state_keys["persist_secret"],
             help="关闭后，本次输入的密钥仅在当前会话生效。",
         )
+        allow_local_api_key_persist = is_builtin_connection or not connection_pending_save
 
         api_key = render_provider_api_key_controls(
             provider=runtime_connection_id,
@@ -6243,6 +6278,7 @@ def render_generation_sidebar_controls() -> dict:
             clear_request_key="tab1_api_key_clear_requested",
             clear_button_key="tab1_clear_provider_api_key",
             persist_secret=bool(persist_secret),
+            allow_local_persist=allow_local_api_key_persist,
         )
         if provider_defaults.get("provider_type") == "gemini":
             model_name = render_preset_or_custom_model_input(
@@ -6469,10 +6505,11 @@ def render_refine_sidebar_controls() -> dict:
         runtime_connection_id = get_selected_connection_runtime_id("refine", refine_provider)
         connection_pending_save = refine_provider == CUSTOM_CONNECTION_CREATE_OPTION
         is_builtin_connection = bool(refine_provider_defaults.get("builtin", False))
-        if "refine_api_key" not in st.session_state:
-            st.session_state["refine_api_key"] = refine_provider_defaults.get("api_key_default", "")
-        if "refine_image_model_name" not in st.session_state:
-            st.session_state["refine_image_model_name"] = refine_provider_defaults.get("image_model_name", "")
+        sync_connection_runtime_input_state(
+            prefix="refine",
+            selected_connection_id=refine_provider,
+            provider_defaults=refine_provider_defaults,
+        )
         if state_keys["persist_secret"] not in st.session_state:
             st.session_state[state_keys["persist_secret"]] = True
 
@@ -6526,6 +6563,7 @@ def render_refine_sidebar_controls() -> dict:
             key=state_keys["persist_secret"],
             help="关闭后，本次输入的密钥仅在当前会话中使用。",
         )
+        allow_local_api_key_persist = is_builtin_connection or not connection_pending_save
         refine_api_key = render_provider_api_key_controls(
             provider=runtime_connection_id,
             provider_defaults={
@@ -6537,6 +6575,7 @@ def render_refine_sidebar_controls() -> dict:
             clear_request_key="refine_api_key_clear_requested",
             clear_button_key="refine_clear_provider_api_key",
             persist_secret=bool(st.session_state.get(state_keys["persist_secret"], True)),
+            allow_local_persist=allow_local_api_key_persist,
         )
         if refine_provider_defaults.get("provider_type") == "gemini":
             refine_image_model_name = render_preset_or_custom_model_input(

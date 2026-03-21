@@ -434,3 +434,11 @@
   - `v17`、`v20` 这类值本质上只是持久化用的内部 `version_key`，因为精修历史会跨页面/跨会话保留，所以它们会继续累加，不适合直接暴露给用户
   - 新增了“内部 key / 界面显示名”分层：界面统一显示 `原图 / 第1版 / 第2版 ...`，历史卡片、结果区版本提示、历史切换入口都不再直接展示内部 `vNN`
   - 激活历史版本时，送回工作台的来源名称也会使用新的显示名，避免“继续精修 v20”这类让人困惑的文案
+- 2026-03-21 自定义 Provider 连接状态收口：
+  - 修复了 `demo.py` 在自定义连接 API Key 自动持久化路径上漏导入 `write_custom_provider_api_key(...)` 导致的 `NameError`
+  - 新增 `sync_connection_runtime_input_state(...)`，把“当前选中的连接”作为生成页/精修页 API Key、文本模型、图像模型输入框的显式同步边界；连接切换时会重置这些运行时输入，避免沿用上一条连接的残留值
+  - 未保存的自定义连接草稿现在不会再边输入边落盘本地密钥；只有保存成正式连接后才会写入 `configs/local/providers/*.txt`，从而避免 `custom-openai.txt` 这类草稿密钥孤儿文件
+  - 内置连接在关闭“将 API Key 保存到本地”后执行保存时，会主动删除旧的本地密钥文件，避免 UI 显示为“仅本次会话”但磁盘上仍残留历史密钥
+  - 本地验证已通过：
+    - `& 'C:\Users\86166\AppData\Roaming\uv\tools\paperbanana-pro\Scripts\python.exe' -m compileall demo.py tests\test_demo_model_inputs.py`
+    - `& 'C:\Users\86166\AppData\Roaming\uv\tools\paperbanana-pro\Scripts\python.exe' -m unittest tests.test_demo_model_inputs tests.test_runtime_settings tests.test_provider_connections`
