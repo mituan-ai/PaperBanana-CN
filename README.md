@@ -36,6 +36,7 @@ PaperBanana-Pro 在 [原始 PaperBanana](https://github.com/dwzhu-pku/PaperBanan
 | 🔧 | **注册制流水线** | Pipeline Registry 驱动，告别硬编码分支，一行配置扩展新流程 |
 | 📊 | **Plot 全链路** | 数据输入解析 → 代码生成 → 本地重渲染 → 精修，统计图端到端闭环 |
 | ⚡ | **`uv` 一键安装** | `uv tool install` 全局可用，免虚拟环境、免 PATH 配置 |
+| 🔌 | **自定义模型供应商** | 支持任意 OpenAI 兼容 API，填入 Base URL 即可接入自有或第三方模型服务 |
 
 ---
 
@@ -100,6 +101,10 @@ PaperBanana-Pro 在 [原始 PaperBanana](https://github.com/dwzhu-pku/PaperBanan
 **API Key 可视化配置** — 密钥自动存储到本地，刷新不丢失
 
 <img src="assets/ui_api_key_config.png" alt="API Key 配置" width="40%">
+
+**自定义模型供应商** — 接入任意 OpenAI 兼容 API，填写 Base URL 和 Key 即可使用
+
+<img src="assets/自定义供应商.png" alt="自定义模型供应商" width="40%">
 
 </details>
 
