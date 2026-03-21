@@ -13,6 +13,7 @@ docs/
 output/
 artifacts/
 .codex-streamlit-*.log
+.omx/
 
 # Packaging artifacts
 *.egg-info/
