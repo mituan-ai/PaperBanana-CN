@@ -10,6 +10,7 @@ data/
 results/
 logs/
 docs/
+docs/agent-memory.md
 output/
 artifacts/
 .codex-streamlit-*.log
