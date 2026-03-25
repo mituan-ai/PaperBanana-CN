@@ -1074,7 +1074,7 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertEqual(snapshot["effective_concurrent"], 2)
             self.assertEqual(snapshot["bundle_file"], str(bundle_path))
 
-    def test_list_demo_bundle_files_reads_latest_history_files(self):
+    def test_list_demo_bundle_files_without_limit_reads_all_history_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             results_root = Path(tmp_dir) / "results" / "demo" / "diagram"
             results_root.mkdir(parents=True, exist_ok=True)
@@ -1100,12 +1100,42 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             original_get_root = demo.get_demo_results_root
             demo.get_demo_results_root = lambda: Path(tmp_dir) / "results" / "demo"
             try:
-                bundle_files = demo.list_demo_bundle_files("diagram", limit=5)
+                bundle_files = demo.list_demo_bundle_files("diagram")
+                limited_bundle_files = demo.list_demo_bundle_files("diagram", limit=1)
             finally:
                 demo.get_demo_results_root = original_get_root
 
             self.assertEqual(bundle_files[0].name, "newer.bundle.json")
             self.assertEqual(bundle_files[1].name, "older.bundle.json")
+            self.assertEqual(len(bundle_files), 2)
+            self.assertEqual(len(limited_bundle_files), 1)
+            self.assertEqual(limited_bundle_files[0].name, "newer.bundle.json")
+
+    def test_build_demo_bundle_display_labels_keeps_duplicate_history_entries(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            first_path = Path(tmp_dir) / "first.bundle.json"
+            second_path = Path(tmp_dir) / "second.bundle.json"
+            payload = {
+                "schema": "paperbanana.result_bundle",
+                "schema_version": 1,
+                "manifest": {
+                    "timestamp": "2026-03-14 16:50:30",
+                    "task_name": "diagram",
+                    "provider": "gemini",
+                    "exp_mode": "demo_planner_critic",
+                    "result_count": 1,
+                },
+                "summary": {},
+                "failures": [],
+                "results": [],
+            }
+            first_path.write_text(json.dumps(payload), encoding="utf-8")
+            second_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            display_labels = demo.build_demo_bundle_display_labels([first_path, second_path])
+
+            self.assertEqual(len(display_labels), 2)
+            self.assertNotEqual(display_labels[str(first_path)], display_labels[str(second_path)])
 
 
 if __name__ == "__main__":

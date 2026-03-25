@@ -2823,7 +2823,7 @@ def persist_generation_job_results(
 def list_demo_bundle_files(
     task_name: str | None = None,
     *,
-    limit: int = 20,
+    limit: int | None = None,
 ) -> list[Path]:
     root = get_demo_results_root()
     if not root.exists():
@@ -2838,6 +2838,8 @@ def list_demo_bundle_files(
         return []
     bundle_files = list(search_root.rglob(pattern))
     bundle_files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    if limit is None:
+        return bundle_files
     return bundle_files[: max(1, int(limit or 1))]
 
 
@@ -2899,6 +2901,22 @@ def format_demo_bundle_label(bundle_path: str | Path) -> str:
     exp_mode = manifest.get("exp_mode", "-")
     result_count = int(manifest.get("result_count", 0) or 0)
     return f"{stamp} | {task_name} | {provider} | {exp_mode} | {result_count} results"
+
+
+def build_demo_bundle_display_labels(bundle_files: list[Path]) -> dict[str, str]:
+    """为历史 bundle 构建稳定且唯一的显示标签。"""
+    base_labels = [format_demo_bundle_label(path) for path in bundle_files]
+    duplicate_counts = Counter(base_labels)
+    seen_counts: dict[str, int] = {}
+    display_labels: dict[str, str] = {}
+    for path, base_label in zip(bundle_files, base_labels, strict=False):
+        duplicate_count = duplicate_counts.get(base_label, 0)
+        if duplicate_count <= 1:
+            display_labels[str(path)] = base_label
+            continue
+        seen_counts[base_label] = seen_counts.get(base_label, 0) + 1
+        display_labels[str(path)] = f"{base_label} | {path.name} | #{seen_counts[base_label]}"
+    return display_labels
 
 
 def normalize_candidate_token(candidate_id: int | str | None) -> str:
@@ -5092,18 +5110,21 @@ def render_plot_rerender_workspace() -> None:
 
 def render_generation_history_panel(task_name: str) -> None:
     with st.expander("📚 历史运行回放", expanded=False):
-        bundle_files = list_demo_bundle_files(task_name, limit=20)
+        bundle_files = list_demo_bundle_files(task_name)
         if not bundle_files:
             st.info("当前任务还没有历史 bundle。先运行一次生成任务后，这里会自动出现可回放记录。")
             return
 
-        options = {format_demo_bundle_label(path): str(path) for path in bundle_files}
-        selected_label = st.selectbox(
+        display_labels = build_demo_bundle_display_labels(bundle_files)
+        bundle_options = [str(path) for path in bundle_files]
+        selected_path_str = st.selectbox(
             "选择要回放的 bundle",
-            list(options.keys()),
+            bundle_options,
             key=f"history_bundle_select_{normalize_task_name(task_name)}",
+            format_func=lambda bundle_path: display_labels.get(bundle_path, bundle_path),
         )
-        selected_path = Path(options[selected_label])
+        st.caption(f"共发现 {len(bundle_files)} 条历史记录，可在下拉列表中继续向下滚动查看更早结果。")
+        selected_path = Path(selected_path_str)
         st.caption(f"文件：`{format_repo_relative_path(selected_path)}`")
 
         normalized_tn = normalize_task_name(task_name)
