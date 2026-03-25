@@ -203,9 +203,8 @@ class DemoModelInputTest(unittest.TestCase):
             "local-google-key",
         )
 
-    def test_prepare_api_key_widget_state_keeps_widget_key_synced_with_canonical_value(self):
+    def test_prepare_api_key_widget_state_initializes_widget_key_from_canonical_value(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "saved-google-key"
-        self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")] = ""
 
         restored = demo.prepare_api_key_widget_state(
             session_key="tab1_api_key",
@@ -218,6 +217,23 @@ class DemoModelInputTest(unittest.TestCase):
             self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")],
             "saved-google-key",
         )
+
+    def test_prepare_api_key_widget_state_does_not_overwrite_existing_widget_buffer(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = ""
+        self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")] = "typed-not-yet-applied"
+
+        restored = demo.prepare_api_key_widget_state(
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            provider_defaults={"api_key_default": ""},
+        )
+
+        self.assertEqual(restored, "typed-not-yet-applied")
+        self.assertEqual(
+            self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")],
+            "typed-not-yet-applied",
+        )
+        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "")
 
     def test_prepare_api_key_widget_state_honors_pending_clear_request(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "persisted-key"

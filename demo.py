@@ -1142,14 +1142,21 @@ def prepare_api_key_widget_state(
     if st.session_state.pop(clear_request_key, False):
         st.session_state[session_key] = ""
         st.session_state[widget_key] = ""
-    resolved_value = hydrate_api_key_session_state(
-        session_key=session_key,
-        provider_defaults=provider_defaults,
-    )
-    current_widget_value = str(st.session_state.get(widget_key, "") or "").strip()
-    if current_widget_value != resolved_value:
+
+    # 只在首次初始化时把业务值同步到 widget，避免每次 rerun 都用旧值覆盖
+    # 用户刚输入但尚未提交（界面会显示 “Press Enter to apply”）的内容。
+    if widget_key not in st.session_state:
+        resolved_value = hydrate_api_key_session_state(
+            session_key=session_key,
+            provider_defaults=provider_defaults,
+        )
         st.session_state[widget_key] = resolved_value
-    return resolved_value
+        return resolved_value
+
+    current_widget_value = str(st.session_state.get(widget_key, "") or "").strip()
+    if session_key not in st.session_state:
+        st.session_state[session_key] = current_widget_value
+    return current_widget_value
 
 
 def sync_connection_runtime_input_state(
