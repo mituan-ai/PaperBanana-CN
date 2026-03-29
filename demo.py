@@ -1052,23 +1052,35 @@ def _build_connection_state_keys(prefix: str) -> dict[str, str]:
     }
 
 
-def _apply_connection_defaults_to_session(prefix: str, connection_id: str) -> dict[str, Any]:
+def _apply_connection_defaults_to_session(
+    prefix: str,
+    connection_id: str,
+    *,
+    defer_widget_updates: bool = False,
+) -> dict[str, Any]:
     state_keys = _build_connection_state_keys(prefix)
     defaults = get_connection_ui_defaults(connection_id)
-    st.session_state[state_keys["connection_id"]] = defaults["connection_id"]
-    st.session_state[state_keys["display_name"]] = defaults["display_name"]
-    st.session_state[state_keys["base_url"]] = defaults["base_url"]
-    st.session_state[state_keys["api_key_env_var"]] = defaults.get("api_key_env_var", "")
-    st.session_state[state_keys["extra_headers_json"]] = format_extra_headers_json(defaults.get("extra_headers"))
-    st.session_state[state_keys["supports_text"]] = bool(defaults.get("supports_text", True))
-    st.session_state[state_keys["supports_image"]] = bool(defaults.get("supports_image", True))
-    st.session_state[state_keys["enabled"]] = bool(defaults.get("enabled", True))
-    st.session_state[state_keys["persist_secret"]] = True
-    st.session_state[state_keys["model_discovery_mode"]] = defaults.get("model_discovery_mode", "manual")
-    st.session_state[state_keys["model_allowlist"]] = "\n".join(defaults.get("model_allowlist", []))
-    st.session_state[state_keys["probe_results"]] = dict(defaults.get("probe_results", {}))
-    st.session_state[state_keys["discovered_models"]] = list(defaults.get("model_allowlist", []))
-    st.session_state[state_keys["discovery_notice"]] = ""
+    updates = {
+        state_keys["connection_id"]: defaults["connection_id"],
+        state_keys["display_name"]: defaults["display_name"],
+        state_keys["base_url"]: defaults["base_url"],
+        state_keys["api_key_env_var"]: defaults.get("api_key_env_var", ""),
+        state_keys["extra_headers_json"]: format_extra_headers_json(defaults.get("extra_headers")),
+        state_keys["supports_text"]: bool(defaults.get("supports_text", True)),
+        state_keys["supports_image"]: bool(defaults.get("supports_image", True)),
+        state_keys["enabled"]: bool(defaults.get("enabled", True)),
+        state_keys["persist_secret"]: True,
+        state_keys["model_discovery_mode"]: defaults.get("model_discovery_mode", "manual"),
+        state_keys["model_allowlist"]: "\n".join(defaults.get("model_allowlist", [])),
+        state_keys["probe_results"]: dict(defaults.get("probe_results", {})),
+        state_keys["discovered_models"]: list(defaults.get("model_allowlist", [])),
+        state_keys["discovery_notice"]: "",
+    }
+    if defer_widget_updates:
+        _queue_generation_widget_state_updates(updates)
+    else:
+        for key, value in updates.items():
+            st.session_state[key] = value
     return defaults
 
 
@@ -1551,8 +1563,11 @@ def save_connection_draft(
             write_provider_api_key(selected_connection_id, normalized_api_key, base_dir=REPO_ROOT)
         else:
             delete_provider_api_key(selected_connection_id, base_dir=REPO_ROOT)
-        defaults = _apply_connection_defaults_to_session(prefix, selected_connection_id)
-        st.session_state[state_keys["probe_results"]] = defaults.get("probe_results", {})
+        defaults = _apply_connection_defaults_to_session(
+            prefix,
+            selected_connection_id,
+            defer_widget_updates=True,
+        )
         return True, "已保存内置连接配置。", defaults
 
     payload = {
@@ -1582,8 +1597,16 @@ def save_connection_draft(
         )
     except Exception as exc:
         return False, f"保存连接失败：{exc}", {}
-    st.session_state[state_keys["select_key"]] = connection.connection_id
-    defaults = _apply_connection_defaults_to_session(prefix, connection.connection_id)
+    _queue_generation_widget_state_updates(
+        {
+            state_keys["select_key"]: connection.connection_id,
+        }
+    )
+    defaults = _apply_connection_defaults_to_session(
+        prefix,
+        connection.connection_id,
+        defer_widget_updates=True,
+    )
     return True, f"已保存自定义连接：{connection.display_name}", defaults
 
 

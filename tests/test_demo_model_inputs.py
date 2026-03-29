@@ -442,6 +442,80 @@ class DemoModelInputTest(unittest.TestCase):
         self.assertEqual(deleted_providers, ["gemini"])
         mocked_write.assert_not_called()
 
+    def test_save_connection_draft_for_builtin_connection_queues_widget_updates(self):
+        state_keys = demo._build_connection_state_keys("tab1")
+        self.fake_streamlit.session_state.update(
+            {
+                state_keys["persist_secret"]: True,
+                state_keys["base_url"]: "https://draft.invalid/v1",
+                state_keys["probe_results"]: {"text": {"status": "failed"}},
+            }
+        )
+
+        with patch.object(demo, "write_provider_api_key"):
+            ok, message, defaults = demo.save_connection_draft(
+                prefix="tab1",
+                selected_connection_id="openrouter",
+                api_key="temporary-key",
+                model_name="google/gemini-3.1-flash-lite-preview",
+                image_model_name="google/gemini-3.1-flash-image-preview",
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(message, "已保存内置连接配置。")
+        self.assertEqual(
+            self.fake_streamlit.session_state[state_keys["base_url"]],
+            "https://draft.invalid/v1",
+        )
+        self.assertEqual(
+            self.fake_streamlit.session_state["_pending_generation_widget_updates"][state_keys["base_url"]],
+            defaults["base_url"],
+        )
+
+    def test_save_connection_draft_for_custom_connection_queues_provider_selection(self):
+        state_keys = demo._build_connection_state_keys("tab1")
+        self.fake_streamlit.session_state.update(
+            {
+                state_keys["connection_id"]: "saved-openai",
+                state_keys["display_name"]: "已保存连接",
+                state_keys["base_url"]: "https://example.com/v1",
+                state_keys["api_key_env_var"]: "SAVED_API_KEY",
+                state_keys["extra_headers_json"]: "",
+                state_keys["supports_text"]: True,
+                state_keys["supports_image"]: True,
+                state_keys["enabled"]: True,
+                state_keys["persist_secret"]: True,
+                state_keys["model_discovery_mode"]: "hybrid",
+                state_keys["model_allowlist"]: "saved-text\nsaved-image",
+            }
+        )
+
+        with patch.object(
+            demo,
+            "upsert_custom_connection",
+            return_value=types.SimpleNamespace(connection_id="saved-openai", display_name="已保存连接"),
+        ):
+            with patch.object(
+                demo,
+                "_apply_connection_defaults_to_session",
+                return_value={"connection_id": "saved-openai"},
+            ):
+                ok, message, defaults = demo.save_connection_draft(
+                    prefix="tab1",
+                    selected_connection_id=demo.CUSTOM_CONNECTION_CREATE_OPTION,
+                    api_key="draft-key",
+                    model_name="saved-text",
+                    image_model_name="saved-image",
+                )
+
+        self.assertTrue(ok)
+        self.assertEqual(message, "已保存自定义连接：已保存连接")
+        self.assertEqual(defaults["connection_id"], "saved-openai")
+        self.assertEqual(
+            self.fake_streamlit.session_state["_pending_generation_widget_updates"][state_keys["select_key"]],
+            "saved-openai",
+        )
+
     def test_build_connection_draft_supports_unsaved_custom_connection(self):
         state_keys = demo._build_connection_state_keys("tab1")
         self.fake_streamlit.session_state.update(

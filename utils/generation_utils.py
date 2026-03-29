@@ -1371,6 +1371,8 @@ async def call_openai_with_retry_async(
 
     current_contents = contents
     is_input_valid = False
+    last_exception: Exception | None = None
+    last_error_text = ""
     for attempt in range(max_attempts):
         try:
             openai_contents = _convert_to_openai_format(current_contents)
@@ -1387,6 +1389,8 @@ async def call_openai_with_retry_async(
             is_input_valid = True
             break
         except Exception as e:
+            last_exception = e
+            last_error_text = str(e)
             error_str = str(e).lower()
             context_msg = f" for {error_context}" if error_context else ""
             _emit_runtime_event(
@@ -1411,6 +1415,10 @@ async def call_openai_with_retry_async(
                 await asyncio.sleep(retry_delay)
 
     if not is_input_valid:
+        context_msg = f" for {error_context}" if error_context else ""
+        failure_message = f"OpenAI 文本生成在 {max_attempts} 次尝试后仍然失败{context_msg}"
+        if last_error_text:
+            failure_message = f"{failure_message}: {last_error_text}"
         _emit_runtime_event(
             level="ERROR",
             kind="error",
@@ -1420,9 +1428,10 @@ async def call_openai_with_retry_async(
             model=model_name,
             status="failed",
             message=f"OpenAI 在 {max_attempts} 次尝试后仍然失败",
+            details=failure_message,
         )
-        logger.error("OpenAI 全部 %s 次验证尝试失败，返回错误", max_attempts)
-        return ["Error"] * candidate_num
+        logger.error("OpenAI 全部 %s 次验证尝试失败，抛出异常", max_attempts)
+        raise RuntimeError(failure_message) from last_exception
 
     remaining_candidates = candidate_num - 1
     if remaining_candidates > 0:
@@ -1471,12 +1480,15 @@ async def call_openai_image_generation_with_retry_async(
         "output_format": output_format,
     }
 
+    last_exception: Exception | None = None
+    last_error_text = ""
     for attempt in range(max_attempts):
         try:
             response = await client.images.generate(**gen_params)
             if response.data and response.data[0].b64_json:
                 return [response.data[0].b64_json]
             else:
+                last_error_text = "OpenAI 图像生成未返回数据"
                 _emit_runtime_event(
                     level="WARNING",
                     kind="warning",
@@ -1493,6 +1505,8 @@ async def call_openai_image_generation_with_retry_async(
                     await asyncio.sleep(retry_delay)
                 continue
         except Exception as e:
+            last_exception = e
+            last_error_text = str(e)
             context_msg = f" for {error_context}" if error_context else ""
             _emit_runtime_event(
                 level="WARNING",
@@ -1514,19 +1528,20 @@ async def call_openai_image_generation_with_retry_async(
             )
             if attempt < max_attempts - 1:
                 await asyncio.sleep(retry_delay)
-            else:
-                _emit_runtime_event(
-                    level="ERROR",
-                    kind="error",
-                    source="GenerationUtils",
-                    job_type="generation",
-                    provider="openai",
-                    model=model_name,
-                    status="failed",
-                    message=f"OpenAI 图像生成在 {max_attempts} 次尝试后仍然失败",
-                    details=f"{context_msg}: {e}",
-                )
-                logger.error("OpenAI 图像生成全部 %s 次尝试失败%s", max_attempts, context_msg)
-                return ["Error"]
-
-    return ["Error"]
+    context_msg = f" for {error_context}" if error_context else ""
+    failure_message = f"OpenAI 图像生成在 {max_attempts} 次尝试后仍然失败{context_msg}"
+    if last_error_text:
+        failure_message = f"{failure_message}: {last_error_text}"
+    _emit_runtime_event(
+        level="ERROR",
+        kind="error",
+        source="GenerationUtils",
+        job_type="generation",
+        provider="openai",
+        model=model_name,
+        status="failed",
+        message=f"OpenAI 图像生成在 {max_attempts} 次尝试后仍然失败",
+        details=failure_message,
+    )
+    logger.error("OpenAI 图像生成全部 %s 次尝试失败%s", max_attempts, context_msg)
+    raise RuntimeError(failure_message) from last_exception

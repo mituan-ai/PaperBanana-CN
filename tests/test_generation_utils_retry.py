@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from utils import generation_utils
 
@@ -63,6 +65,58 @@ class GeminiRetryPolicyTest(unittest.TestCase):
         )
 
         self.assertGreaterEqual(cooldown, 300.0)
+
+
+class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
+    async def test_text_retry_exhaustion_raises_instead_of_returning_error_string(self):
+        fake_client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=AsyncMock(side_effect=RuntimeError("boom")),
+                )
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_client", return_value=fake_client):
+            with patch("utils.generation_utils.asyncio.sleep", new=AsyncMock()):
+                with self.assertRaisesRegex(RuntimeError, "planner\\[test\\].*boom"):
+                    await generation_utils.call_openai_with_retry_async(
+                        model_name="demo-model",
+                        contents=[{"type": "text", "text": "hello"}],
+                        config={
+                            "system_prompt": "只回复 OK",
+                            "temperature": 0,
+                            "candidate_num": 1,
+                            "max_completion_tokens": 16,
+                        },
+                        max_attempts=2,
+                        retry_delay=0,
+                        error_context="planner[test]",
+                    )
+
+    async def test_image_retry_exhaustion_raises_instead_of_returning_error_string(self):
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(side_effect=RuntimeError("image boom")),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_client", return_value=fake_client):
+            with patch("utils.generation_utils.asyncio.sleep", new=AsyncMock()):
+                with self.assertRaisesRegex(RuntimeError, "visualizer\\[test\\].*image boom"):
+                    await generation_utils.call_openai_image_generation_with_retry_async(
+                        model_name="demo-image-model",
+                        prompt="draw a circle",
+                        config={
+                            "size": "1024x1024",
+                            "quality": "low",
+                            "background": "opaque",
+                            "output_format": "png",
+                        },
+                        max_attempts=2,
+                        retry_delay=0,
+                        error_context="visualizer[test]",
+                    )
 
 
 if __name__ == "__main__":
