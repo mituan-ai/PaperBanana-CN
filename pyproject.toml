@@ -33,6 +33,7 @@ dependencies = [
     "python-dotenv",
     "pyyaml",
     "google-auth",
+    "aiohttp",
 ]
 
 [project.scripts]
