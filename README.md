@@ -10,9 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/elpsykongloo/PaperBanana-Pro/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"></a>&nbsp;
+  <a href="https://github.com/917940234/PaperBanana-Pro/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"></a>&nbsp;
   <img src="https://img.shields.io/badge/Python-≥3.12-3776AB?logo=python&logoColor=white" alt="Python">&nbsp;
-  <a href="https://github.com/elpsykongloo/PaperBanana-Pro/actions"><img src="https://img.shields.io/github/actions/workflow/status/elpsykongloo/PaperBanana-Pro/ci.yml?label=CI&logo=github" alt="CI"></a>&nbsp;
+  <a href="https://github.com/917940234/PaperBanana-Pro/actions"><img src="https://img.shields.io/github/actions/workflow/status/917940234/PaperBanana-Pro/ci.yml?label=CI&logo=github" alt="CI"></a>&nbsp;
+  <img src="https://img.shields.io/badge/GPT%20%2B%20Gemini-Gateway%20Ready-8A2BE2" alt="GPT and Gemini Gateway Ready">&nbsp;
   <img src="https://img.shields.io/badge/version-0.1.0-brightgreen" alt="Version">
   <br>
   <a href="https://huggingface.co/datasets/dwzhu/PaperBananaBench"><img src="https://img.shields.io/badge/🤗_Dataset-PaperBananaBench-yellow" alt="Dataset"></a>&nbsp;
@@ -24,7 +25,7 @@
 
 ## 👑 为什么选择 Pro？
 
-PaperBanana-Pro 在 [原始 PaperBanana](https://github.com/dwzhu-pku/PaperBanana) 基础上独立演化，完成了 **21 轮工程打磨** 和 **70+ 单元测试** 覆盖，从学术原型蜕变为可日常使用的产品级工具。
+PaperBanana-Pro 在 [原始 PaperBanana](https://github.com/dwzhu-pku/PaperBanana) 基础上独立演化，并吸收中文化交互与轻量检索经验，继续完成产品化、工程化与中转站兼容增强。本 fork 重点强化 **GPT / Gemini 双通道中转站兼容**：VLM 文本与文生图可以分别选择 GPT 或 Gemini，并分别配置 API Key、Base URL 和模型名称，适合使用 OpenAI-compatible / Gemini-compatible gateway 的科研工作流。
 
 | | 特性 | 说明 |
 |---|---|---|
@@ -36,7 +37,8 @@ PaperBanana-Pro 在 [原始 PaperBanana](https://github.com/dwzhu-pku/PaperBanan
 | 🔧 | **注册制流水线** | Pipeline Registry 驱动，告别硬编码分支，一行配置扩展新流程 |
 | 📊 | **Plot 全链路** | 数据输入解析 → 代码生成 → 本地重渲染 → 精修，统计图端到端闭环 |
 | ⚡ | **`uv` 一键安装** | `uv tool install` 全局可用，免虚拟环境、免 PATH 配置 |
-| 🔌 | **自定义模型供应商** | 支持任意 OpenAI 兼容 API，填入 Base URL 即可接入自有或第三方模型服务 |
+| 🔌 | **GPT / Gemini 中转站兼容** | VLM 文本与文生图双链路解耦，GPT/Gemini 可任意组合，分别配置 API Key、Base URL 和模型名 |
+| 🧩 | **自定义模型供应商** | 支持 OpenAI-compatible API，填入 Base URL 即可接入自有或第三方模型服务 |
 
 ---
 
@@ -115,7 +117,7 @@ PaperBanana-Pro 在 [原始 PaperBanana](https://github.com/dwzhu-pku/PaperBanan
 ### 1. 安装
 
 ```bash
-git clone https://github.com/elpsykongloo/PaperBanana-Pro.git
+git clone https://github.com/917940234/PaperBanana-Pro.git
 cd PaperBanana-Pro
 uv python install 3.12
 uv sync --locked
@@ -133,18 +135,27 @@ uv tool install --editable . --force
 
 如果只是试用，可将检索设置为 `none` 跳过数据集依赖。
 
-### 3. 配置 API Key
+### 3. 配置 API Key 与中转站
+
+推荐使用环境变量或本地 `configs/local/*.txt` 保存密钥，不要把真实 Key 写进 Git。也可以复制模板后只填写非敏感默认模型名和 Base URL：
 
 ```bash
-Copy-Item configs\model_config.template.yaml configs\model_config.yaml
+cp configs/model_config.template.yaml configs/model_config.yaml
 ```
 
-在 `configs/model_config.yaml` 中填入你的 API Key，或将 Key 写入以下文件（任选一种方式）：
+本 fork 支持把 **VLM 文本** 与 **文生图** 分成两条独立链路。每条链路都可以在 GUI 中选择 GPT 或 Gemini，并分别填写 API Key、Base URL 和模型名。
 
-- `configs/local/google_api_key.txt`
-- `configs/local/evolink_api_key.txt`
+常用环境变量如下：
 
-当前正式支持 3 个 Provider：**Gemini**、**Openrouter** 和 **Evolink**。
+| 链路 | GPT / OpenAI-compatible | Gemini-compatible |
+| --- | --- | --- |
+| VLM Key | `PAPERBANANA_OPENAI_VLM_API_KEY` | `PAPERBANANA_GEMINI_VLM_API_KEY` |
+| 文生图 Key | `PAPERBANANA_OPENAI_IMAGE_API_KEY` | `PAPERBANANA_GEMINI_IMAGE_API_KEY` |
+| Base URL | `PAPERBANANA_OPENAI_BASE_URL`，通常形如 `https://gateway.example.com/v1` | `PAPERBANANA_GEMINI_BASE_URL`，通常形如 `https://gateway.example.com` |
+| VLM 模型 | `PAPERBANANA_OPENAI_VLM_MODEL` | `PAPERBANANA_GEMINI_VLM_MODEL` |
+| 文生图模型 | `PAPERBANANA_OPENAI_IMAGE_MODEL` | `PAPERBANANA_GEMINI_IMAGE_MODEL` |
+
+当前内置 Provider：**GPT / OpenAI**、**Gemini**、**OpenRouter** 和 **Evolink**。
 
 您也可以直接在 GUI 中可视化配置，API Key 会自动存储到本地：
 
@@ -183,7 +194,7 @@ paperbanana run --task_name diagram --exp_mode demo_full --provider gemini
 | --- | --- |
 | `--task_name` | `diagram` 或 `plot` |
 | `--exp_mode` | 流水线模式，如 `demo_full`、`demo_planner_critic` |
-| `--provider` | `gemini` / `evolink` |
+| `--provider` | `gemini` / `openai` / `openrouter` / `evolink` |
 | `--max_critic_rounds` | 最大评审轮数，可设为 `0` |
 | `--retrieval_setting` | 检索模式：`auto`、`curated`、`none` 等 |
 | `--resume` | 自动恢复上次运行 |
@@ -239,13 +250,15 @@ PaperBanana-Pro/
 
 ---
 
-## 🙏 致谢
+## 🙏 致谢与项目关系
 
-本项目在以下工作基础上独立演化：
+本项目是面向开源使用的 PaperBanana-Pro fork，建立在以下工作基础上：
 
-- 原始仓库：[`dwzhu-pku/PaperBanana`](https://github.com/dwzhu-pku/PaperBanana)
-- 中文界面参考&轻量检索：[`Mylszd/PaperBanana-CN`](https://github.com/Mylszd/PaperBanana-CN)
-- 原始论文：[*PaperBanana: Automating Academic Illustration for AI Scientists*](https://huggingface.co/papers/2601.23265)
+- **原始 PaperBanana**：[`dwzhu-pku/PaperBanana`](https://github.com/dwzhu-pku/PaperBanana) 提出了多 Agent 自动学术插图生成流程，并发布了 PaperBananaBench。
+- **原始论文**：[*PaperBanana: Automating Academic Illustration for AI Scientists*](https://huggingface.co/papers/2601.23265) 是本项目方法论和基准数据的源头。
+- **中文化与产品化参考**：[`Mylszd/PaperBanana-CN`](https://github.com/Mylszd/PaperBanana-CN) 提供了中文界面和轻量检索方向的参考。
+- **PaperBanana-Pro 贡献**：在原始项目基础上扩展了 Streamlit 工作台、后台并发作业、历史回放、Bundle 导出、多轮评审精修、Plot 工作流、`uv` 安装与更完整的测试覆盖。
+- **本 fork 的新增亮点**：重点实现 GPT / Gemini 双 Provider 中转站兼容，VLM 文本与文生图两条链路完全解耦，支持分别选择 GPT 或 Gemini，并分别配置模型名、API Key 与 Base URL；同时修复前端状态串线、图像客户端误用文本客户端等网关场景下的关键问题。
 
 ## 📄 License
 

@@ -117,7 +117,7 @@ class BaseAgent(ABC):
                 error_context=error_context,
             )
 
-        if provider in {"openrouter", "openai_compatible"}:
+        if provider in {"openai", "openrouter", "openai_compatible"}:
             return await generation_utils.call_openai_with_retry_async(
                 model_name=_model,
                 contents=contents,
@@ -179,7 +179,11 @@ class BaseAgent(ABC):
         _temp = temperature if temperature is not None else self.exp_config.temperature
         _contents = contents or [{"type": "text", "text": prompt}]
 
-        provider = str(getattr(self.exp_config, "provider", "") or "").strip().lower()
+        provider = str(
+            getattr(self.exp_config, "image_provider", "")
+            or getattr(self.exp_config, "provider", "")
+            or ""
+        ).strip().lower()
 
         if provider == "evolink":
             config = {
@@ -236,7 +240,7 @@ class BaseAgent(ABC):
                 error_context=error_context,
             )
 
-        if provider == "openai_compatible":
+        if provider in {"openai", "openai_compatible"}:
             return await generation_utils.call_openai_image_generation_with_retry_async(
                 model_name=_model,
                 prompt=prompt,

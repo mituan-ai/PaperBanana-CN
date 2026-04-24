@@ -221,7 +221,9 @@ REFINE_EVENT_HISTORY_LIMIT = 240
 REFINE_EVENT_RENDER_LIMIT = 10
 SAFE_DISK_UI_STATE_EXCLUDE_KEYS = {
     "tab1_api_key",
+    "tab1_image_api_key",
     "tab1_extra_headers_json",
+    "tab1_image_extra_headers_json",
     "refine_api_key",
     "refine_extra_headers_json",
     "refine_uploaded_image_bytes",
@@ -858,9 +860,23 @@ GEMINI_IMAGE_MODELS = [
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
 ]
+OPENAI_TEXT_MODELS = [
+    "gpt-5.1",
+    "gpt-5.1-mini",
+    "gpt-4.1",
+]
+OPENAI_IMAGE_MODELS = [
+    "gpt-image-2",
+    "gpt-image-1",
+]
 
 CUSTOM_MODEL_OPTION = "自定义"
 CUSTOM_CONNECTION_CREATE_OPTION = "__create_custom_connection__"
+GENERATION_PROVIDER_CHOICES = ["GPT", "Gemini"]
+GENERATION_PROVIDER_TO_CONNECTION = {
+    "GPT": "openai",
+    "Gemini": "gemini",
+}
 CONNECTION_DISCOVERY_STATUS_LABELS = {
     "success": "已刷新",
     "warning": "接口为空",
@@ -938,6 +954,28 @@ def find_connection_by_id(connection_id: str):
         if connection.connection_id == normalized_id:
             return connection
     return None
+
+
+def get_connection_model_options(connection_defaults: dict[str, Any], *, image: bool) -> list[str]:
+    default_key = "image_model_name" if image else "model_name"
+    default_model = str(connection_defaults.get(default_key, "") or "").strip()
+    options = [default_model] if default_model else []
+    if default_model and default_model not in options:
+        options.insert(0, default_model)
+    if not options and connection_defaults.get("provider_type") == "gemini":
+        options = GEMINI_IMAGE_MODELS if image else GEMINI_TEXT_MODELS
+    if not options and connection_defaults.get("provider_type") == "openai":
+        options = OPENAI_IMAGE_MODELS if image else OPENAI_TEXT_MODELS
+    return options
+
+
+def provider_choice_to_connection(choice: str) -> str:
+    return GENERATION_PROVIDER_TO_CONNECTION.get(str(choice or "").strip(), "gemini")
+
+
+def connection_to_provider_choice(connection_id: str) -> str:
+    normalized = normalize_connection_id(connection_id, default="gemini")
+    return "GPT" if normalized == "openai" else "Gemini"
 
 
 _BACKGROUND_JOB_RUNTIME_FALLBACK = None
@@ -1139,6 +1177,23 @@ def hydrate_api_key_session_state(
     return current_value
 
 
+def hydrate_image_api_key_session_state(
+    *,
+    session_key: str,
+    provider_defaults: dict[str, str],
+) -> str:
+    current_value = str(st.session_state.get(session_key, "") or "").strip()
+    fallback_value = str(
+        provider_defaults.get("image_api_key_default", "")
+        or provider_defaults.get("api_key_default", "")
+        or ""
+    ).strip()
+    if not current_value and fallback_value:
+        st.session_state[session_key] = fallback_value
+        return fallback_value
+    return current_value
+
+
 def get_api_key_widget_key(session_key: str) -> str:
     """为 API Key 输入框生成独立 widget key。"""
     return f"{session_key}_input"
@@ -1176,6 +1231,8 @@ def sync_connection_runtime_input_state(
     prefix: str,
     selected_connection_id: str,
     provider_defaults: dict[str, Any],
+    sync_text_model: bool = True,
+    sync_image_model: bool = True,
 ) -> None:
     """连接切换时同步 API Key 和模型输入，避免沿用上一条连接的残留状态。"""
     tracked_connection_key = f"{prefix}_runtime_input_connection_id"
@@ -1184,16 +1241,42 @@ def sync_connection_runtime_input_state(
         return
 
     api_key_session_key = f"{prefix}_api_key"
-    api_key_value = str(provider_defaults.get("api_key_default", "") or "").strip()
+    api_key_default_key = (
+        "image_api_key_default"
+        if sync_image_model and not sync_text_model
+        else "api_key_default"
+    )
+    api_key_value = str(provider_defaults.get(api_key_default_key, "") or "").strip()
     st.session_state[api_key_session_key] = api_key_value
     st.session_state[get_api_key_widget_key(api_key_session_key)] = api_key_value
+    state_keys = _build_connection_state_keys(prefix)
+    st.session_state[state_keys["base_url"]] = str(provider_defaults.get("base_url", "") or "").strip()
 
-    st.session_state[f"{prefix}_model_name"] = str(provider_defaults.get("model_name", "") or "").strip()
-    st.session_state[f"{prefix}_image_model_name"] = str(provider_defaults.get("image_model_name", "") or "").strip()
-    st.session_state.pop(f"{prefix}_model_name_selector", None)
-    st.session_state.pop(f"{prefix}_model_name_custom", None)
-    st.session_state.pop(f"{prefix}_image_model_name_selector", None)
-    st.session_state.pop(f"{prefix}_image_model_name_custom", None)
+    if sync_text_model:
+        st.session_state[f"{prefix}_model_name"] = str(provider_defaults.get("model_name", "") or "").strip()
+        st.session_state.pop(f"{prefix}_model_name_selector", None)
+        st.session_state.pop(f"{prefix}_model_name_custom", None)
+    if sync_image_model:
+        st.session_state[f"{prefix}_image_model_name"] = str(provider_defaults.get("image_model_name", "") or "").strip()
+        st.session_state.pop(f"{prefix}_image_model_name_selector", None)
+        st.session_state.pop(f"{prefix}_image_model_name_custom", None)
+    st.session_state[tracked_connection_key] = normalized_selected
+
+
+def sync_model_selector_to_connection(
+    *,
+    prefix: str,
+    selected_connection_id: str,
+    model_key: str,
+    default_model: str,
+) -> None:
+    tracked_connection_key = f"{prefix}_{model_key}_connection_id"
+    normalized_selected = str(selected_connection_id or "").strip()
+    if str(st.session_state.get(tracked_connection_key, "") or "").strip() == normalized_selected:
+        return
+    st.session_state[f"{prefix}_{model_key}"] = str(default_model or "").strip()
+    st.session_state.pop(f"{prefix}_{model_key}_selector", None)
+    st.session_state.pop(f"{prefix}_{model_key}_custom", None)
     st.session_state[tracked_connection_key] = normalized_selected
 
 
@@ -1979,6 +2062,8 @@ class GenerationJobState:
     visual_intent: str
     connection_id: str = ""
     provider_display_name: str = ""
+    image_connection_id: str = ""
+    image_provider_display_name: str = ""
     status: str = "running"
     progress_done: int = 0
     progress_total: int = 0
@@ -2017,6 +2102,8 @@ class GenerationJobState:
                 "provider_display_name": self.provider_display_name,
                 "model_name": self.model_name,
                 "image_model_name": self.image_model_name,
+                "image_connection_id": self.image_connection_id,
+                "image_provider_display_name": self.image_provider_display_name,
                 "concurrency_mode": self.concurrency_mode,
                 "max_concurrent": self.max_concurrent,
                 "requested_candidates": self.requested_candidates,
@@ -2163,8 +2250,11 @@ PERSISTED_UI_STATE_KEYS = {
     "tab1_image_resolution",
     "tab1_max_critic_rounds",
     "tab1_provider",
+    "tab1_image_provider",
     "tab1_api_key",
+    "tab1_image_api_key",
     "tab1_base_url",
+    "tab1_image_base_url",
     "tab1_connection_display_name",
     "tab1_connection_id",
     "tab1_api_key_env_var",
@@ -2396,6 +2486,8 @@ def save_demo_generation_artifacts(
     max_critic_rounds: int,
     requested_candidates: int,
     effective_concurrent: int,
+    image_connection_id: str = "",
+    image_provider_display_name: str = "",
     timestamp_str: str | None = None,
     run_status: str = "completed",
 ) -> dict:
@@ -2439,6 +2531,8 @@ def save_demo_generation_artifacts(
             "effective_concurrent": int(effective_concurrent),
             "run_status": run_status,
             "curated_profile": curated_profile,
+            "image_connection_id": image_connection_id,
+            "image_provider_display_name": image_provider_display_name,
         },
     )
 
@@ -3802,6 +3896,10 @@ def start_generation_background_job(
     api_key: str,
     model_name: str,
     image_model_name: str,
+    image_connection_id: str = "",
+    image_api_key: str = "",
+    image_base_url: str = "",
+    image_extra_headers: dict[str, str] | None = None,
     base_url: str = "",
     extra_headers: dict[str, str] | None = None,
     concurrency_mode: str,
@@ -3822,6 +3920,10 @@ def start_generation_background_job(
         api_key=api_key,
         model_name=model_name,
         image_model_name=image_model_name,
+        image_connection_id=image_connection_id,
+        image_api_key=image_api_key,
+        image_base_url=image_base_url,
+        image_extra_headers=image_extra_headers,
         base_url=base_url,
         extra_headers=extra_headers,
         concurrency_mode=concurrency_mode,
@@ -3852,6 +3954,8 @@ def start_generation_background_job(
         provider=runtime_settings.provider,
         model_name=runtime_settings.model_name,
         image_model_name=runtime_settings.image_model_name,
+        image_connection_id=runtime_settings.image_connection_id,
+        image_provider_display_name=runtime_settings.image_provider_display_name,
         connection_id=runtime_settings.connection_id,
         provider_display_name=runtime_settings.provider_display_name,
         concurrency_mode=runtime_settings.concurrency_mode,
@@ -3920,6 +4024,10 @@ def start_generation_background_job(
                         curated_profile=curated_profile,
                         model_name=runtime_settings.model_name,
                         image_model_name=runtime_settings.image_model_name,
+                        image_connection_id=runtime_settings.image_connection_id,
+                        image_api_key=runtime_settings.image_api_key,
+                        image_base_url=runtime_settings.image_base_url,
+                        image_extra_headers=runtime_settings.image_extra_headers,
                         provider=runtime_settings.provider,
                         connection_id=runtime_settings.connection_id,
                         api_key=runtime_settings.api_key,
@@ -3950,6 +4058,8 @@ def start_generation_background_job(
                         provider_display_name=runtime_settings.provider_display_name,
                         model_name=runtime_settings.model_name,
                         image_model_name=runtime_settings.image_model_name,
+                        image_connection_id=runtime_settings.image_connection_id,
+                        image_provider_display_name=runtime_settings.image_provider_display_name,
                         concurrency_mode=runtime_settings.concurrency_mode,
                         max_concurrent=runtime_settings.max_concurrent,
                         max_critic_rounds=runtime_settings.max_critic_rounds,
@@ -4043,6 +4153,10 @@ async def process_parallel_candidates(
     curated_profile=DEFAULT_CURATED_PROFILE,
     model_name="",
     image_model_name="",
+    image_connection_id="",
+    image_api_key="",
+    image_base_url="",
+    image_extra_headers: dict[str, str] | None = None,
     provider=DEFAULT_PROVIDER,
     connection_id="",
     api_key="",
@@ -4099,6 +4213,7 @@ async def process_parallel_candidates(
     emit_generation_event(
         message=(
             f"[生成] 运行配置：文本模型={model_name or 'N/A'} | "
+            f"图像连接={image_connection_id or connection_id or provider} | "
             f"图像模型={image_model_name or 'N/A'} | 有效并发={effective_concurrent}"
         ),
         event_callback=event_callback,
@@ -4130,6 +4245,10 @@ async def process_parallel_candidates(
         api_key=api_key,
         model_name=model_name,
         image_model_name=image_model_name,
+        image_connection_id=image_connection_id,
+        image_api_key=image_api_key,
+        image_base_url=image_base_url,
+        image_extra_headers=image_extra_headers,
         base_url=base_url,
         extra_headers=extra_headers,
         concurrency_mode=concurrency_mode,
@@ -4166,6 +4285,9 @@ async def process_parallel_candidates(
         curated_profile=curated_profile,
         model_name=runtime_settings.model_name,
         image_model_name=runtime_settings.image_model_name,
+        image_provider=runtime_settings.image_provider,
+        image_connection_id=runtime_settings.image_connection_id,
+        image_provider_display_name=runtime_settings.image_provider_display_name,
         provider=runtime_settings.provider,
         connection_id=runtime_settings.connection_id,
         provider_display_name=runtime_settings.provider_display_name,
@@ -4174,7 +4296,8 @@ async def process_parallel_candidates(
     emit_generation_event(
         message=(
             f"[生成] ExpConfig 就绪：provider={exp_config.provider} | "
-            f"text={exp_config.model_name or 'N/A'} | image={exp_config.image_model_name or 'N/A'}"
+            f"text={exp_config.model_name or 'N/A'} | image_provider={exp_config.image_provider} | "
+            f"image={exp_config.image_model_name or 'N/A'}"
         ),
         event_callback=event_callback,
         status_callback=status_callback,
@@ -5895,6 +6018,8 @@ def build_generation_preflight_report(
     retrieval_setting = effective_settings["retrieval_setting"]
     if not str(effective_settings.get("api_key", "") or "").strip():
         warnings.append("当前没有可用的 API Key，任务可能无法正常发起。")
+    if task_name == "diagram" and not str(effective_settings.get("image_api_key", "") or "").strip():
+        warnings.append("当前文生图连接没有可用的 API Key，候选描述可能完成但图像会生成失败。")
     if retrieval_setting in {"auto", "auto-full", "random"} and not retrieval_ref_path.exists():
         warnings.append("当前运行环境未找到参考样例库，本次会自动回退到“不使用参考”。")
     if retrieval_setting == "curated" and resolved_profile_path is None:
@@ -5903,6 +6028,8 @@ def build_generation_preflight_report(
     notes.append(
         "当前参数："
         f"流水线={effective_settings['exp_mode']} | "
+        f"VLM={effective_settings.get('connection_id', 'N/A')} | "
+        f"文生图={effective_settings.get('image_connection_id', effective_settings.get('connection_id', 'N/A'))} | "
         f"检索={retrieval_setting} | 评审轮次={int(effective_settings['max_critic_rounds'])} | "
         f"候选数={int(num_candidates)}"
     )
@@ -6288,230 +6415,139 @@ def render_generation_sidebar_controls() -> dict:
             help="评审优化迭代的最大轮次；设为 0 可做低成本试跑。",
         )
         st.markdown('<p class="sb-section">Provider & 模型</p>', unsafe_allow_html=True)
-        connection_options = get_connection_options()
-        connection_ids = [item[0] for item in connection_options]
-        ensure_session_choice_state(
-            "tab1_provider",
-            connection_ids,
-            str(st.session_state.get("tab1_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
-        )
-        provider = st.selectbox(
-            "生成连接",
-            connection_ids,
-            key="tab1_provider",
-            format_func=lambda value: dict(connection_options).get(value, value),
-            help="可选择内置连接，或创建自定义 OpenAI 兼容连接。",
-        )
+        st.caption("生成页只分两块：VLM 文本 和 文生图。每块独立选择 GPT 或 Gemini，并填写自己的 API、模型和 Base URL。")
 
-        provider_defaults = ensure_connection_editor_state("tab1", provider)
+        saved_text_choice = connection_to_provider_choice(
+            str(st.session_state.get("tab1_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
+        )
+        ensure_session_choice_state("tab1_provider_choice", GENERATION_PROVIDER_CHOICES, saved_text_choice)
+        text_provider_choice = st.radio(
+            "VLM 文本",
+            GENERATION_PROVIDER_CHOICES,
+            horizontal=True,
+            key="tab1_provider_choice",
+            help="用于规划、描述、检索判断和评审。",
+        )
+        provider = provider_choice_to_connection(text_provider_choice)
+        st.session_state["tab1_provider"] = provider
+        provider_defaults = get_connection_ui_defaults(provider)
         state_keys = _build_connection_state_keys("tab1")
-        runtime_connection_id = get_selected_connection_runtime_id("tab1", provider)
-        connection_pending_save = provider == CUSTOM_CONNECTION_CREATE_OPTION
-        is_builtin_connection = bool(provider_defaults.get("builtin", False))
+        runtime_connection_id = provider
+        connection_pending_save = False
+        is_builtin_connection = True
         sync_connection_runtime_input_state(
             prefix="tab1",
             selected_connection_id=provider,
             provider_defaults=provider_defaults,
+            sync_text_model=True,
+            sync_image_model=False,
         )
-        if state_keys["persist_secret"] not in st.session_state:
-            st.session_state[state_keys["persist_secret"]] = True
-
-        if not is_builtin_connection:
-            st.text_input(
-                "连接显示名",
-                key=state_keys["display_name"],
-                disabled=False,
-                help="自定义连接可编辑显示名，方便在生成页和精修页复用。",
-            )
-            st.text_input(
-                "连接 ID",
-                key=state_keys["connection_id"],
-                disabled=False,
-                help="仅自定义连接可编辑，建议使用小写英文和连字符。",
-            )
-        if is_builtin_connection:
-            with st.expander("高级连接参数", expanded=False):
-                base_url = st.text_input(
-                    "Base URL",
-                    key=state_keys["base_url"],
-                    help="OpenAI 兼容服务请填写完整 base URL；内置连接也可临时覆盖。",
-                )
-                extra_headers_json = st.text_area(
-                    "额外请求头（JSON）",
-                    key=state_keys["extra_headers_json"],
-                    height=100,
-                    help="用于某些自建网关的附加请求头，例如组织信息或路由标记。",
-                )
-        else:
-            base_url = st.text_input(
-                "Base URL",
-                key=state_keys["base_url"],
-                help="OpenAI 兼容服务请填写完整 base URL；内置连接也可临时覆盖。",
-            )
-        if not is_builtin_connection:
-            st.text_input(
-                "API Key 环境变量",
-                key=state_keys["api_key_env_var"],
-                disabled=False,
-                help="可选。若配置了环境变量名，将优先读取该环境变量中的密钥。",
-            )
-            extra_headers_json = st.text_area(
-                "额外请求头（JSON）",
-                key=state_keys["extra_headers_json"],
-                height=100,
-                help="用于某些自建网关的附加请求头，例如组织信息或路由标记。",
-            )
-        persist_secret = st.checkbox(
-            "将 API Key 保存到本地",
-            key=state_keys["persist_secret"],
-            help="关闭后，本次输入的密钥仅在当前会话生效。",
+        if "tab1_api_key" not in st.session_state:
+            st.session_state["tab1_api_key"] = str(provider_defaults.get("api_key_default", "") or "")
+        api_key = st.text_input(
+            f"{text_provider_choice} VLM API Key",
+            type="password",
+            key="tab1_api_key",
+            help="只用于 VLM 文本链路。环境变量会作为默认值自动带入。",
+        ).strip()
+        model_name = render_preset_or_custom_model_input(
+            f"{text_provider_choice} VLM 模型",
+            get_connection_model_options(provider_defaults, image=False),
+            value_key="tab1_model_name",
+            selector_key="tab1_model_name_selector",
+            custom_value_key="tab1_model_name_custom",
+            default_value=provider_defaults["model_name"],
+            select_help="用于 VLM 文本链路的模型名称。",
+            custom_help="请输入当前 VLM Provider 支持的模型名称。",
         )
-        allow_local_api_key_persist = is_builtin_connection or not connection_pending_save
-
-        api_key = render_provider_api_key_controls(
-            provider=runtime_connection_id,
-            provider_defaults={
-                **provider_defaults,
-                "api_key_label": provider_defaults.get("api_key_label", "API Key"),
-                "api_key_help": provider_defaults.get("api_key_help", "当前连接使用的 API 密钥"),
-            },
-            session_key="tab1_api_key",
-            clear_request_key="tab1_api_key_clear_requested",
-            clear_button_key="tab1_clear_provider_api_key",
-            persist_secret=bool(persist_secret),
-            allow_local_persist=allow_local_api_key_persist,
-        )
-        if provider_defaults.get("provider_type") == "gemini":
-            model_name = render_preset_or_custom_model_input(
-                "文本模型",
-                GEMINI_TEXT_MODELS,
-                value_key="tab1_model_name",
-                selector_key="tab1_model_name_selector",
-                custom_value_key="tab1_model_name_custom",
-                default_value=provider_defaults["model_name"],
-                select_help="用于推理/规划/评审的模型名称。可选择预设模型，或选“自定义”后手动输入。",
-                custom_help="请输入用于推理/规划/评审的自定义文本模型名称。",
-            )
-        else:
-            model_name = st.text_input(
-                "文本模型",
-                key="tab1_model_name",
-                help="用于推理/规划/评审的模型名称",
-            )
+        base_url = st.text_input(
+            f"{text_provider_choice} VLM Base URL",
+            key=state_keys["base_url"],
+            help="只用于 VLM 文本链路；官方直连可留空，网关请填写对应 URL。",
+        ).strip()
+        extra_headers_json = ""
 
         if task_config["uses_image_model"]:
-            if provider_defaults.get("provider_type") == "gemini":
-                image_model_name = render_preset_or_custom_model_input(
-                    "图像模型",
-                    GEMINI_IMAGE_MODELS,
-                    value_key="tab1_image_model_name",
-                    selector_key="tab1_image_model_name_selector",
-                    custom_value_key="tab1_image_model_name_custom",
-                    default_value=provider_defaults["image_model_name"],
-                    select_help="用于图像生成的模型名称。可选择预设模型，或选“自定义”后手动输入。",
-                    custom_help="请输入用于图像生成的自定义模型名称。",
+            saved_image_choice = connection_to_provider_choice(
+                str(st.session_state.get("tab1_image_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
+            )
+            ensure_session_choice_state("tab1_image_provider_choice", GENERATION_PROVIDER_CHOICES, saved_image_choice)
+            image_provider_choice = st.radio(
+                "文生图",
+                GENERATION_PROVIDER_CHOICES,
+                horizontal=True,
+                key="tab1_image_provider_choice",
+                help="用于真正生成图像。可与 VLM 文本不同。",
+            )
+            image_provider = provider_choice_to_connection(image_provider_choice)
+            st.session_state["tab1_image_provider"] = image_provider
+            image_provider_defaults = get_connection_ui_defaults(image_provider)
+            image_state_keys = _build_connection_state_keys("tab1_image")
+            image_runtime_connection_id = image_provider
+            sync_connection_runtime_input_state(
+                prefix="tab1_image",
+                selected_connection_id=image_provider,
+                provider_defaults=image_provider_defaults,
+                sync_text_model=False,
+                sync_image_model=True,
+            )
+            hydrate_image_api_key_session_state(
+                session_key="tab1_image_api_key",
+                provider_defaults=image_provider_defaults,
+            )
+            sync_model_selector_to_connection(
+                prefix="tab1",
+                selected_connection_id=image_provider,
+                model_key="image_model_name",
+                default_model=image_provider_defaults["image_model_name"],
+            )
+            if "tab1_image_api_key" not in st.session_state:
+                st.session_state["tab1_image_api_key"] = str(
+                    image_provider_defaults.get("image_api_key_default", "")
+                    or image_provider_defaults.get("api_key_default", "")
+                    or ""
                 )
-            else:
-                image_model_name = st.text_input(
-                    "图像模型",
-                    key="tab1_image_model_name",
-                    help="用于图像生成的模型名称",
-                )
+            image_api_key = st.text_input(
+                f"{image_provider_choice} 文生图 API Key",
+                type="password",
+                key="tab1_image_api_key",
+                help="只用于文生图链路。环境变量会作为默认值自动带入。",
+            ).strip()
+            image_model_name = render_preset_or_custom_model_input(
+                f"{image_provider_choice} 文生图模型",
+                get_connection_model_options(image_provider_defaults, image=True),
+                value_key="tab1_image_model_name",
+                selector_key="tab1_image_model_name_selector",
+                custom_value_key="tab1_image_model_name_custom",
+                default_value=image_provider_defaults["image_model_name"],
+                select_help="用于文生图链路的模型名称。切换 GPT/Gemini 时会自动重置。",
+                custom_help="请输入当前文生图 Provider 支持的模型名称。",
+            )
+            image_base_url = st.text_input(
+                f"{image_provider_choice} 文生图 Base URL",
+                key=image_state_keys["base_url"],
+                help="只用于文生图链路；官方直连可留空，网关请填写对应 URL。",
+            ).strip()
+            image_extra_headers_json = ""
         else:
+            image_provider = provider
+            image_runtime_connection_id = runtime_connection_id
+            image_api_key = api_key
             image_model_name = ""
-            st.caption("当前任务不会调用图像生成模型，最终图像由文本模型生成的 Matplotlib 代码渲染。")
+            image_base_url = base_url
+            image_extra_headers_json = ""
+            st.caption("当前任务不会调用文生图模型，最终图像由文本模型生成的 Matplotlib 代码渲染。")
 
-        supports_image = bool(st.session_state.get(state_keys["supports_image"], provider_defaults.get("supports_image", True)))
-        if not is_builtin_connection:
-            supports_image = st.checkbox(
-                "启用图像能力",
-                key=state_keys["supports_image"],
-                disabled=False,
-                help="仅对自定义连接生效；开启后才会执行图像探针。",
-            )
-            st.checkbox(
-                "启用文本能力",
-                key=state_keys["supports_text"],
-                disabled=False,
-                help="仅对自定义连接生效。",
-            )
-            st.selectbox(
-                "模型发现模式",
-                ["manual", "hybrid", "fetch", "static"],
-                key=state_keys["model_discovery_mode"],
-                disabled=False,
-                help="hybrid 表示优先尝试远端发现，失败后回退到手动模型名。",
-            )
-            st.text_area(
-                "模型白名单（每行一个）",
-                key=state_keys["model_allowlist"],
-                height=80,
-                disabled=False,
-                help="用于 `/models` 不可用时的手动回退列表。",
-            )
-
-        action_cols = st.columns([1, 1, 1], gap="small")
-        with action_cols[0]:
-            save_clicked = st.button("💾 保存", key="tab1_save_connection", width="stretch", help="保存当前连接草稿。")
-        with action_cols[1]:
-            refresh_clicked = st.button("↻ 刷新", key="tab1_refresh_models", width="stretch", help="重新拉取或更新可用模型列表。")
-        with action_cols[2]:
-            test_clicked = st.button("🧪 测试", key="tab1_test_connection", width="stretch", help="验证文本链路与图像链路是否可用。")
-
-        if save_clicked:
-            ok, message, _ = save_connection_draft(
-                prefix="tab1",
-                selected_connection_id=provider,
-                api_key=api_key,
-                model_name=model_name,
-                image_model_name=image_model_name,
-            )
-            if ok:
-                st.success(message)
-                st.rerun()
-            else:
-                st.error(message)
-
-        if refresh_clicked:
-            _, message = run_refresh_models_with_status(
-                prefix="tab1",
-                connection_id=provider,
-                api_key=api_key,
-                model_name=model_name,
-                image_model_name=image_model_name,
-            )
-            emit_connection_action_feedback(message)
-
-        if test_clicked:
-            _, message = run_connection_probe_with_status(
-                prefix="tab1",
-                connection_id=provider,
-                api_key=api_key,
-                model_name=model_name,
-                image_model_name=image_model_name,
-            )
-            emit_connection_action_feedback(message)
-
-        if provider not in BUILTIN_CONNECTION_IDS and provider != CUSTOM_CONNECTION_CREATE_OPTION:
-            delete_col, _ = st.columns([1, 2])
-            with delete_col:
-                delete_clicked = st.button("删除自定义连接", key="tab1_delete_custom_connection", width="stretch")
-            if delete_clicked:
-                delete_custom_connection(provider, base_dir=REPO_ROOT)
-                st.session_state["tab1_provider"] = DEFAULT_PROVIDER
-                st.rerun()
-
-        if extra_headers_json:
-            st.caption("已填写额外请求头草稿。")
-        if not persist_secret:
-            st.caption("当前 API Key 仅在本次会话中使用。")
-        if not is_builtin_connection and not supports_image:
-            st.caption("当前连接未启用图像能力，图像探针会自动跳过。")
-        if connection_pending_save:
-            st.caption("当前是未保存的自定义连接草稿；可先测试，但正式运行前需要先保存连接。")
-        render_connection_probe_results("tab1")
+        if task_config["uses_image_model"]:
+            st.caption(f"当前组合：VLM 文本={text_provider_choice} / {model_name or '未填写'}；文生图={image_provider_choice} / {image_model_name or '未填写'}。")
+        else:
+            st.caption(f"当前组合：VLM 文本={text_provider_choice} / {model_name or '未填写'}。")
 
     extra_headers, extra_headers_error = parse_extra_headers_json_safe(extra_headers_json)
+    image_extra_headers, image_extra_headers_error = parse_extra_headers_json_safe(image_extra_headers_json)
+    combined_extra_headers_error = "\n".join(
+        item for item in [extra_headers_error, image_extra_headers_error] if item
+    )
     return {
         "task_name": task_name,
         "num_candidates": int(num_candidates),
@@ -6534,8 +6570,12 @@ def render_generation_sidebar_controls() -> dict:
         "api_key": api_key,
         "base_url": base_url,
         "extra_headers": extra_headers,
-        "extra_headers_error": extra_headers_error,
+        "extra_headers_error": combined_extra_headers_error,
         "model_name": model_name,
+        "image_connection_id": image_runtime_connection_id,
+        "image_api_key": image_api_key,
+        "image_base_url": image_base_url,
+        "image_extra_headers": image_extra_headers,
         "image_model_name": image_model_name,
     }
 
@@ -7447,6 +7487,10 @@ def render_generation_workspace() -> None:
                 api_key=advanced_settings["api_key"],
                 model_name=advanced_settings["model_name"],
                 image_model_name=advanced_settings["image_model_name"],
+                image_connection_id=advanced_settings["image_connection_id"],
+                image_api_key=advanced_settings["image_api_key"],
+                image_base_url=advanced_settings["image_base_url"],
+                image_extra_headers=advanced_settings["image_extra_headers"],
                 base_url=advanced_settings["base_url"],
                 extra_headers=advanced_settings["extra_headers"],
                 concurrency_mode=advanced_settings["concurrency_mode"],

@@ -453,6 +453,12 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             api_key="local-test-key",
             model_name="custom-text",
             image_model_name="custom-image",
+            image_connection_id="custom-openai",
+            image_api_key="local-image-key",
+            image_base_url="https://example.com/v1",
+            image_extra_headers={"X-Test": "demo"},
+            image_provider="openai_compatible",
+            image_provider_display_name="自定义连接",
             base_url="https://example.com/v1",
             extra_headers={"X-Test": "demo"},
             concurrency_mode="manual",
@@ -516,8 +522,13 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertEqual(captured["process_kwargs"]["connection_id"], "custom-openai")
             self.assertEqual(captured["process_kwargs"]["base_url"], "https://example.com/v1")
             self.assertEqual(captured["process_kwargs"]["extra_headers"], {"X-Test": "demo"})
+            self.assertEqual(captured["process_kwargs"]["image_connection_id"], "custom-openai")
+            self.assertEqual(captured["process_kwargs"]["image_api_key"], "local-image-key")
+            self.assertEqual(captured["process_kwargs"]["image_base_url"], "https://example.com/v1")
             self.assertEqual(captured["artifact_kwargs"]["connection_id"], "custom-openai")
             self.assertEqual(captured["artifact_kwargs"]["provider_display_name"], "自定义连接")
+            self.assertEqual(captured["artifact_kwargs"]["image_connection_id"], "custom-openai")
+            self.assertEqual(captured["artifact_kwargs"]["image_provider_display_name"], "自定义连接")
         finally:
             demo.resolve_runtime_settings = original_resolve
             demo.create_sample_inputs = original_create_inputs

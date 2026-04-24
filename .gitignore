@@ -23,3 +23,5 @@ build/
 
 # 编辑器配置
 .vscode/
+outputs/
+.spec-workflow/

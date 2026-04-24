@@ -72,16 +72,25 @@ class RuntimeContext:
     connection_id: str = ""
     provider: str = ""
     api_key: str = ""
+    image_api_key: str = ""
     base_url: str = ""
     extra_headers: dict[str, str] = field(default_factory=dict)
+    image_connection_id: str = ""
+    image_provider: str = ""
+    image_base_url: str = ""
+    image_extra_headers: dict[str, str] = field(default_factory=dict)
     event_hook: Optional[Callable[[dict[str, Any]], None]] = None
     status_hook: Optional[Callable[[str], None]] = None
     cancel_check: Optional[Callable[[], bool]] = None
     gemini_client: Any = None
+    gemini_image_client: Any = None
     anthropic_client: Any = None
     openai_client: Any = None
+    openai_image_client: Any = None
     evolink_provider: Any = None
+    image_evolink_provider: Any = None
     owns_evolink_provider: bool = False
+    owns_image_evolink_provider: bool = False
 
 
 _active_runtime_context: ContextVar[RuntimeContext | None] = ContextVar(
@@ -112,11 +121,14 @@ def _create_evolink_provider(api_key: str, base_url: str = ""):
     return create_provider("evolink", api_key=api_key, base_url=url)
 
 
-def _create_gemini_client(api_key: str):
+def _create_gemini_client(api_key: str, base_url: str = ""):
     if not api_key:
         return None
     try:
         from google import genai
+        from google.genai import types
+        if str(base_url or "").strip():
+            return genai.Client(api_key=api_key, http_options=types.HttpOptions(base_url=str(base_url).strip()))
         return genai.Client(api_key=api_key)
     except ImportError:
         logger.warning("⚠️  未安装 google-genai，Gemini Client 不可用。请运行 pip install google-genai")
@@ -196,9 +208,21 @@ def get_evolink_provider():
     return context.evolink_provider if context else None
 
 
+def get_image_evolink_provider():
+    context = get_active_runtime_context()
+    return context.image_evolink_provider or context.evolink_provider if context else None
+
+
 def get_gemini_client():
     context = get_active_runtime_context()
     return context.gemini_client if context else None
+
+
+def get_gemini_image_client():
+    context = get_active_runtime_context()
+    if context is None:
+        return None
+    return context.gemini_image_client or context.gemini_client
 
 
 def get_anthropic_client():
@@ -211,11 +235,23 @@ def get_openai_client():
     return context.openai_client if context else None
 
 
+def get_openai_image_client():
+    context = get_active_runtime_context()
+    if context is None:
+        return None
+    return context.openai_image_client or context.openai_client
+
+
 def create_runtime_context(
     *,
     connection_id: str = "",
     provider: str = "",
     api_key: str = "",
+    image_api_key: str = "",
+    image_provider: str = "",
+    image_connection_id: str = "",
+    image_base_url: str = "",
+    image_extra_headers: Optional[dict[str, str]] = None,
     event_hook: Optional[Callable[[dict[str, Any]], None]] = None,
     status_hook: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
@@ -223,15 +259,24 @@ def create_runtime_context(
     extra_headers: Optional[dict[str, str]] = None,
 ) -> RuntimeContext:
     normalized_provider = str(provider or "").strip().lower()
+    normalized_image_provider = str(image_provider or normalized_provider).strip().lower()
     resolved_base_url = str(base_url or "").strip()
+    resolved_image_base_url = str(image_base_url or resolved_base_url).strip()
     if normalized_provider == "evolink" and not resolved_base_url:
         resolved_base_url = evolink_base_url
+    if normalized_image_provider == "evolink" and not resolved_image_base_url:
+        resolved_image_base_url = evolink_base_url
     context = RuntimeContext(
         connection_id=str(connection_id or "").strip(),
         provider=normalized_provider,
         api_key=str(api_key or "").strip(),
+        image_api_key=str(image_api_key or api_key or "").strip(),
         base_url=resolved_base_url,
         extra_headers=dict(extra_headers or {}),
+        image_connection_id=str(image_connection_id or connection_id or "").strip(),
+        image_provider=normalized_image_provider,
+        image_base_url=resolved_image_base_url,
+        image_extra_headers=dict(image_extra_headers or extra_headers or {}),
         event_hook=event_hook,
         status_hook=status_hook,
         cancel_check=cancel_check,
@@ -241,7 +286,8 @@ def create_runtime_context(
         context.evolink_provider = _create_evolink_provider(context.api_key, resolved_base_url)
         context.owns_evolink_provider = context.evolink_provider is not None
     elif normalized_provider == "gemini" and context.api_key:
-        context.gemini_client = _create_gemini_client(context.api_key)
+        context.gemini_client = _create_gemini_client(context.api_key, context.base_url)
+        context.gemini_image_client = _create_gemini_client(context.image_api_key, context.base_url)
     elif normalized_provider == "anthropic" and context.api_key:
         context.anthropic_client = _create_anthropic_client(context.api_key)
     elif normalized_provider == "openai" and context.api_key:
@@ -250,11 +296,34 @@ def create_runtime_context(
             base_url=context.base_url,
             extra_headers=context.extra_headers,
         )
+        context.openai_image_client = _create_openai_client(
+            context.image_api_key,
+            base_url=context.base_url,
+            extra_headers=context.extra_headers,
+        )
     elif normalized_provider in {"openrouter", "openai_compatible"} and context.api_key:
         context.openai_client = _create_openrouter_client(
             context.api_key,
             resolved_base_url,
             context.extra_headers,
+        )
+
+    if normalized_image_provider == "evolink" and context.image_api_key:
+        context.image_evolink_provider = _create_evolink_provider(context.image_api_key, resolved_image_base_url)
+        context.owns_image_evolink_provider = context.image_evolink_provider is not None
+    elif normalized_image_provider == "gemini" and context.image_api_key:
+        context.gemini_image_client = _create_gemini_client(context.image_api_key, resolved_image_base_url)
+    elif normalized_image_provider == "openai" and context.image_api_key:
+        context.openai_image_client = _create_openai_client(
+            context.image_api_key,
+            base_url=resolved_image_base_url,
+            extra_headers=context.image_extra_headers,
+        )
+    elif normalized_image_provider in {"openrouter", "openai_compatible"} and context.image_api_key:
+        context.openai_image_client = _create_openrouter_client(
+            context.image_api_key,
+            resolved_image_base_url,
+            context.image_extra_headers,
         )
 
     return context
@@ -278,6 +347,17 @@ async def close_runtime_context(context: RuntimeContext | None) -> None:
             await provider.close()
         except Exception as err:
             _safe_log(f"[DEBUG] [WARN] close_runtime_context 失败: {err}")
+    image_provider = context.image_evolink_provider
+    if (
+        context.owns_image_evolink_provider
+        and image_provider is not None
+        and image_provider is not provider
+        and hasattr(image_provider, "close")
+    ):
+        try:
+            await image_provider.close()
+        except Exception as err:
+            _safe_log(f"[DEBUG] [WARN] close_runtime_context image 失败: {err}")
 
 
 def reinitialize_runtime_context(context: RuntimeContext | None) -> RuntimeContext | None:
@@ -437,10 +517,18 @@ evolink_api_key = get_config_val(
 )
 gemini_api_key = get_config_val(
     model_config,
-    "api_keys",
-    "google_api_key",
-    "GOOGLE_API_KEY",
-    "",
+    "gemini",
+    "vlm_api_key",
+    "PAPERBANANA_GEMINI_VLM_API_KEY",
+    get_config_val(model_config, "api_keys", "google_api_key", "GOOGLE_API_KEY", "", base_dir=REPO_ROOT),
+    base_dir=REPO_ROOT,
+)
+gemini_image_api_key = get_config_val(
+    model_config,
+    "gemini",
+    "image_api_key",
+    "PAPERBANANA_GEMINI_IMAGE_API_KEY",
+    gemini_api_key,
     base_dir=REPO_ROOT,
 )
 anthropic_api_key = get_config_val(
@@ -453,10 +541,18 @@ anthropic_api_key = get_config_val(
 )
 openai_api_key = get_config_val(
     model_config,
-    "api_keys",
-    "openai_api_key",
-    "OPENAI_API_KEY",
-    "",
+    "openai",
+    "vlm_api_key",
+    "PAPERBANANA_OPENAI_VLM_API_KEY",
+    get_config_val(model_config, "api_keys", "openai_api_key", "OPENAI_API_KEY", "", base_dir=REPO_ROOT),
+    base_dir=REPO_ROOT,
+)
+openai_image_api_key = get_config_val(
+    model_config,
+    "openai",
+    "image_api_key",
+    "PAPERBANANA_OPENAI_IMAGE_API_KEY",
+    openai_api_key,
     base_dir=REPO_ROOT,
 )
 
@@ -464,12 +560,15 @@ set_default_runtime_context(
     RuntimeContext(
         provider="",
         api_key="",
+        image_api_key="",
         base_url=evolink_base_url,
         event_hook=runtime_event_hook,
         status_hook=runtime_status_hook,
-        gemini_client=_create_gemini_client(gemini_api_key),
+        gemini_client=_create_gemini_client(gemini_api_key, get_config_val(model_config, "gemini", "base_url", "PAPERBANANA_GEMINI_BASE_URL", "", base_dir=REPO_ROOT)),
+        gemini_image_client=_create_gemini_client(gemini_image_api_key, get_config_val(model_config, "gemini", "base_url", "PAPERBANANA_GEMINI_BASE_URL", "", base_dir=REPO_ROOT)),
         anthropic_client=_create_anthropic_client(anthropic_api_key),
-        openai_client=_create_openai_client(openai_api_key),
+        openai_client=_create_openai_client(openai_api_key, get_config_val(model_config, "openai", "base_url", "PAPERBANANA_OPENAI_BASE_URL", "", base_dir=REPO_ROOT)),
+        openai_image_client=_create_openai_client(openai_image_api_key, get_config_val(model_config, "openai", "base_url", "PAPERBANANA_OPENAI_BASE_URL", "", base_dir=REPO_ROOT)),
         evolink_provider=_create_evolink_provider(evolink_api_key, evolink_base_url),
         owns_evolink_provider=bool(evolink_api_key),
     )
@@ -614,7 +713,7 @@ async def call_evolink_image_with_retry_async(
         retry_delay: 重试间隔
         error_context: 错误上下文
     """
-    provider = get_evolink_provider()
+    provider = get_image_evolink_provider()
     logger.debug(f"🖼️ call_evolink_image: model={model_name}, config={config}, provider={'已初始化' if provider else '未初始化'}")
     if provider is None:
         raise RuntimeError("Evolink Provider 未初始化，请检查 EVOLINK_API_KEY 配置。")
@@ -964,7 +1063,9 @@ async def call_gemini_with_retry_async(
     image_fallback_max_attempts: int = 5,
 ):
     """Gemini 调用：激进并发场景下优先降级，再对可恢复错误做可取消的无限重试。"""
-    if get_gemini_client() is None:
+    is_image_request = _is_gemini_image_request(model_name, config)
+    client = get_gemini_image_client() if is_image_request else get_gemini_client()
+    if client is None:
         raise RuntimeError("Gemini Client 未初始化，请检查 Google API Key。")
 
     result_list: List[str] = []
@@ -974,7 +1075,6 @@ async def call_gemini_with_retry_async(
         config.candidate_count = 8
 
     current_contents = contents
-    is_image_request = _is_gemini_image_request(model_name, config)
     request_timeout_seconds = _get_gemini_request_timeout_seconds(is_image_request)
     model_ladder = _build_gemini_model_ladder(
         model_name,
@@ -996,7 +1096,7 @@ async def call_gemini_with_retry_async(
             if _runtime_cancel_requested():
                 raise asyncio.CancelledError()
             try:
-                client = get_gemini_client()
+                client = get_gemini_image_client() if is_image_request else get_gemini_client()
                 if client is None:
                     raise RuntimeError("Gemini Client 未初始化，请检查 Google API Key。")
                 gemini_contents = _convert_to_gemini_parts(current_contents)
@@ -1536,7 +1636,7 @@ async def call_openrouter_image_generation_with_retry_async(
     error_context="",
 ):
     """通过 OpenRouter 的 chat/completions 多模态接口进行图像生成。"""
-    client = get_openai_client()
+    client = get_openai_image_client()
     if client is None:
         raise RuntimeError("OpenRouter Client 未初始化，请检查 OPENROUTER_API_KEY。")
 
@@ -1668,9 +1768,9 @@ async def call_openai_image_generation_with_retry_async(
     model_name, prompt, config, max_attempts=5, retry_delay=30, error_context=""
 ):
     """原始 OpenAI 图像生成 API 异步调用（保留兼容性）"""
-    client = get_openai_client()
+    client = get_openai_image_client()
     if client is None:
-        raise RuntimeError("OpenAI Client 未初始化，请检查 OPENAI_API_KEY。")
+        raise RuntimeError("OpenAI 图像 Client 未初始化，请检查 OpenAI 图像 API Key。")
     size = config.get("size", "1536x1024")
     quality = config.get("quality", "high")
     background = config.get("background", "opaque")

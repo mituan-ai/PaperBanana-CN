@@ -18,6 +18,26 @@
 defaults:
   model_name: "" # e.g., "gemini-3.1-flash-lite-preview"
   image_model_name: "" # e.g., "gemini-3.1-flash-image-preview"
+
+# Proxy-friendly channel settings. System environment variables take precedence:
+# PAPERBANANA_GEMINI_BASE_URL, PAPERBANANA_GEMINI_VLM_MODEL,
+# PAPERBANANA_GEMINI_IMAGE_MODEL, PAPERBANANA_GEMINI_VLM_API_KEY,
+# PAPERBANANA_GEMINI_IMAGE_API_KEY, PAPERBANANA_OPENAI_BASE_URL,
+# PAPERBANANA_OPENAI_VLM_MODEL, PAPERBANANA_OPENAI_IMAGE_MODEL,
+# PAPERBANANA_OPENAI_VLM_API_KEY, PAPERBANANA_OPENAI_IMAGE_API_KEY.
+gemini:
+  base_url: ""
+  vlm_model: ""
+  image_model: ""
+  vlm_api_key: ""
+  image_api_key: ""
+
+openai:
+  base_url: ""
+  vlm_model: ""
+  image_model: ""
+  vlm_api_key: ""
+  image_api_key: ""
   
 # API Keys. Recommended precedence:
 # 1. Environment variables

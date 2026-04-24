@@ -100,6 +100,9 @@ class ExpConfig:
     provider: str = DEFAULT_PROVIDER
     connection_id: str = ""
     provider_display_name: str = ""
+    image_provider: str = ""
+    image_connection_id: str = ""
+    image_provider_display_name: str = ""
     work_dir: Path = Path(__file__).parent.parent
     timezone: str = "America/Los_Angeles"
 
@@ -112,6 +115,7 @@ class ExpConfig:
             connection_id=self.connection_id,
             model_name=self.model_name,
             image_model_name=self.image_model_name,
+            image_connection_id=self.image_connection_id,
             concurrency_mode=self.concurrency_mode,
             max_concurrent=self.max_concurrent,
             max_critic_rounds=self.max_critic_rounds,
@@ -122,6 +126,12 @@ class ExpConfig:
         self.provider_display_name = self.runtime_settings.provider_display_name
         self.model_name = self.runtime_settings.model_name
         self.image_model_name = self.runtime_settings.image_model_name
+        self.image_provider = self.runtime_settings.image_provider or self.runtime_settings.provider
+        self.image_connection_id = self.runtime_settings.image_connection_id or self.runtime_settings.connection_id
+        self.image_provider_display_name = (
+            self.runtime_settings.image_provider_display_name
+            or self.runtime_settings.provider_display_name
+        )
         self.concurrency_mode = self.runtime_settings.concurrency_mode
         self.max_concurrent = self.runtime_settings.max_concurrent
         self.max_critic_rounds = self.runtime_settings.max_critic_rounds

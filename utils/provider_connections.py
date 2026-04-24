@@ -16,6 +16,7 @@ import yaml
 
 from utils.config_loader import (
     get_provider_api_key,
+    get_provider_image_api_key,
     load_model_config,
     load_provider_defaults,
 )
@@ -25,7 +26,7 @@ DEFAULT_PROVIDER_REGISTRY_VERSION = 1
 DEFAULT_PROVIDER_REGISTRY_FILE = "provider_registry.yaml"
 DEFAULT_CONNECTION_META_FILE = "provider_connection_meta.json"
 CUSTOM_PROVIDER_DIRNAME = "providers"
-BUILTIN_CONNECTION_IDS = ("gemini", "evolink", "openrouter")
+BUILTIN_CONNECTION_IDS = ("gemini", "openai", "evolink", "openrouter")
 CUSTOM_PROVIDER_TYPE = "openai_compatible"
 SUPPORTED_PROVIDER_TYPES = (*BUILTIN_CONNECTION_IDS, CUSTOM_PROVIDER_TYPE)
 CONNECTION_ID_RE = re.compile(r"[^a-z0-9-]+")
@@ -69,6 +70,7 @@ class ProviderConnection:
     enabled: bool = True
     builtin: bool = False
     api_key: str = ""
+    image_api_key: str = ""
     probe_results: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_registry_dict(self) -> dict[str, Any]:
@@ -88,6 +90,7 @@ class ProviderConnection:
             "supports_image": bool(self.supports_image),
             "enabled": bool(self.enabled),
             "builtin": bool(self.builtin),
+            "image_api_key": self.image_api_key,
         }
 
 
@@ -259,18 +262,20 @@ def _build_builtin_connection(
     repo_root = _repo_root(base_dir)
     config_data = model_config_data if model_config_data is not None else load_model_config(repo_root)
     defaults = load_provider_defaults(connection_id, config_data, base_dir=repo_root)
-    protocol_family = "openai" if connection_id == "openrouter" else connection_id
+    protocol_family = "openai" if connection_id in {"openai", "openrouter"} else connection_id
     model_discovery_mode = {
         "gemini": "static",
+        "openai": "hybrid",
         "evolink": "manual",
         "openrouter": "hybrid",
     }.get(connection_id, "manual")
     display_name = {
         "gemini": "Gemini",
+        "openai": "GPT / OpenAI",
         "evolink": "Evolink",
         "openrouter": "OpenRouter",
     }.get(connection_id, connection_id)
-    supports_image = connection_id in {"gemini", "evolink", "openrouter"}
+    supports_image = connection_id in {"gemini", "openai", "evolink", "openrouter"}
     allowlist = []
     for item in (defaults.get("model_name", ""), defaults.get("image_model_name", "")):
         normalized = str(item or "").strip()
@@ -283,7 +288,8 @@ def _build_builtin_connection(
         protocol_family=protocol_family,
         base_url=str(defaults.get("base_url", "") or "").strip(),
         api_key_env_var={
-            "gemini": "GOOGLE_API_KEY",
+            "gemini": "PAPERBANANA_GEMINI_VLM_API_KEY",
+            "openai": "PAPERBANANA_OPENAI_VLM_API_KEY",
             "evolink": "EVOLINK_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
         }[connection_id],
@@ -297,6 +303,7 @@ def _build_builtin_connection(
         enabled=True,
         builtin=True,
         api_key=get_provider_api_key(connection_id, config_data, base_dir=repo_root),
+        image_api_key=get_provider_image_api_key(connection_id, config_data, base_dir=repo_root),
         probe_results=_extract_connection_probe_results(connection_id, base_dir=repo_root),
     )
 
@@ -330,6 +337,7 @@ def _coerce_connection_payload(payload: dict[str, Any]) -> ProviderConnection:
         supports_image=bool(payload.get("supports_image", False)),
         enabled=bool(payload.get("enabled", True)),
         builtin=bool(payload.get("builtin", False)),
+        image_api_key=str(payload.get("image_api_key") or "").strip(),
     )
 
 
@@ -356,11 +364,19 @@ def list_provider_connections(
             api_key = str(os.getenv(env_var, "") or "").strip()
         if not api_key:
             api_key = read_custom_provider_api_key(connection.connection_id, base_dir=repo_root)
+        image_api_key = str(connection.image_api_key or "").strip()
+        if connection.provider_type == CUSTOM_PROVIDER_TYPE:
+            api_key = api_key or str(os.getenv("PAPERBANANA_OPENAI_VLM_API_KEY", "") or os.getenv("OPENAI_VLM_API_KEY", "") or os.getenv("OPENAI_API_KEY", "") or "").strip()
+            image_api_key = image_api_key or str(os.getenv("PAPERBANANA_OPENAI_IMAGE_API_KEY", "") or os.getenv("OPENAI_IMAGE_API_KEY", "") or api_key or "").strip()
         connections.append(
             ProviderConnection(
                 **{
                     **asdict(connection),
                     "api_key": api_key,
+                    "image_api_key": image_api_key or api_key,
+                    "base_url": connection.base_url or str(os.getenv("PAPERBANANA_OPENAI_BASE_URL", "") or os.getenv("OPENAI_BASE_URL", "") or "").strip(),
+                    "text_model": connection.text_model or str(os.getenv("PAPERBANANA_OPENAI_VLM_MODEL", "") or os.getenv("OPENAI_VLM_MODEL", "") or "").strip(),
+                    "image_model": connection.image_model or str(os.getenv("PAPERBANANA_OPENAI_IMAGE_MODEL", "") or os.getenv("OPENAI_IMAGE_MODEL", "") or "").strip(),
                     "probe_results": _extract_connection_probe_results(connection.connection_id, base_dir=repo_root),
                 }
             )
@@ -411,6 +427,7 @@ def resolve_connection(
         **{
             **asdict(connection),
             "api_key": str(api_key or connection.api_key or "").strip(),
+            "image_api_key": str(connection.image_api_key or api_key or connection.api_key or "").strip(),
             "text_model": str(text_model or connection.text_model or "").strip(),
             "image_model": str(image_model or connection.image_model or "").strip(),
             "base_url": str(base_url or connection.base_url or "").strip(),

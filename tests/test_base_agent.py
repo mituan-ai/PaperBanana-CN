@@ -111,6 +111,46 @@ class BaseAgentImageApiTest(unittest.TestCase):
             generation_utils.call_gemini_with_retry_async = original_gemini
             generation_utils.call_openai_image_generation_with_retry_async = original_openai
 
+    def test_image_api_uses_separate_image_provider(self):
+        captured = {"gemini": 0, "openai": 0}
+
+        async def fake_call_gemini_with_retry_async(**kwargs):
+            captured["gemini"] += 1
+            return ["gemini-image-b64"]
+
+        async def fake_call_openai_image_generation_with_retry_async(**kwargs):
+            captured["openai"] += 1
+            captured["openai_model"] = kwargs["model_name"]
+            return ["openai-image-b64"]
+
+        original_gemini = generation_utils.call_gemini_with_retry_async
+        original_openai = generation_utils.call_openai_image_generation_with_retry_async
+        generation_utils.call_gemini_with_retry_async = fake_call_gemini_with_retry_async
+        generation_utils.call_openai_image_generation_with_retry_async = (
+            fake_call_openai_image_generation_with_retry_async
+        )
+        try:
+            exp_config = types.SimpleNamespace(
+                provider="gemini",
+                image_provider="openai",
+                temperature=0.5,
+            )
+            agent = _DummyAgent(
+                model_name="gpt-image-2",
+                system_prompt="System prompt",
+                exp_config=exp_config,
+            )
+
+            result = asyncio.run(agent.call_image_api(prompt="Draw a diagram."))
+
+            self.assertEqual(result, ["openai-image-b64"])
+            self.assertEqual(captured["gemini"], 0)
+            self.assertEqual(captured["openai"], 1)
+            self.assertEqual(captured["openai_model"], "gpt-image-2")
+        finally:
+            generation_utils.call_gemini_with_retry_async = original_gemini
+            generation_utils.call_openai_image_generation_with_retry_async = original_openai
+
 
 class BaseAgentProviderValidationTest(unittest.TestCase):
     def test_text_api_routes_openai_compatible_to_openai_chat(self):

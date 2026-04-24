@@ -13,6 +13,10 @@ LOCAL_SECRET_DIRNAME = "local"
 SECRET_FILE_MAP = {
     ("api_keys", "google_api_key"): "google_api_key.txt",
     ("api_keys", "openai_api_key"): "openai_api_key.txt",
+    ("gemini", "vlm_api_key"): "gemini_vlm_api_key.txt",
+    ("gemini", "image_api_key"): "gemini_image_api_key.txt",
+    ("openai", "vlm_api_key"): "openai_vlm_api_key.txt",
+    ("openai", "image_api_key"): "openai_image_api_key.txt",
     ("api_keys", "anthropic_api_key"): "anthropic_api_key.txt",
     ("evolink", "api_key"): "evolink_api_key.txt",
     ("openrouter", "api_key"): "openrouter_api_key.txt",
@@ -24,11 +28,47 @@ PROVIDER_CONFIG_MAP = {
         "api_section": "api_keys",
         "api_key": "google_api_key",
         "api_env": "GOOGLE_API_KEY",
+        "vlm_model_section": "gemini",
+        "vlm_model_key": "vlm_model",
+        "vlm_model_env": "PAPERBANANA_GEMINI_VLM_MODEL",
+        "image_model_section": "gemini",
+        "image_model_key": "image_model",
+        "image_model_env": "PAPERBANANA_GEMINI_IMAGE_MODEL",
+        "vlm_api_section": "gemini",
+        "vlm_api_key": "vlm_api_key",
+        "vlm_api_env": "PAPERBANANA_GEMINI_VLM_API_KEY",
+        "image_api_section": "gemini",
+        "image_api_key": "image_api_key",
+        "image_api_env": "PAPERBANANA_GEMINI_IMAGE_API_KEY",
         "default_model_name": "gemini-3.1-flash-lite-preview",
         "default_image_model_name": "gemini-3.1-flash-image-preview",
-        "base_url_section": "",
-        "base_url_key": "",
-        "base_url_env": "",
+        "base_url_section": "gemini",
+        "base_url_key": "base_url",
+        "base_url_env": "PAPERBANANA_GEMINI_BASE_URL",
+        "default_base_url": "",
+    },
+    "openai": {
+        "model_section": "openai",
+        "api_section": "openai",
+        "api_key": "vlm_api_key",
+        "api_env": "PAPERBANANA_OPENAI_VLM_API_KEY",
+        "vlm_model_section": "openai",
+        "vlm_model_key": "vlm_model",
+        "vlm_model_env": "PAPERBANANA_OPENAI_VLM_MODEL",
+        "image_model_section": "openai",
+        "image_model_key": "image_model",
+        "image_model_env": "PAPERBANANA_OPENAI_IMAGE_MODEL",
+        "vlm_api_section": "openai",
+        "vlm_api_key": "vlm_api_key",
+        "vlm_api_env": "PAPERBANANA_OPENAI_VLM_API_KEY",
+        "image_api_section": "openai",
+        "image_api_key": "image_api_key",
+        "image_api_env": "PAPERBANANA_OPENAI_IMAGE_API_KEY",
+        "default_model_name": "",
+        "default_image_model_name": "",
+        "base_url_section": "openai",
+        "base_url_key": "base_url",
+        "base_url_env": "PAPERBANANA_OPENAI_BASE_URL",
         "default_base_url": "",
     },
     "evolink": {
@@ -175,9 +215,18 @@ def get_provider_model_defaults(
 ) -> dict[str, str]:
     provider_config = _get_provider_config(provider)
     section_config = model_config.get(provider_config["model_section"], {})
-    model_name = section_config.get("model_name") or provider_config["default_model_name"]
+    vlm_section_config = model_config.get(provider_config.get("vlm_model_section", ""), {})
+    image_section_config = model_config.get(provider_config.get("image_model_section", ""), {})
+    model_name = (
+        os.getenv(provider_config.get("vlm_model_env", ""), "").strip()
+        or vlm_section_config.get(provider_config.get("vlm_model_key", ""))
+        or section_config.get("model_name")
+        or provider_config["default_model_name"]
+    )
     image_model_name = (
-        section_config.get("image_model_name")
+        os.getenv(provider_config.get("image_model_env", ""), "").strip()
+        or image_section_config.get(provider_config.get("image_model_key", ""))
+        or section_config.get("image_model_name")
         or provider_config["default_image_model_name"]
     )
     return {
@@ -192,6 +241,16 @@ def get_provider_api_key(
     base_dir: Path | None = None,
 ) -> str:
     provider_config = _get_provider_config(provider)
+    val = get_config_val(
+        model_config,
+        provider_config.get("vlm_api_section", provider_config["api_section"]),
+        provider_config.get("vlm_api_key", provider_config["api_key"]),
+        provider_config.get("vlm_api_env", provider_config["api_env"]),
+        "",
+        base_dir=base_dir,
+    )
+    if val:
+        return val
     return get_config_val(
         model_config,
         provider_config["api_section"],
@@ -200,6 +259,25 @@ def get_provider_api_key(
         "",
         base_dir=base_dir,
     )
+
+
+def get_provider_image_api_key(
+    provider: str,
+    model_config: dict[str, Any],
+    base_dir: Path | None = None,
+) -> str:
+    provider_config = _get_provider_config(provider)
+    val = get_config_val(
+        model_config,
+        provider_config.get("image_api_section", provider_config["api_section"]),
+        provider_config.get("image_api_key", provider_config["api_key"]),
+        provider_config.get("image_api_env", provider_config["api_env"]),
+        "",
+        base_dir=base_dir,
+    )
+    if val:
+        return val
+    return get_provider_api_key(provider, model_config, base_dir=base_dir)
 
 
 def get_provider_base_url(

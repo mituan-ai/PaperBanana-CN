@@ -14,6 +14,18 @@ from utils.runtime_settings import (
 CONFIG_YAML = """defaults:
   model_name: gemini-default-text
   image_model_name: gemini-default-image
+gemini:
+  base_url: https://gemini.example.com
+  vlm_model: gemini-text
+  image_model: gemini-image
+  vlm_api_key: yaml-gemini-text-key
+  image_api_key: yaml-gemini-image-key
+openai:
+  base_url: https://openai.example.com/v1
+  vlm_model: gpt-text
+  image_model: gpt-image
+  vlm_api_key: yaml-openai-text-key
+  image_api_key: yaml-openai-image-key
 evolink:
   api_key: yaml-evolink-key
   base_url: https://api.evolink.ai
@@ -68,9 +80,10 @@ class RuntimeSettingsTest(unittest.TestCase):
             )
 
             self.assertEqual(settings.provider, "gemini")
-            self.assertEqual(settings.api_key, "local-google-key")
-            self.assertEqual(settings.model_name, "gemini-default-text")
-            self.assertEqual(settings.image_model_name, "gemini-default-image")
+            self.assertEqual(settings.api_key, "yaml-gemini-text-key")
+            self.assertEqual(settings.image_api_key, "yaml-gemini-image-key")
+            self.assertEqual(settings.model_name, "gemini-text")
+            self.assertEqual(settings.image_model_name, "gemini-image")
 
     def test_resolve_runtime_settings_prefers_connection_id_for_custom_connection(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -121,9 +134,50 @@ class RuntimeSettingsTest(unittest.TestCase):
             self.assertEqual(defaults["api_key_default"], "yaml-evolink-key")
             self.assertEqual(defaults["base_url"], "https://api.evolink.ai")
 
-    def test_resolve_runtime_settings_rejects_unknown_provider(self):
-        with self.assertRaisesRegex(ValueError, "Unsupported provider"):
-            resolve_runtime_settings("openai")
+    def test_resolve_runtime_settings_supports_builtin_openai(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_dir = root / "configs"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "model_config.yaml").write_text(CONFIG_YAML, encoding="utf-8")
+
+            settings = resolve_runtime_settings("openai", base_dir=root)
+
+            self.assertEqual(settings.provider, "openai")
+            self.assertEqual(settings.connection_id, "openai")
+            self.assertEqual(settings.api_key, "yaml-openai-text-key")
+            self.assertEqual(settings.image_api_key, "yaml-openai-image-key")
+            self.assertEqual(settings.model_name, "gpt-text")
+            self.assertEqual(settings.image_model_name, "gpt-image")
+            self.assertEqual(settings.base_url, "https://openai.example.com/v1")
+
+            defaults = build_provider_ui_defaults("openai", base_dir=root)
+            self.assertEqual(defaults["api_key_default"], "yaml-openai-text-key")
+            self.assertEqual(defaults["image_api_key_default"], "yaml-openai-image-key")
+
+    def test_resolve_runtime_settings_keeps_text_and_image_connections_independent(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_dir = root / "configs"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "model_config.yaml").write_text(CONFIG_YAML, encoding="utf-8")
+
+            settings = resolve_runtime_settings(
+                "openai",
+                model_name="gpt-text",
+                image_connection_id="gemini",
+                image_model_name="gemini-image",
+                base_dir=root,
+            )
+
+            self.assertEqual(settings.provider, "openai")
+            self.assertEqual(settings.api_key, "yaml-openai-text-key")
+            self.assertEqual(settings.model_name, "gpt-text")
+            self.assertEqual(settings.base_url, "https://openai.example.com/v1")
+            self.assertEqual(settings.image_provider, "gemini")
+            self.assertEqual(settings.image_api_key, "yaml-gemini-image-key")
+            self.assertEqual(settings.image_model_name, "gemini-image")
+            self.assertEqual(settings.image_base_url, "https://gemini.example.com")
 
     def test_build_runtime_context_delegates_to_generation_utils(self):
         settings = RuntimeSettings(
@@ -143,6 +197,11 @@ class RuntimeSettingsTest(unittest.TestCase):
             connection_id="",
             provider="gemini",
             api_key="runtime-key",
+            image_api_key="",
+            image_provider="gemini",
+            image_connection_id="",
+            image_base_url="",
+            image_extra_headers={},
             base_url="",
             extra_headers={},
             event_hook=None,

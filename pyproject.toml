@@ -41,8 +41,8 @@ paperbanana-pro = "cli:main"
 paperbanana = "cli:main"
 
 [project.urls]
-Homepage = "https://github.com/elpsykongloo/PaperBanana-Pro"
-Repository = "https://github.com/elpsykongloo/PaperBanana-Pro"
+Homepage = "https://github.com/917940234/PaperBanana-Pro"
+Repository = "https://github.com/917940234/PaperBanana-Pro"
 
 [tool.hatch.build.targets.wheel]
 only-include = [

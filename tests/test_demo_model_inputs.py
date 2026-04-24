@@ -357,7 +357,7 @@ class DemoModelInputTest(unittest.TestCase):
         self.assertEqual(restored, "draft-key")
         self.assertEqual(captured_calls, [])
 
-    def test_sync_connection_runtime_input_state_resets_inputs_when_selection_changes(self):
+    def test_sync_connection_runtime_input_state_resets_requested_inputs_when_selection_changes(self):
         self.fake_streamlit.session_state.update(
             {
                 "tab1_api_key": "old-key",
@@ -380,6 +380,8 @@ class DemoModelInputTest(unittest.TestCase):
                 "model_name": "new-text",
                 "image_model_name": "new-image",
             },
+            sync_text_model=True,
+            sync_image_model=True,
         )
 
         self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "new-key")
@@ -397,6 +399,52 @@ class DemoModelInputTest(unittest.TestCase):
             self.fake_streamlit.session_state["tab1_runtime_input_connection_id"],
             "custom-openai",
         )
+
+    def test_vlm_sync_does_not_reset_image_model_state(self):
+        self.fake_streamlit.session_state.update(
+            {
+                "tab1_api_key": "old-key",
+                demo.get_api_key_widget_key("tab1_api_key"): "old-key",
+                "tab1_model_name": "old-text",
+                "tab1_image_model_name": "gemini-3.1-flash-image-preview",
+                "tab1_image_model_name_selector": "gemini-3.1-flash-image-preview",
+                "tab1_image_model_name_custom": "",
+                "tab1_runtime_input_connection_id": "gemini",
+            }
+        )
+
+        demo.sync_connection_runtime_input_state(
+            prefix="tab1",
+            selected_connection_id="openai",
+            provider_defaults={
+                "api_key_default": "new-openai-key",
+                "model_name": "gpt-5.5",
+                "image_model_name": "gpt-image-2",
+            },
+            sync_text_model=True,
+            sync_image_model=False,
+        )
+
+        self.assertEqual(self.fake_streamlit.session_state["tab1_model_name"], "gpt-5.5")
+        self.assertEqual(
+            self.fake_streamlit.session_state["tab1_image_model_name"],
+            "gemini-3.1-flash-image-preview",
+        )
+        self.assertEqual(
+            self.fake_streamlit.session_state["tab1_image_model_name_selector"],
+            "gemini-3.1-flash-image-preview",
+        )
+
+    def test_model_options_are_separated_by_usage(self):
+        defaults = {
+            "provider_type": "openai",
+            "model_name": "gpt-5.5",
+            "image_model_name": "gpt-image-2",
+            "model_allowlist": ["gpt-5.5", "gpt-image-2"],
+        }
+
+        self.assertEqual(demo.get_connection_model_options(defaults, image=False), ["gpt-5.5"])
+        self.assertEqual(demo.get_connection_model_options(defaults, image=True), ["gpt-image-2"])
 
     def test_sync_connection_runtime_input_state_keeps_current_values_when_selection_unchanged(self):
         self.fake_streamlit.session_state.update(

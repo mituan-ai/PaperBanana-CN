@@ -20,6 +20,10 @@ PROVIDER_UI_META = {
         "api_key_label": "Google API Key",
         "api_key_help": "Google AI Studio API 密钥",
     },
+    "openai": {
+        "api_key_label": "OpenAI API Key",
+        "api_key_help": "OpenAI 或 OpenAI 兼容网关 API 密钥",
+    },
     "evolink": {
         "api_key_label": "API Key",
         "api_key_help": "Evolink API 密钥（Bearer Token）",
@@ -54,11 +58,18 @@ class RuntimeSettings:
     api_key: str
     model_name: str
     image_model_name: str
+    image_api_key: str = ""
     base_url: str = ""
     connection_id: str = ""
     provider_display_name: str = ""
     provider_connection: ProviderConnection | None = None
     extra_headers: dict[str, str] = field(default_factory=dict)
+    image_provider: str = ""
+    image_connection_id: str = ""
+    image_provider_display_name: str = ""
+    image_base_url: str = ""
+    image_extra_headers: dict[str, str] = field(default_factory=dict)
+    image_provider_connection: ProviderConnection | None = None
     concurrency_mode: str = "auto"
     max_concurrent: int = 20
     max_critic_rounds: int = 3
@@ -67,12 +78,18 @@ class RuntimeSettings:
         return {
             "provider": self.provider,
             "api_key": self.api_key,
+            "image_api_key": self.image_api_key,
             "model_name": self.model_name,
             "image_model_name": self.image_model_name,
             "base_url": self.base_url,
             "connection_id": self.connection_id,
             "provider_display_name": self.provider_display_name,
             "extra_headers": dict(self.extra_headers),
+            "image_provider": self.image_provider or self.provider,
+            "image_connection_id": self.image_connection_id or self.connection_id,
+            "image_provider_display_name": self.image_provider_display_name or self.provider_display_name,
+            "image_base_url": self.image_base_url or self.base_url,
+            "image_extra_headers": dict(self.image_extra_headers or self.extra_headers),
             "concurrency_mode": self.concurrency_mode,
             "max_concurrent": self.max_concurrent,
             "max_critic_rounds": self.max_critic_rounds,
@@ -86,6 +103,10 @@ def resolve_runtime_settings(
     api_key: str = "",
     model_name: str = "",
     image_model_name: str = "",
+    image_connection_id: str = "",
+    image_api_key: str = "",
+    image_base_url: str = "",
+    image_extra_headers: dict[str, str] | None = None,
     base_url: str = "",
     extra_headers: dict[str, str] | None = None,
     concurrency_mode: str = "auto",
@@ -105,6 +126,17 @@ def resolve_runtime_settings(
         base_dir=repo_root,
         model_config_data=model_config_data,
     )
+    resolved_image_connection = resolved_connection
+    if image_connection_id:
+        resolved_image_connection = resolve_connection(
+            image_connection_id,
+            api_key=image_api_key,
+            image_model=image_model_name,
+            base_url=image_base_url,
+            extra_headers=image_extra_headers,
+            base_dir=repo_root,
+            model_config_data=model_config_data,
+        )
 
     resolved_concurrency_mode = str(concurrency_mode or "auto").strip().lower() or "auto"
     if resolved_concurrency_mode not in {"auto", "manual"}:
@@ -113,13 +145,26 @@ def resolve_runtime_settings(
     return RuntimeSettings(
         provider=resolved_connection.provider_type,
         api_key=str(resolved_connection.api_key or "").strip(),
+        image_api_key=str(
+            resolved_image_connection.image_api_key
+            or resolved_image_connection.api_key
+            or resolved_connection.image_api_key
+            or resolved_connection.api_key
+            or ""
+        ).strip(),
         model_name=str(resolved_connection.text_model or "").strip(),
-        image_model_name=str(resolved_connection.image_model or "").strip(),
+        image_model_name=str(resolved_image_connection.image_model or "").strip(),
         base_url=str(resolved_connection.base_url or "").strip(),
         connection_id=resolved_connection.connection_id,
         provider_display_name=resolved_connection.display_name,
         provider_connection=resolved_connection,
         extra_headers=dict(resolved_connection.extra_headers),
+        image_provider=resolved_image_connection.provider_type,
+        image_connection_id=resolved_image_connection.connection_id,
+        image_provider_display_name=resolved_image_connection.display_name,
+        image_base_url=str(resolved_image_connection.base_url or "").strip(),
+        image_extra_headers=dict(resolved_image_connection.extra_headers),
+        image_provider_connection=resolved_image_connection,
         concurrency_mode=resolved_concurrency_mode,
         max_concurrent=max(1, int(max_concurrent)),
         max_critic_rounds=max(0, int(max_critic_rounds)),
@@ -150,6 +195,7 @@ def build_provider_ui_defaults(
         "api_key_label": ui_meta["api_key_label"],
         "api_key_help": ui_meta["api_key_help"],
         "api_key_default": settings.api_key,
+        "image_api_key_default": settings.image_api_key,
         "model_name": settings.model_name,
         "image_model_name": settings.image_model_name,
         "base_url": settings.base_url,
@@ -217,6 +263,11 @@ def build_runtime_context(
         connection_id=settings.connection_id,
         provider=settings.provider,
         api_key=settings.api_key,
+        image_api_key=settings.image_api_key,
+        image_provider=settings.image_provider or settings.provider,
+        image_connection_id=settings.image_connection_id or settings.connection_id,
+        image_base_url=settings.image_base_url or settings.base_url,
+        image_extra_headers=settings.image_extra_headers or settings.extra_headers,
         base_url=settings.base_url,
         extra_headers=settings.extra_headers,
         event_hook=event_hook,

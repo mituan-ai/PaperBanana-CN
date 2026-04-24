@@ -101,7 +101,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        with patch.object(generation_utils, "get_openai_client", return_value=fake_client):
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
             with patch("utils.generation_utils.asyncio.sleep", new=AsyncMock()):
                 with self.assertRaisesRegex(RuntimeError, "visualizer\\[test\\].*image boom"):
                     await generation_utils.call_openai_image_generation_with_retry_async(
@@ -117,6 +117,68 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
                         retry_delay=0,
                         error_context="visualizer[test]",
                     )
+
+    async def test_openai_image_generation_uses_image_client(self):
+        text_client = SimpleNamespace()
+        image_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(
+                    return_value=SimpleNamespace(data=[SimpleNamespace(b64_json="image-b64")])
+                ),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_client", return_value=text_client):
+            with patch.object(generation_utils, "get_openai_image_client", return_value=image_client):
+                result = await generation_utils.call_openai_image_generation_with_retry_async(
+                    model_name="demo-image-model",
+                    prompt="draw a circle",
+                    config={"size": "1024x1024", "quality": "low"},
+                    max_attempts=1,
+                    retry_delay=0,
+                )
+
+        self.assertEqual(result, ["image-b64"])
+        image_client.images.generate.assert_awaited_once()
+
+    async def test_gemini_image_generation_uses_image_client_inside_retry_stage(self):
+        text_client = SimpleNamespace()
+        image_client = SimpleNamespace(
+            aio=SimpleNamespace(
+                models=SimpleNamespace(
+                    generate_content=AsyncMock(
+                        return_value=SimpleNamespace(
+                            candidates=[
+                                SimpleNamespace(
+                                    content=SimpleNamespace(
+                                        parts=[
+                                            SimpleNamespace(
+                                                inline_data=SimpleNamespace(data=b"fake-image")
+                                            )
+                                        ]
+                                    )
+                                )
+                            ]
+                        )
+                    )
+                )
+            )
+        )
+        config = SimpleNamespace(response_modalities=["IMAGE"], candidate_count=1)
+
+        with patch.object(generation_utils, "get_gemini_client", return_value=text_client):
+            with patch.object(generation_utils, "get_gemini_image_client", return_value=image_client):
+                result = await generation_utils.call_gemini_with_retry_async(
+                    model_name="gemini-3.1-flash-image-preview",
+                    contents=[{"type": "text", "text": "draw"}],
+                    config=config,
+                    max_attempts=1,
+                    retry_delay=0,
+                    image_fallback_max_attempts=1,
+                )
+
+        self.assertEqual(result, ["ZmFrZS1pbWFnZQ=="])
+        image_client.aio.models.generate_content.assert_awaited_once()
 
     async def test_openrouter_image_helper_extracts_images_from_message_model_extra(self):
         fake_message = SimpleNamespace(
@@ -143,7 +205,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        with patch.object(generation_utils, "get_openai_client", return_value=fake_client):
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
             result = await generation_utils.call_openrouter_image_generation_with_retry_async(
                 model_name="sourceful/riverflow-v2-pro",
                 prompt="draw a circle",
@@ -168,7 +230,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        with patch.object(generation_utils, "get_openai_client", return_value=fake_client):
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
             with patch("utils.generation_utils.asyncio.sleep", new=AsyncMock()):
                 with self.assertRaisesRegex(RuntimeError, "visualizer\\[test\\].*openrouter boom"):
                     await generation_utils.call_openrouter_image_generation_with_retry_async(
