@@ -400,6 +400,46 @@ class RefineBackgroundJobTest(unittest.TestCase):
         finally:
             generation_utils.call_gemini_with_retry_async = original_call
 
+    def test_refine_openai_request_uses_image_edit(self):
+        from utils import generation_utils
+
+        original_call = generation_utils.call_openai_image_edit_with_retry_async
+        captured = {}
+
+        async def fake_call_openai_image_edit_with_retry_async(**kwargs):
+            captured.update(kwargs)
+            return ["ZmFrZS1pbWFnZQ=="]
+
+        generation_utils.call_openai_image_edit_with_retry_async = fake_call_openai_image_edit_with_retry_async
+        try:
+            result_bytes, message = asyncio.run(
+                demo.refine_image_with_nanoviz(
+                    image_bytes=_build_png_bytes(),
+                    edit_prompt="make it cleaner",
+                    aspect_ratio="16:9",
+                    image_size="4K",
+                    api_key="local-test-key",
+                    provider="openai",
+                    image_model_name="gpt-image-2",
+                    image_quality="high",
+                    image_background="opaque",
+                    image_output_format="png",
+                    image_input_fidelity="high",
+                    input_mime_type="image/png",
+                    max_attempts=1,
+                    runtime_context=object(),
+                )
+            )
+
+            self.assertEqual(result_bytes, b"fake-image")
+            self.assertIn("成功", message)
+            self.assertEqual(captured["model_name"], "gpt-image-2")
+            self.assertEqual(captured["config"]["size"], "3840x2160")
+            self.assertEqual(captured["config"]["quality"], "high")
+            self.assertEqual(captured["config"]["input_fidelity"], "high")
+        finally:
+            generation_utils.call_openai_image_edit_with_retry_async = original_call
+
     def test_refine_job_snapshot_falls_back_to_disk_store(self):
         job_id = "refine_disk_snapshot"
         job = demo.RefineJobState(

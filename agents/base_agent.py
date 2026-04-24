@@ -248,17 +248,20 @@ class BaseAgent(ABC):
             )
 
         if provider in {"openai", "openai_compatible"}:
+            openai_size = str(getattr(self.exp_config, "image_size_override", "") or "").strip()
+            if not openai_size:
+                openai_size = image_utils.openai_image_size_from_controls(
+                    aspect_ratio,
+                    image_resolution,
+                )
             return await generation_utils.call_openai_image_generation_with_retry_async(
                 model_name=_model,
                 prompt=prompt,
                 config={
-                    "size": image_utils.openai_image_size_from_controls(
-                        aspect_ratio,
-                        image_resolution,
-                    ),
-                    "quality": "high",
-                    "background": "opaque",
-                    "output_format": "png",
+                    "size": openai_size,
+                    "quality": getattr(self.exp_config, "image_quality", "auto") or "auto",
+                    "background": getattr(self.exp_config, "image_background", "opaque") or "opaque",
+                    "output_format": getattr(self.exp_config, "image_output_format", "png") or "png",
                 },
                 max_attempts=max_attempts,
                 retry_delay=retry_delay,

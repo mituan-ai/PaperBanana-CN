@@ -103,6 +103,11 @@ class ExpConfig:
     image_provider: str = ""
     image_connection_id: str = ""
     image_provider_display_name: str = ""
+    image_quality: str = "auto"
+    image_background: str = "opaque"
+    image_output_format: str = "png"
+    image_input_fidelity: str = "high"
+    image_size_override: str = ""
     work_dir: Path = Path(__file__).parent.parent
     timezone: str = "America/Los_Angeles"
 

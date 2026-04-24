@@ -233,6 +233,9 @@ class BaseAgentProviderValidationTest(unittest.TestCase):
             exp_config = types.SimpleNamespace(
                 provider="openai_compatible",
                 temperature=0.5,
+                image_quality="high",
+                image_background="transparent",
+                image_output_format="webp",
             )
             agent = _DummyAgent(
                 model_name="custom-image-model",
@@ -251,6 +254,9 @@ class BaseAgentProviderValidationTest(unittest.TestCase):
             self.assertEqual(result, ["fake-image-b64"])
             self.assertEqual(captured["model_name"], "custom-image-model")
             self.assertEqual(captured["config"]["size"], "3840x2160")
+            self.assertEqual(captured["config"]["quality"], "high")
+            self.assertEqual(captured["config"]["background"], "transparent")
+            self.assertEqual(captured["config"]["output_format"], "webp")
         finally:
             generation_utils.call_openai_image_generation_with_retry_async = original
 

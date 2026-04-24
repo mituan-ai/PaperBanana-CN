@@ -21,6 +21,7 @@ import asyncio
 import base64
 import logging
 import re
+import tempfile
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -1850,4 +1851,107 @@ async def call_openai_image_generation_with_retry_async(
         details=failure_message,
     )
     logger.error("OpenAI 图像生成全部 %s 次尝试失败%s", max_attempts, context_msg)
+    raise RuntimeError(failure_message) from last_exception
+
+
+async def call_openai_image_edit_with_retry_async(
+    model_name,
+    image_bytes: bytes,
+    prompt: str,
+    config,
+    max_attempts=5,
+    retry_delay=30,
+    error_context="",
+):
+    """OpenAI-compatible 图像编辑 API 异步调用。"""
+    client = get_openai_image_client()
+    if client is None:
+        raise RuntimeError("OpenAI 图像 Client 未初始化，请检查 OpenAI 图像 API Key。")
+    size = config.get("size", "auto")
+    quality = config.get("quality", "auto")
+    background = config.get("background", "opaque")
+    output_format = config.get("output_format", "png")
+    input_fidelity = config.get("input_fidelity", "high")
+
+    last_exception: Exception | None = None
+    last_error_text = ""
+    for attempt in range(max_attempts):
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+                tmp_file.write(image_bytes)
+                tmp_path = tmp_file.name
+            with open(tmp_path, "rb") as image_file:
+                response = await client.images.edit(
+                    model=model_name,
+                    image=image_file,
+                    prompt=prompt,
+                    n=1,
+                    size=size,
+                    quality=quality,
+                    background=background,
+                    output_format=output_format,
+                    input_fidelity=input_fidelity,
+                )
+            if response.data and response.data[0].b64_json:
+                return [response.data[0].b64_json]
+            last_error_text = "OpenAI 图像编辑未返回数据"
+            _emit_runtime_event(
+                level="WARNING",
+                kind="warning",
+                source="GenerationUtils",
+                job_type="refine",
+                provider="openai",
+                model=model_name,
+                attempt=attempt + 1,
+                status="retrying",
+                message="OpenAI 图像编辑未返回数据，将继续重试",
+            )
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(retry_delay)
+        except Exception as e:
+            last_exception = e
+            last_error_text = str(e)
+            context_msg = f" for {error_context}" if error_context else ""
+            _emit_runtime_event(
+                level="WARNING",
+                kind="retry",
+                source="GenerationUtils",
+                job_type="refine",
+                provider="openai",
+                model=model_name,
+                attempt=attempt + 1,
+                status="retrying",
+                message=f"OpenAI 图像编辑第 {attempt + 1}/{max_attempts} 次尝试失败，{retry_delay}s 后重试",
+                details=f"{context_msg}: {e}",
+            )
+            logger.warning(
+                "OpenAI 图像编辑第 %s 次尝试失败%s，%ss 后重试",
+                attempt + 1,
+                context_msg,
+                retry_delay,
+            )
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(retry_delay)
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+    context_msg = f" for {error_context}" if error_context else ""
+    failure_message = f"OpenAI 图像编辑在 {max_attempts} 次尝试后仍然失败{context_msg}"
+    if last_error_text:
+        failure_message = f"{failure_message}: {last_error_text}"
+    _emit_runtime_event(
+        level="ERROR",
+        kind="error",
+        source="GenerationUtils",
+        job_type="refine",
+        provider="openai",
+        model=model_name,
+        status="failed",
+        message="OpenAI 图像编辑全部尝试失败",
+        details=failure_message,
+    )
     raise RuntimeError(failure_message) from last_exception

@@ -45,6 +45,7 @@
 | **Gemini 图文链路适配** | 支持 Gemini VLM 与 Gemini 图像模型，兼容 Gemini-compatible 网关地址。 |
 | **VLM 与文生图彻底解耦** | 两块设置：`VLM 文本` 和 `文生图`。每块都可单独选择 GPT 或 Gemini。 |
 | **分辨率与比例真实传参** | Gemini 使用 `image_config`，GPT-Image-2 自动把 UI 中的分辨率/宽高比转换为 OpenAI `size`。 |
+| **OpenAI 图像生成与精修** | GPT 图像链路支持 `images.generate` 和 `images.edit`，可配置质量、背景、格式、输入保真度等官方参数。 |
 | **主流中转站平台友好** | 每条链路独立填写 API Key、Base URL、模型名，适配常见聚合平台、反代平台和自建 gateway。 |
 | **多候选后台生成** | Streamlit 前端不阻塞，支持并发生成、实时事件流、候选收藏/淘汰/最终选择。 |
 | **全流程导出与回放** | Bundle/ZIP 保存候选图、阶段描述、评审建议、绘图代码和原始 JSON。 |
@@ -77,6 +78,16 @@ PaperBanana-CN 把模型调用拆成两类：
 
 > OpenAI-compatible SDK 会在 `base_url` 后追加 `/images/generations`，因此 OpenAI 中转站一般要填写带 `/v1` 的 Base URL，例如 `https://api.example.com/v1`。
 
+例如 API易 的 GPT-Image-2 图像链路可以配置为：
+
+```bash
+export PAPERBANANA_OPENAI_BASE_URL="https://api.apiyi.com/v1"
+export PAPERBANANA_OPENAI_IMAGE_MODEL="gpt-image-2"
+export PAPERBANANA_OPENAI_IMAGE_API_KEY="你的 API Key"
+```
+
+这里只配置图像链路即可；VLM 文本链路仍可继续使用你自己的 GPT 或 Gemini 文本模型配置。
+
 ### 分辨率、比例与精修边界
 
 生成候选方案时，GUI 的“宽高比”和“图像分辨率”会按当前 **文生图 Provider** 转成真实 API 参数：
@@ -87,12 +98,22 @@ PaperBanana-CN 把模型调用拆成两类：
 | Gemini-compatible | 写入 Gemini `image_config.aspect_ratio` 与 `image_config.image_size` | `16:9 + 4K → aspect_ratio=16:9, image_size=4K` |
 | OpenRouter / Evolink | 透传为对应 provider 的图像配置字段 | `aspect_ratio`、`image_size` 或 `quality` |
 
+当文生图或精修图像选择 GPT / OpenAI-compatible 时，GUI 会额外显示 OpenAI 图像参数：
+
+| 参数 | 对应 OpenAI 字段 | 说明 |
+| --- | --- | --- |
+| 图片质量 | `quality` | 官方参数，支持 `auto`、`low`、`medium`、`high`；API易界面的“低/中/高/自动”对应这里。 |
+| 背景 | `background` | 官方参数，支持 `opaque`、`transparent`、`auto`。 |
+| 输出格式 | `output_format` | 官方参数，支持 `png`、`jpeg`、`webp`。 |
+| 输入保真度 | `input_fidelity` | OpenAI image edit 参数，支持 `high`、`low`，仅精修/改图时显示。 |
+| 自定义尺寸 | `size` | 可手动输入 `3840x2160` 等；留空时由宽高比和分辨率自动换算。 |
+
 当前能力边界请特别注意：
 
 - **GPT / OpenAI-compatible 文生图生成**：已支持，用于生成候选方案，包含 GPT-Image-2 尺寸转换。
+- **GPT / OpenAI-compatible 图像精修**：已支持，走 OpenAI-compatible `images.edits`，并复用同一套 `size`、`quality`、`background`、`output_format` 与 `input_fidelity` 参数。
 - **Gemini 图像精修**：已支持，上传图像后走 Gemini 图像模型并传入比例/分辨率配置。
 - **Evolink 图像精修**：保留支持路径。
-- **OpenAI image edit / GPT 图像精修**：当前尚未接入 `images.edits`，因此精修页选择 GPT 图像链路时会被前端拦截；这不是 API Key 或模型名配置错误，而是尚未实现的能力边界。
 
 ---
 
