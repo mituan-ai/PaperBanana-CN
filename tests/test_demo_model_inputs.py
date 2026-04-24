@@ -625,13 +625,13 @@ class DemoModelInputTest(unittest.TestCase):
         )
 
     def test_format_repo_relative_path_falls_back_to_absolute_display(self):
-        outside_path = Path("C:/Users/86166/AppData/Roaming/uv/tools/paperbanana-pro/Lib/site-packages/results/demo/sample.bundle.json")
+        outside_path = Path("C:/Users/86166/AppData/Roaming/uv/tools/paperbanana-cn/Lib/site-packages/results/demo/sample.bundle.json")
 
         formatted = demo.format_repo_relative_path(outside_path, base_dir=Path("D:/PaperBanana"))
 
         self.assertEqual(
             formatted,
-            "C:/Users/86166/AppData/Roaming/uv/tools/paperbanana-pro/Lib/site-packages/results/demo/sample.bundle.json",
+            "C:/Users/86166/AppData/Roaming/uv/tools/paperbanana-cn/Lib/site-packages/results/demo/sample.bundle.json",
         )
 
     def test_ensure_session_choice_state_repairs_invalid_value(self):

@@ -48,10 +48,10 @@ class DependencyMetadataTest(unittest.TestCase):
         readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("uv tool install --editable . --force", readme_text)
         self.assertIn("paperbanana", readme_text)
-        self.assertIn("uv tool install paperbanana-pro", readme_text)
+        self.assertIn("uv tool install paperbanana-cn", readme_text)
         self.assertNotIn("standalone tool install", readme_text)
         self.assertNotIn("tool install / wheel 优先", readme_text)
-        self.assertNotIn("当前主 CLI 命令是 `paperbanana-pro`", readme_text)
+        self.assertNotIn("当前主 CLI 命令是 `paperbanana-cn`", readme_text)
 
 
 if __name__ == "__main__":

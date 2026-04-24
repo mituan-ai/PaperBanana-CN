@@ -1296,7 +1296,7 @@ wheels = [
 ]
 
 [[package]]
-name = "paperbanana-pro"
+name = "paperbanana-cn"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

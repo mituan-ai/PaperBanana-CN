@@ -1,5 +1,5 @@
 # Archived on 2026-03-11.
-# PyPI publishing is intentionally disabled while PaperBanana-Pro is repo-first
+# PyPI publishing is intentionally disabled while PaperBanana-CN is repo-first
 # and only officially supports `uv tool install --editable .`.
 # Restore this workflow only after the non-editable package contract, build
 # artifacts, and release validation pipeline are ready for real publication.

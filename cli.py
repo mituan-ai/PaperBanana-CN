@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-PaperBanana-Pro CLI — 全局入口。
+PaperBanana-CN CLI — 全局入口。
 
 支持：
     paperbanana                  启动 GUI
@@ -22,7 +22,7 @@ PaperBanana-Pro CLI — 全局入口。
     paperbanana viewer ...       启动 viewer
 
 兼容别名：
-    paperbanana-pro
+    paperbanana-cn
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def launch_streamlit_module(
     if default_port is not None:
         cmd.extend(["--server.port", str(default_port)])
     cmd.extend(extra_args)
-    _safe_print(f"[PaperBanana-Pro] 启动 Streamlit 应用：{module_name}")
+    _safe_print(f"[PaperBanana-CN] 启动 Streamlit 应用：{module_name}")
     return subprocess.call(cmd)
 
 
@@ -86,7 +86,7 @@ def launch_python_module(module_name: str, extra_args: list[str]) -> int:
     if spec is None:
         raise FileNotFoundError(f"无法解析 Python 模块：{module_name}")
     cmd = [sys.executable, "-m", module_name, *extra_args]
-    _safe_print(f"[PaperBanana-Pro] 运行 CLI 模块：{module_name}")
+    _safe_print(f"[PaperBanana-CN] 运行 CLI 模块：{module_name}")
     return subprocess.call(cmd)
 
 
@@ -101,7 +101,7 @@ def _launch_cli(extra_args: list[str]) -> int:
 def _launch_viewer(viewer_name: str, extra_args: list[str]) -> int:
     module_name = VIEWER_MODULES.get(viewer_name, "")
     if not module_name:
-        _safe_print(f"[PaperBanana-Pro] 未知 viewer：{viewer_name}\n")
+        _safe_print(f"[PaperBanana-CN] 未知 viewer：{viewer_name}\n")
         _print_viewer_help()
         return 1
     return launch_streamlit_module(module_name, extra_args)
@@ -115,8 +115,8 @@ Viewer 子命令：
     paperbanana viewer eval [args]        启动参考评测 viewer
 
 兼容别名：
-    paperbanana-pro viewer evolution [args]
-    paperbanana-pro viewer eval [args]
+    paperbanana-cn viewer evolution [args]
+    paperbanana-cn viewer eval [args]
 
 别名映射：
     pipeline -> evolution
@@ -128,7 +128,7 @@ Viewer 子命令：
 def _print_help() -> None:
     print(
         """
-PaperBanana-Pro 🍌  —  Academic Illustration Workbench
+PaperBanana-CN 🍌  —  Academic Illustration Workbench
 
 主命令：
     paperbanana
@@ -139,7 +139,7 @@ PaperBanana-Pro 🍌  —  Academic Illustration Workbench
     paperbanana --help
 
 兼容别名：
-    paperbanana-pro
+    paperbanana-cn
 
 示例：
     paperbanana
@@ -148,7 +148,7 @@ PaperBanana-Pro 🍌  —  Academic Illustration Workbench
     paperbanana run --resume
     paperbanana viewer evolution
     paperbanana viewer eval
-    paperbanana-pro --help
+    paperbanana-cn --help
 
 安装方式（当前正式支持）：
     uv sync --locked
@@ -181,7 +181,7 @@ def main() -> None:
         _print_help()
         return
 
-    _safe_print(f"[PaperBanana-Pro] Unknown command: {args[0]}\n")
+    _safe_print(f"[PaperBanana-CN] Unknown command: {args[0]}\n")
     _print_help()
     raise SystemExit(1)
 

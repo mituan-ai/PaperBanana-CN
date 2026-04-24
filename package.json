@@ -1,7 +1,7 @@
 {
-  "name": "paperbanana",
+  "name": "paperbanana-cn",
   "version": "1.0.0",
-  "description": "> 面向中文用户的科研插图与统计图生成系统。当前提供 Streamlit 图形界面、CLI 批处理、结果回放与评估可视化工具。",
+  "description": "Bilingual academic figure workbench with GPT-5.5, GPT-Image-2, Gemini, and gateway-compatible routing.",
   "main": "index.js",
   "directories": {
     "doc": "docs",
@@ -12,14 +12,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/917940234/PaperBanana-Pro.git"
+    "url": "git+https://github.com/917940234/PaperBanana-CN.git"
   },
-  "keywords": [],
+  "keywords": [
+    "paperbanana",
+    "academic-figures",
+    "scientific-visualization",
+    "gemini",
+    "openai",
+    "gateway"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/917940234/PaperBanana-Pro/issues"
+    "url": "https://github.com/917940234/PaperBanana-CN/issues"
   },
-  "homepage": "https://github.com/917940234/PaperBanana-Pro#readme"
+  "homepage": "https://github.com/917940234/PaperBanana-CN#readme"
 }

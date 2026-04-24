@@ -207,7 +207,7 @@ except Exception:
 
 st.set_page_config(
     layout="wide",
-    page_title="PaperBanana-Pro 科研插图工作台",
+    page_title="PaperBanana-CN 科研插图工作台",
     page_icon="🍌"
 )
 
@@ -7841,7 +7841,7 @@ def main():
         .pb-sep { border:none; border-top:1px solid #e0e0e0; margin:4px 0 0 0; }
         </style>
         <div class="pb-header">
-            <p class="title">🍌 PaperBanana-Pro</p>
+            <p class="title">🍌 PaperBanana-CN</p>
             <span class="badge">工作台</span>
         </div>
         <p class="pb-sub">AI 驱动的科学图表生成与精修</p>

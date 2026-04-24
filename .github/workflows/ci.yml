@@ -70,8 +70,8 @@ jobs:
             & $smokeScript -Label "viewer-eval" -Port 8513 -Executable "paperbanana" -Arguments @("viewer", "eval")
             paperbanana --help
             if ($LASTEXITCODE -ne 0) { throw "paperbanana --help exited $LASTEXITCODE" }
-            paperbanana-pro --help
-            if ($LASTEXITCODE -ne 0) { throw "paperbanana-pro --help exited $LASTEXITCODE" }
+            paperbanana-cn --help
+            if ($LASTEXITCODE -ne 0) { throw "paperbanana-cn --help exited $LASTEXITCODE" }
             paperbanana run --help
             if ($LASTEXITCODE -ne 0) { throw "paperbanana run --help exited $LASTEXITCODE" }
           }

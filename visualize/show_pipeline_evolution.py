@@ -46,7 +46,7 @@ from visualize.viewer_helpers import (
     render_viewer_empty_state,
 )
 
-st.set_page_config(layout="wide", page_title="PaperBanana-Pro 流程回放", page_icon="🍌")
+st.set_page_config(layout="wide", page_title="PaperBanana-CN 流程回放", page_icon="🍌")
 
 def base64_to_image(b64_str):
     if not b64_str:
@@ -276,7 +276,7 @@ def main():
         render_viewer_empty_state(search_query)
         return
     
-    st.title("🍌 PaperBanana-Pro 流程回放")
+    st.title("🍌 PaperBanana-CN 流程回放")
     st.markdown("按候选回看规划、渲染、评审修正等中间阶段，不再直接暴露内部 artifact key。")
     if bundle_source.source_kind != "path":
         st.caption("当前使用上传模式。若某些人工参考图依赖本地同目录资源，可在左侧“高级：从本地路径读取”中切换到路径模式。")

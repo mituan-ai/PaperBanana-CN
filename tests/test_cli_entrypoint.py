@@ -24,7 +24,7 @@ class CliEntrypointTest(unittest.TestCase):
         self.assertIn("paperbanana viewer evolution", help_text)
         self.assertIn("paperbanana viewer eval", help_text)
         self.assertIn("paperbanana --help", help_text)
-        self.assertIn("paperbanana-pro", help_text)
+        self.assertIn("paperbanana-cn", help_text)
         self.assertIn("uv tool install --editable . --force", help_text)
         self.assertIn("未来路线", help_text)
 
@@ -36,7 +36,7 @@ class CliEntrypointTest(unittest.TestCase):
 
         self.assertIn("paperbanana viewer evolution", help_text)
         self.assertIn("paperbanana viewer eval", help_text)
-        self.assertIn("paperbanana-pro viewer evolution", help_text)
+        self.assertIn("paperbanana-cn viewer evolution", help_text)
 
     def test_main_dispatches_gui_when_no_subcommand_is_provided(self):
         with mock.patch.object(cli, "_launch_gui", return_value=0) as launch_gui:
