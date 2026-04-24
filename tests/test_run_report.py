@@ -1,6 +1,10 @@
 import unittest
 
-from utils.image_utils import build_gemini_image_prompt, normalize_gemini_media_resolution
+from utils.image_utils import (
+    build_gemini_image_prompt,
+    normalize_gemini_media_resolution,
+    openai_image_size_from_controls,
+)
 from utils.run_report import build_failure_manifest, build_result_summary
 
 
@@ -97,6 +101,13 @@ class RunReportTest(unittest.TestCase):
         prompt = build_gemini_image_prompt("Draw a diagram.", "16:9", "4K")
         self.assertIn("Aspect ratio: 16:9", prompt)
         self.assertIn("Output resolution preference: 4K", prompt)
+
+    def test_openai_image_size_from_controls_maps_common_sizes(self):
+        self.assertEqual(openai_image_size_from_controls("16:9", "4K"), "3840x2160")
+        self.assertEqual(openai_image_size_from_controls("9:16", "4K"), "2160x3840")
+        self.assertEqual(openai_image_size_from_controls("1:1", "2K"), "2048x2048")
+        self.assertEqual(openai_image_size_from_controls("16:9", "2K"), "2048x1152")
+        self.assertEqual(openai_image_size_from_controls("21:9", "4K"), "3840x1648")
 
 
 if __name__ == "__main__":

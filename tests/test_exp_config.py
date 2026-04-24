@@ -1,6 +1,8 @@
 import tempfile
 import unittest
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 from utils.config import ExpConfig, build_run_name
 
@@ -37,6 +39,32 @@ connections:
 
 
 class ExpConfigProviderDefaultsTest(unittest.TestCase):
+    ENV_KEYS = [
+        "PAPERBANANA_GEMINI_VLM_MODEL",
+        "PAPERBANANA_GEMINI_IMAGE_MODEL",
+        "PAPERBANANA_GEMINI_BASE_URL",
+        "PAPERBANANA_OPENAI_VLM_MODEL",
+        "PAPERBANANA_OPENAI_IMAGE_MODEL",
+        "PAPERBANANA_OPENAI_BASE_URL",
+        "PAPERBANANA_GEMINI_VLM_API_KEY",
+        "PAPERBANANA_GEMINI_IMAGE_API_KEY",
+        "PAPERBANANA_OPENAI_VLM_API_KEY",
+        "PAPERBANANA_OPENAI_IMAGE_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_BASE_URL",
+        "GEMINI_BASE_URL",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+    ]
+
+    def setUp(self):
+        self._env_patcher = patch.dict(os.environ, {key: "" for key in self.ENV_KEYS})
+        self._env_patcher.start()
+
+    def tearDown(self):
+        self._env_patcher.stop()
+
     def _write_custom_connection_fixture(self, work_dir: Path) -> None:
         config_dir = work_dir / "configs"
         local_provider_dir = config_dir / "local" / "providers"

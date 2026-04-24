@@ -44,6 +44,7 @@
 | **GPT-5.5 / GPT-Image-2 适配** | 内置 GPT 文本模型与 OpenAI 图像模型配置入口，支持 OpenAI-compatible 中转站。 |
 | **Gemini 图文链路适配** | 支持 Gemini VLM 与 Gemini 图像模型，兼容 Gemini-compatible 网关地址。 |
 | **VLM 与文生图彻底解耦** | 两块设置：`VLM 文本` 和 `文生图`。每块都可单独选择 GPT 或 Gemini。 |
+| **分辨率与比例真实传参** | Gemini 使用 `image_config`，GPT-Image-2 自动把 UI 中的分辨率/宽高比转换为 OpenAI `size`。 |
 | **主流中转站平台友好** | 每条链路独立填写 API Key、Base URL、模型名，适配常见聚合平台、反代平台和自建 gateway。 |
 | **多候选后台生成** | Streamlit 前端不阻塞，支持并发生成、实时事件流、候选收藏/淘汰/最终选择。 |
 | **全流程导出与回放** | Bundle/ZIP 保存候选图、阶段描述、评审建议、绘图代码和原始 JSON。 |
@@ -75,6 +76,23 @@ PaperBanana-CN 把模型调用拆成两类：
 | 文生图模型 | `PAPERBANANA_OPENAI_IMAGE_MODEL`，例如 `gpt-image-2` | `PAPERBANANA_GEMINI_IMAGE_MODEL` |
 
 > OpenAI-compatible SDK 会在 `base_url` 后追加 `/images/generations`，因此 OpenAI 中转站一般要填写带 `/v1` 的 Base URL，例如 `https://api.example.com/v1`。
+
+### 分辨率、比例与精修边界
+
+生成候选方案时，GUI 的“宽高比”和“图像分辨率”会按当前 **文生图 Provider** 转成真实 API 参数：
+
+| 文生图 Provider | 参数策略 | 示例 |
+| --- | --- | --- |
+| GPT / OpenAI-compatible | 转成 OpenAI Images `size` | `16:9 + 4K → 3840x2160`，`9:16 + 4K → 2160x3840`，`1:1 + 2K → 2048x2048` |
+| Gemini-compatible | 写入 Gemini `image_config.aspect_ratio` 与 `image_config.image_size` | `16:9 + 4K → aspect_ratio=16:9, image_size=4K` |
+| OpenRouter / Evolink | 透传为对应 provider 的图像配置字段 | `aspect_ratio`、`image_size` 或 `quality` |
+
+当前能力边界请特别注意：
+
+- **GPT / OpenAI-compatible 文生图生成**：已支持，用于生成候选方案，包含 GPT-Image-2 尺寸转换。
+- **Gemini 图像精修**：已支持，上传图像后走 Gemini 图像模型并传入比例/分辨率配置。
+- **Evolink 图像精修**：保留支持路径。
+- **OpenAI image edit / GPT 图像精修**：当前尚未接入 `images.edits`，因此精修页选择 GPT 图像链路时会被前端拦截；这不是 API Key 或模型名配置错误，而是尚未实现的能力边界。
 
 ---
 

@@ -225,7 +225,9 @@ SAFE_DISK_UI_STATE_EXCLUDE_KEYS = {
     "tab1_extra_headers_json",
     "tab1_image_extra_headers_json",
     "refine_api_key",
+    "refine_image_api_key",
     "refine_extra_headers_json",
+    "refine_image_extra_headers_json",
     "refine_uploaded_image_bytes",
 }
 WORKSPACE_MODE_OPTIONS = [
@@ -2281,8 +2283,11 @@ PERSISTED_UI_STATE_KEYS = {
     "refine_aspect_ratio",
     "refine_num_images",
     "refine_provider",
+    "refine_image_provider",
     "refine_api_key",
+    "refine_image_api_key",
     "refine_base_url",
+    "refine_image_base_url",
     "refine_connection_display_name",
     "refine_connection_id",
     "refine_api_key_env_var",
@@ -2291,6 +2296,9 @@ PERSISTED_UI_STATE_KEYS = {
     "refine_connection_enabled",
     "refine_model_discovery_mode",
     "refine_model_allowlist",
+    "refine_model_name",
+    "refine_model_name_selector",
+    "refine_model_name_custom",
     "refine_image_model_name",
     "refine_image_model_name_selector",
     "refine_image_model_name_custom",
@@ -3952,9 +3960,9 @@ def start_generation_background_job(
         retrieval_setting=retrieval_setting,
         curated_profile=curated_profile,
         provider=runtime_settings.provider,
-        model_name=runtime_settings.model_name,
+        model_name=getattr(runtime_settings, "model_name", ""),
         image_model_name=runtime_settings.image_model_name,
-        image_connection_id=runtime_settings.image_connection_id,
+        image_connection_id=getattr(runtime_settings, "image_connection_id", runtime_settings.connection_id),
         image_provider_display_name=runtime_settings.image_provider_display_name,
         connection_id=runtime_settings.connection_id,
         provider_display_name=runtime_settings.provider_display_name,
@@ -3983,7 +3991,7 @@ def start_generation_background_job(
             ),
             job_type="generation",
             provider=runtime_settings.provider,
-            model=runtime_settings.model_name,
+            model=getattr(runtime_settings, "model_name", ""),
             status="running",
         ).to_dict(),
     )
@@ -4022,12 +4030,12 @@ def start_generation_background_job(
                         exp_mode=exp_mode,
                         retrieval_setting=retrieval_setting,
                         curated_profile=curated_profile,
-                        model_name=runtime_settings.model_name,
+                        model_name=getattr(runtime_settings, "model_name", ""),
                         image_model_name=runtime_settings.image_model_name,
-                        image_connection_id=runtime_settings.image_connection_id,
-                        image_api_key=runtime_settings.image_api_key,
-                        image_base_url=runtime_settings.image_base_url,
-                        image_extra_headers=runtime_settings.image_extra_headers,
+                        image_connection_id=getattr(runtime_settings, "image_connection_id", runtime_settings.connection_id),
+                        image_api_key=getattr(runtime_settings, "image_api_key", runtime_settings.api_key),
+                        image_base_url=getattr(runtime_settings, "image_base_url", runtime_settings.base_url),
+                        image_extra_headers=getattr(runtime_settings, "image_extra_headers", runtime_settings.extra_headers),
                         provider=runtime_settings.provider,
                         connection_id=runtime_settings.connection_id,
                         api_key=runtime_settings.api_key,
@@ -4056,9 +4064,9 @@ def start_generation_background_job(
                         provider=runtime_settings.provider,
                         connection_id=runtime_settings.connection_id,
                         provider_display_name=runtime_settings.provider_display_name,
-                        model_name=runtime_settings.model_name,
+                        model_name=getattr(runtime_settings, "model_name", ""),
                         image_model_name=runtime_settings.image_model_name,
-                        image_connection_id=runtime_settings.image_connection_id,
+                        image_connection_id=getattr(runtime_settings, "image_connection_id", runtime_settings.connection_id),
                         image_provider_display_name=runtime_settings.image_provider_display_name,
                         concurrency_mode=runtime_settings.concurrency_mode,
                         max_concurrent=runtime_settings.max_concurrent,
@@ -4283,10 +4291,10 @@ async def process_parallel_candidates(
         concurrency_mode=runtime_settings.concurrency_mode,
         max_concurrent=runtime_settings.max_concurrent,
         curated_profile=curated_profile,
-        model_name=runtime_settings.model_name,
+        model_name=getattr(runtime_settings, "model_name", ""),
         image_model_name=runtime_settings.image_model_name,
-        image_provider=runtime_settings.image_provider,
-        image_connection_id=runtime_settings.image_connection_id,
+        image_provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
+        image_connection_id=getattr(runtime_settings, "image_connection_id", runtime_settings.connection_id),
         image_provider_display_name=runtime_settings.image_provider_display_name,
         provider=runtime_settings.provider,
         connection_id=runtime_settings.connection_id,
@@ -4369,6 +4377,11 @@ async def refine_image_with_nanoviz(
     api_key="",
     provider=DEFAULT_PROVIDER,
     connection_id="",
+    model_name="",
+    image_connection_id="",
+    image_api_key="",
+    image_base_url="",
+    image_extra_headers: dict[str, str] | None = None,
     image_model_name="",
     base_url="",
     extra_headers: dict[str, str] | None = None,
@@ -4406,15 +4419,21 @@ async def refine_image_with_nanoviz(
         provider,
         connection_id=connection_id,
         api_key=api_key,
+        model_name=model_name,
+        image_connection_id=image_connection_id,
+        image_api_key=image_api_key,
+        image_base_url=image_base_url,
+        image_extra_headers=image_extra_headers,
         image_model_name=image_model_name,
         base_url=base_url,
         extra_headers=extra_headers,
         base_dir=REPO_ROOT,
         model_config_data=model_config_data,
     )
-    timeout_seconds = get_refine_request_timeout_seconds(runtime_settings.provider)
-    attempt_limit = max_attempts or get_refine_max_attempts(runtime_settings.provider)
-    total_time_limit = max_total_seconds or get_refine_total_timeout_seconds(runtime_settings.provider)
+    active_image_provider = getattr(runtime_settings, "image_provider", "") or runtime_settings.provider
+    timeout_seconds = get_refine_request_timeout_seconds(active_image_provider)
+    attempt_limit = max_attempts or get_refine_max_attempts(active_image_provider)
+    total_time_limit = max_total_seconds or get_refine_total_timeout_seconds(active_image_provider)
     active_runtime_context = runtime_context or build_runtime_context(
         runtime_settings,
         event_hook=event_callback,
@@ -4434,7 +4453,7 @@ async def refine_image_with_nanoviz(
                         kind="warning",
                         level="WARNING",
                         status="cancelled",
-                        provider=runtime_settings.provider,
+                        provider=active_image_provider,
                         model=runtime_settings.image_model_name,
                     )
                     return None, "⛔ 已取消精修任务"
@@ -4443,7 +4462,7 @@ async def refine_image_with_nanoviz(
                     break
                 attempt += 1
                 try:
-                    if runtime_settings.provider == "gemini":
+                    if active_image_provider == "gemini":
                         # ====== Gemini 路径：复用统一的阶梯降级与可取消无限重试 ======
                         from google.genai import types
 
@@ -4454,7 +4473,7 @@ async def refine_image_with_nanoviz(
                             kind="job",
                             level="INFO",
                             status="running",
-                            provider=runtime_settings.provider,
+                            provider=active_image_provider,
                             model=runtime_settings.image_model_name,
                         )
                         response_list = await generation_utils.call_gemini_with_retry_async(
@@ -4481,6 +4500,13 @@ async def refine_image_with_nanoviz(
                                 temperature=1.0,
                                 max_output_tokens=8192,
                                 response_modalities=["IMAGE"],
+                                image_config=types.ImageConfig(
+                                    aspect_ratio=aspect_ratio,
+                                    image_size=image_utils.normalize_gemini_image_size(
+                                        image_size,
+                                        default_size="2K",
+                                    ),
+                                ),
                             ),
                             max_attempts=max(2, int(max_attempts or 2)),
                             retry_delay=5,
@@ -4495,7 +4521,7 @@ async def refine_image_with_nanoviz(
                                 kind="job",
                                 level="INFO",
                                 status="completed",
-                                provider=runtime_settings.provider,
+                                provider=active_image_provider,
                                 model=runtime_settings.image_model_name,
                             )
                             return base64.b64decode(response_list[0]), "✅ 图像精修成功！"
@@ -4507,14 +4533,14 @@ async def refine_image_with_nanoviz(
                             kind="error",
                             level="ERROR",
                             status="failed",
-                            provider=runtime_settings.provider,
+                            provider=active_image_provider,
                             model=runtime_settings.image_model_name,
                         )
                         return None, "❌ 图像精修失败：Gemini 返回不可恢复错误"
 
-                    if runtime_settings.provider == "evolink":
+                    if active_image_provider == "evolink":
                         # ====== Evolink 路径：上传图片获取 URL → image_urls ======
-                        evolink_provider = generation_utils.get_evolink_provider()
+                        evolink_provider = generation_utils.get_image_evolink_provider()
                         if evolink_provider is None:
                             await asyncio.sleep(min(sleep_seconds, 10.0))
                             sleep_seconds = min(sleep_seconds * 1.2, 15.0)
@@ -4528,7 +4554,7 @@ async def refine_image_with_nanoviz(
                             kind="job",
                             level="INFO",
                             status="running",
-                            provider=runtime_settings.provider,
+                            provider=active_image_provider,
                             model=image_model,
                             attempt=attempt,
                         )
@@ -4569,7 +4595,7 @@ async def refine_image_with_nanoviz(
                                 kind="job",
                                 level="INFO",
                                 status="completed",
-                                provider=runtime_settings.provider,
+                                provider=active_image_provider,
                                 model=image_model,
                                 attempt=attempt,
                             )
@@ -4578,12 +4604,12 @@ async def refine_image_with_nanoviz(
                         raise RuntimeError("Evolink 未返回有效图像数据")
 
                     raise RuntimeError(
-                        f"当前精修链路仅支持 Gemini 或 Evolink 图像编辑接口，暂不支持 {runtime_settings.provider}。"
+                        f"当前精修链路仅支持 Gemini 或 Evolink 图像编辑接口，暂不支持 {active_image_provider}。"
                     )
 
                 except asyncio.TimeoutError:
                     err_text = (
-                        f"{runtime_settings.provider} request timed out after {int(timeout_seconds)}s "
+                        f"{active_image_provider} request timed out after {int(timeout_seconds)}s "
                         f"(attempt={attempt}, {task_prefix})"
                     )
                     delay = min(max(sleep_seconds, 3.0), 20.0)
@@ -4594,7 +4620,7 @@ async def refine_image_with_nanoviz(
                         kind="retry",
                         level="WARNING",
                         status="retrying",
-                        provider=runtime_settings.provider,
+                        provider=active_image_provider,
                         model=runtime_settings.image_model_name,
                         attempt=attempt,
                         details=err_text,
@@ -4626,7 +4652,7 @@ async def refine_image_with_nanoviz(
                         kind="retry",
                         level="WARNING",
                         status="retrying",
-                        provider=runtime_settings.provider,
+                        provider=active_image_provider,
                         model=runtime_settings.image_model_name,
                         attempt=attempt,
                         details=error_text,
@@ -4643,7 +4669,7 @@ async def refine_image_with_nanoviz(
                 kind="warning",
                 level="WARNING",
                 status="cancelled",
-                provider=runtime_settings.provider,
+                provider=active_image_provider,
                 model=runtime_settings.image_model_name,
             )
             return None, "⛔ 已取消精修任务"
@@ -4657,7 +4683,7 @@ async def refine_image_with_nanoviz(
             kind="error",
             level="ERROR",
             status="failed",
-            provider=runtime_settings.provider,
+            provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
             model=runtime_settings.image_model_name,
             details=failure_message,
         )
@@ -4676,6 +4702,11 @@ async def refine_images_with_count(
     api_key="",
     provider=DEFAULT_PROVIDER,
     connection_id="",
+    model_name="",
+    image_connection_id="",
+    image_api_key="",
+    image_base_url="",
+    image_extra_headers: dict[str, str] | None = None,
     image_model_name="",
     base_url="",
     extra_headers: dict[str, str] | None = None,
@@ -4693,19 +4724,25 @@ async def refine_images_with_count(
         provider,
         connection_id=connection_id,
         api_key=api_key,
+        model_name=model_name,
+        image_connection_id=image_connection_id,
+        image_api_key=image_api_key,
+        image_base_url=image_base_url,
+        image_extra_headers=image_extra_headers,
         image_model_name=image_model_name,
         base_url=base_url,
         extra_headers=extra_headers,
         base_dir=REPO_ROOT,
         model_config_data=model_config_data,
     )
+    active_image_provider = getattr(runtime_settings, "image_provider", "") or runtime_settings.provider
     runtime_context = build_runtime_context(
         runtime_settings,
         event_hook=event_callback,
         status_hook=status_callback if event_callback is None else None,
         cancel_check=cancel_check,
     )
-    semaphore = asyncio.Semaphore(min(safe_count, 3 if runtime_settings.provider == "gemini" else 2))
+    semaphore = asyncio.Semaphore(min(safe_count, 3 if active_image_provider == "gemini" else 2))
 
     try:
         with generation_utils.use_runtime_context(runtime_context):
@@ -4728,6 +4765,11 @@ async def refine_images_with_count(
                                 api_key=runtime_settings.api_key,
                                 provider=runtime_settings.provider,
                                 connection_id=runtime_settings.connection_id,
+                                model_name=getattr(runtime_settings, "model_name", ""),
+                                image_connection_id=getattr(runtime_settings, "image_connection_id", runtime_settings.connection_id),
+                                image_api_key=getattr(runtime_settings, "image_api_key", runtime_settings.api_key),
+                                image_base_url=getattr(runtime_settings, "image_base_url", runtime_settings.base_url),
+                                image_extra_headers=getattr(runtime_settings, "image_extra_headers", runtime_settings.extra_headers),
                                 image_model_name=runtime_settings.image_model_name,
                                 base_url=runtime_settings.base_url,
                                 extra_headers=runtime_settings.extra_headers,
@@ -4767,7 +4809,7 @@ async def refine_images_with_count(
                     kind="job",
                     level="INFO",
                     status="running",
-                    provider=runtime_settings.provider,
+                    provider=active_image_provider,
                     model=runtime_settings.image_model_name,
                 )
 
@@ -4786,7 +4828,12 @@ def start_refine_background_job(
     api_key: str,
     provider: str,
     connection_id: str = "",
-    image_model_name: str,
+    model_name: str = "",
+    image_connection_id: str = "",
+    image_api_key: str = "",
+    image_base_url: str = "",
+    image_extra_headers: dict[str, str] | None = None,
+    image_model_name: str = "",
     base_url: str = "",
     extra_headers: dict[str, str] | None = None,
     input_mime_type: str,
@@ -4796,6 +4843,11 @@ def start_refine_background_job(
         provider,
         connection_id=connection_id,
         api_key=api_key,
+        model_name=model_name,
+        image_connection_id=image_connection_id,
+        image_api_key=image_api_key,
+        image_base_url=image_base_url,
+        image_extra_headers=image_extra_headers,
         image_model_name=image_model_name,
         base_url=base_url,
         extra_headers=extra_headers,
@@ -4804,7 +4856,7 @@ def start_refine_background_job(
     )
     job = RefineJobState(
         job_id=job_id,
-        provider=runtime_settings.provider,
+        provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
         image_model_name=runtime_settings.image_model_name,
         resolution=image_size,
         aspect_ratio=aspect_ratio,
@@ -4823,7 +4875,7 @@ def start_refine_background_job(
             source="PaperBananaDemo",
             message=f"[精修] 输入图像：格式={input_mime_type} | 大小={len(image_bytes)} bytes",
             job_type="refine",
-            provider=runtime_settings.provider,
+            provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
             model=runtime_settings.image_model_name,
             status="running",
         ).to_dict(),
@@ -4835,12 +4887,12 @@ def start_refine_background_job(
             kind="job",
             source="PaperBananaDemo",
             message=(
-                f"[精修] 已启动：provider={runtime_settings.provider} | "
+                f"[精修] 已启动：image_provider={getattr(runtime_settings, 'image_provider', '') or runtime_settings.provider} | "
                 f"model={runtime_settings.image_model_name} | 分辨率={image_size} | "
                 f"宽高比={aspect_ratio} | 目标张数={int(num_images)}"
             ),
             job_type="refine",
-            provider=runtime_settings.provider,
+            provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
             model=runtime_settings.image_model_name,
             status="running",
         ).to_dict(),
@@ -4869,6 +4921,11 @@ def start_refine_background_job(
                         api_key=runtime_settings.api_key,
                         provider=runtime_settings.provider,
                         connection_id=runtime_settings.connection_id,
+                        model_name=getattr(runtime_settings, "model_name", ""),
+                        image_connection_id=getattr(runtime_settings, "image_connection_id", runtime_settings.connection_id),
+                        image_api_key=getattr(runtime_settings, "image_api_key", runtime_settings.api_key),
+                        image_base_url=getattr(runtime_settings, "image_base_url", runtime_settings.base_url),
+                        image_extra_headers=getattr(runtime_settings, "image_extra_headers", runtime_settings.extra_headers),
                         image_model_name=runtime_settings.image_model_name,
                         base_url=runtime_settings.base_url,
                         extra_headers=runtime_settings.extra_headers,
@@ -4929,7 +4986,7 @@ def start_refine_background_job(
                             f"成功={len(refined_images)} | 失败={len(failed_refine_results)}"
                         ),
                         job_type="refine",
-                        provider=runtime_settings.provider,
+                        provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
                         model=runtime_settings.image_model_name,
                         status=job.status,
                     ).to_dict(),
@@ -4947,7 +5004,7 @@ def start_refine_background_job(
                         source="PaperBananaDemo",
                         message="[精修] 后台任务失败",
                         job_type="refine",
-                        provider=runtime_settings.provider,
+                        provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
                         model=runtime_settings.image_model_name,
                         status="failed",
                         details=job.error,
@@ -6376,7 +6433,7 @@ def render_generation_sidebar_controls() -> dict:
                 help="生成图表的宽高比",
             )
             selected_connection = find_connection_by_id(
-                str(st.session_state.get("tab1_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
+                str(st.session_state.get("tab1_image_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
             )
             provider_for_resolution = (
                 selected_connection.provider_type if selected_connection is not None else DEFAULT_PROVIDER
@@ -6626,192 +6683,124 @@ def render_refine_sidebar_controls() -> dict:
             f"当前任务将输出 {refine_num_images} 张 {refine_resolution} 结果，宽高比为 {refine_aspect_ratio}。"
         )
 
-        st.markdown('<p class="sb-section">Provider</p>', unsafe_allow_html=True)
-        connection_options = get_connection_options()
-        connection_ids = [item[0] for item in connection_options]
-        ensure_session_choice_state(
-            "refine_provider",
-            connection_ids,
-            str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
+        st.markdown('<p class="sb-section">模型与中转站</p>', unsafe_allow_html=True)
+        saved_text_choice = connection_to_provider_choice(
+            str(st.session_state.get("refine_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
         )
-        refine_provider = st.selectbox(
-            "精修连接",
-            connection_ids,
-            key="refine_provider",
-            format_func=lambda value: dict(connection_options).get(value, value),
-            help="精修链路可单独选择连接，不依赖生成页设置。",
+        ensure_session_choice_state("refine_provider_choice", GENERATION_PROVIDER_CHOICES, saved_text_choice)
+        refine_provider_choice = st.radio(
+            "VLM 文本",
+            GENERATION_PROVIDER_CHOICES,
+            horizontal=True,
+            key="refine_provider_choice",
+            help="用于理解精修指令和后续兼容的文本链路；当前精修图像请求主要使用下方文生图链路。",
         )
-        refine_provider_defaults = ensure_connection_editor_state("refine", refine_provider)
+        refine_provider = provider_choice_to_connection(refine_provider_choice)
+        st.session_state["refine_provider"] = refine_provider
+        refine_provider_defaults = get_connection_ui_defaults(refine_provider)
         state_keys = _build_connection_state_keys("refine")
-        runtime_connection_id = get_selected_connection_runtime_id("refine", refine_provider)
-        connection_pending_save = refine_provider == CUSTOM_CONNECTION_CREATE_OPTION
-        is_builtin_connection = bool(refine_provider_defaults.get("builtin", False))
+        runtime_connection_id = refine_provider
+        connection_pending_save = False
         sync_connection_runtime_input_state(
             prefix="refine",
             selected_connection_id=refine_provider,
             provider_defaults=refine_provider_defaults,
+            sync_text_model=True,
+            sync_image_model=False,
         )
-        if state_keys["persist_secret"] not in st.session_state:
-            st.session_state[state_keys["persist_secret"]] = True
-
-        if not is_builtin_connection:
-            st.text_input(
-                "连接显示名",
-                key=state_keys["display_name"],
-                disabled=False,
-                help="自定义连接可编辑显示名。",
-            )
-            st.text_input(
-                "连接 ID",
-                key=state_keys["connection_id"],
-                disabled=False,
-                help="仅自定义连接可编辑。",
-            )
-        if is_builtin_connection:
-            with st.expander("高级连接参数", expanded=False):
-                refine_base_url = st.text_input(
-                    "Base URL",
-                    key=state_keys["base_url"],
-                    help="当前精修连接的 base URL。",
-                )
-                refine_extra_headers_json = st.text_area(
-                    "额外请求头（JSON）",
-                    key=state_keys["extra_headers_json"],
-                    height=90,
-                    help="用于某些 OpenAI 兼容网关的附加请求头。",
-                )
-        else:
-            refine_base_url = st.text_input(
-                "Base URL",
-                key=state_keys["base_url"],
-                help="当前精修连接的 base URL。",
-            )
-        if not is_builtin_connection:
-            st.text_input(
-                "API Key 环境变量",
-                key=state_keys["api_key_env_var"],
-                disabled=False,
-                help="可选。若配置，将优先读取该环境变量。",
-            )
-            refine_extra_headers_json = st.text_area(
-                "额外请求头（JSON）",
-                key=state_keys["extra_headers_json"],
-                height=90,
-                help="用于某些 OpenAI 兼容网关的附加请求头。",
-            )
-        st.checkbox(
-            "将 API Key 保存到本地",
-            key=state_keys["persist_secret"],
-            help="关闭后，本次输入的密钥仅在当前会话中使用。",
+        if "refine_api_key" not in st.session_state:
+            st.session_state["refine_api_key"] = str(refine_provider_defaults.get("api_key_default", "") or "")
+        refine_api_key = st.text_input(
+            f"{refine_provider_choice} VLM API Key",
+            type="password",
+            key="refine_api_key",
+            help="只用于 VLM 文本链路。环境变量会作为默认值自动带入。",
+        ).strip()
+        refine_model_name = render_preset_or_custom_model_input(
+            f"{refine_provider_choice} VLM 模型",
+            get_connection_model_options(refine_provider_defaults, image=False),
+            value_key="refine_model_name",
+            selector_key="refine_model_name_selector",
+            custom_value_key="refine_model_name_custom",
+            default_value=refine_provider_defaults["model_name"],
+            select_help="用于 VLM 文本链路的模型名称。",
+            custom_help="请输入当前 VLM Provider 支持的模型名称。",
         )
-        allow_local_api_key_persist = is_builtin_connection or not connection_pending_save
-        refine_api_key = render_provider_api_key_controls(
-            provider=runtime_connection_id,
-            provider_defaults={
-                **refine_provider_defaults,
-                "api_key_label": refine_provider_defaults.get("api_key_label", "API Key"),
-                "api_key_help": refine_provider_defaults.get("api_key_help", "当前连接使用的 API 密钥"),
-            },
-            session_key="refine_api_key",
-            clear_request_key="refine_api_key_clear_requested",
-            clear_button_key="refine_clear_provider_api_key",
-            persist_secret=bool(st.session_state.get(state_keys["persist_secret"], True)),
-            allow_local_persist=allow_local_api_key_persist,
+        refine_base_url = st.text_input(
+            f"{refine_provider_choice} VLM Base URL",
+            key=state_keys["base_url"],
+            help="只用于 VLM 文本链路；官方直连可留空，网关请填写对应 URL。",
+        ).strip()
+        refine_extra_headers_json = ""
+
+        saved_image_choice = connection_to_provider_choice(
+            str(st.session_state.get("refine_image_provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
         )
-        if refine_provider_defaults.get("provider_type") == "gemini":
-            refine_image_model_name = render_preset_or_custom_model_input(
-                "精修图像模型",
-                GEMINI_IMAGE_MODELS,
-                value_key="refine_image_model_name",
-                selector_key="refine_image_model_name_selector",
-                custom_value_key="refine_image_model_name_custom",
-                default_value=refine_provider_defaults["image_model_name"],
-                select_help="精修流程使用的图像模型。可选择预设模型，或选“自定义”后手动输入。",
-                custom_help="请输入精修流程使用的自定义图像模型名称。",
+        ensure_session_choice_state("refine_image_provider_choice", GENERATION_PROVIDER_CHOICES, saved_image_choice)
+        refine_image_provider_choice = st.radio(
+            "文生图 / 图像精修",
+            GENERATION_PROVIDER_CHOICES,
+            horizontal=True,
+            key="refine_image_provider_choice",
+            help="用于真正生成精修图像；可与 VLM 文本链路不同。",
+        )
+        refine_image_provider = provider_choice_to_connection(refine_image_provider_choice)
+        st.session_state["refine_image_provider"] = refine_image_provider
+        refine_image_provider_defaults = get_connection_ui_defaults(refine_image_provider)
+        image_state_keys = _build_connection_state_keys("refine_image")
+        image_runtime_connection_id = refine_image_provider
+        sync_connection_runtime_input_state(
+            prefix="refine_image",
+            selected_connection_id=refine_image_provider,
+            provider_defaults=refine_image_provider_defaults,
+            sync_text_model=False,
+            sync_image_model=True,
+        )
+        hydrate_image_api_key_session_state(
+            session_key="refine_image_api_key",
+            provider_defaults=refine_image_provider_defaults,
+        )
+        sync_model_selector_to_connection(
+            prefix="refine_image",
+            selected_connection_id=refine_image_provider,
+            model_key="model_name",
+            default_model=refine_image_provider_defaults["image_model_name"],
+        )
+        if "refine_image_api_key" not in st.session_state:
+            st.session_state["refine_image_api_key"] = str(
+                refine_image_provider_defaults.get("image_api_key_default", "")
+                or refine_image_provider_defaults.get("api_key_default", "")
+                or ""
             )
-        else:
-            refine_image_model_name = st.text_input(
-                "精修图像模型",
-                key="refine_image_model_name",
-                help="精修流程使用的图像模型",
-            )
-        if not is_builtin_connection:
-            st.checkbox(
-                "启用图像能力",
-                key=state_keys["supports_image"],
-                disabled=False,
-                help="仅对自定义连接生效；关闭时图像探针会自动跳过。",
-            )
-            st.selectbox(
-                "模型发现模式",
-                ["manual", "hybrid", "fetch", "static"],
-                key=state_keys["model_discovery_mode"],
-                disabled=False,
-                help="hybrid 表示优先尝试远端发现，失败后回退到手动模型名。",
-            )
-            st.text_area(
-                "模型白名单（每行一个）",
-                key=state_keys["model_allowlist"],
-                height=70,
-                disabled=False,
-                help="用于 `/models` 不可用时的手动回退列表。",
-            )
-        action_cols = st.columns([1, 1, 1], gap="small")
-        with action_cols[0]:
-            save_clicked = st.button("💾 保存", key="refine_save_connection", width="stretch", help="保存当前连接草稿。")
-        with action_cols[1]:
-            refresh_clicked = st.button("↻ 刷新", key="refine_refresh_models", width="stretch", help="重新拉取或更新可用模型列表。")
-        with action_cols[2]:
-            test_clicked = st.button("🧪 测试", key="refine_test_connection", width="stretch", help="验证当前连接的图像链路与兼容性。")
-
-        if save_clicked:
-            ok, message, _ = save_connection_draft(
-                prefix="refine",
-                selected_connection_id=refine_provider,
-                api_key=refine_api_key,
-                model_name="",
-                image_model_name=refine_image_model_name,
-            )
-            if ok:
-                st.success(message)
-                st.rerun()
-            else:
-                st.error(message)
-
-        if refresh_clicked:
-            _, message = run_refresh_models_with_status(
-                prefix="refine",
-                connection_id=refine_provider,
-                api_key=refine_api_key,
-                model_name="",
-                image_model_name=refine_image_model_name,
-            )
-            emit_connection_action_feedback(message)
-
-        if test_clicked:
-            _, message = run_connection_probe_with_status(
-                prefix="refine",
-                connection_id=refine_provider,
-                api_key=refine_api_key,
-                model_name="",
-                image_model_name=refine_image_model_name,
-            )
-            emit_connection_action_feedback(message)
-
-        if refine_provider not in BUILTIN_CONNECTION_IDS and refine_provider != CUSTOM_CONNECTION_CREATE_OPTION:
-            delete_clicked = st.button("删除自定义连接", key="refine_delete_custom_connection", width="stretch")
-            if delete_clicked:
-                delete_custom_connection(refine_provider, base_dir=REPO_ROOT)
-                st.session_state["refine_provider"] = DEFAULT_PROVIDER
-                st.rerun()
-        if refine_extra_headers_json:
-            st.caption("已填写额外请求头草稿。")
-        if not bool(st.session_state.get(state_keys["persist_secret"], True)):
-            st.caption("当前 API Key 仅在本次会话中使用。")
-        if connection_pending_save:
-            st.caption("当前是未保存的自定义连接草稿；可先测试，但正式运行前需要先保存连接。")
-        render_connection_probe_results("refine")
-
+        refine_image_api_key = st.text_input(
+            f"{refine_image_provider_choice} 文生图 API Key",
+            type="password",
+            key="refine_image_api_key",
+            help="只用于文生图/图像精修链路。环境变量会作为默认值自动带入。",
+        ).strip()
+        refine_image_model_name = render_preset_or_custom_model_input(
+            f"{refine_image_provider_choice} 文生图模型",
+            get_connection_model_options(refine_image_provider_defaults, image=True),
+            value_key="refine_image_model_name",
+            selector_key="refine_image_model_name_selector",
+            custom_value_key="refine_image_model_name_custom",
+            default_value=refine_image_provider_defaults["image_model_name"],
+            select_help="用于文生图/图像精修链路的模型名称。切换 GPT/Gemini 时会自动重置。",
+            custom_help="请输入当前文生图 Provider 支持的模型名称。",
+        )
+        refine_image_base_url = st.text_input(
+            f"{refine_image_provider_choice} 文生图 Base URL",
+            key=image_state_keys["base_url"],
+            help="只用于文生图/图像精修链路；官方直连可留空，网关请填写对应 URL。",
+        ).strip()
+        refine_image_extra_headers_json = ""
+        st.caption(
+            f"当前组合：VLM 文本={refine_provider_choice} / {refine_model_name or '未填写'}；"
+            f"文生图={refine_image_provider_choice} / {refine_image_model_name or '未填写'}。"
+        )
+        connection_pending_save = False
+        refine_provider_type = str(refine_provider_defaults.get("provider_type", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
+        refine_image_provider_type = str(refine_image_provider_defaults.get("provider_type", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
         st.markdown('<p class="sb-section">当前会话</p>', unsafe_allow_html=True)
         staged_refine_bytes = bytes(st.session_state.get("refine_staged_image_bytes", b"") or b"")
         cached_uploaded_bytes = bytes(st.session_state.get("refine_uploaded_image_bytes", b"") or b"")
@@ -6821,19 +6810,30 @@ def render_refine_sidebar_controls() -> dict:
         st.caption(f"后台任务：{'运行中' if active_refine_job_id else '空闲'}")
 
     extra_headers, extra_headers_error = parse_extra_headers_json_safe(refine_extra_headers_json)
+    image_extra_headers, image_extra_headers_error = parse_extra_headers_json_safe(refine_image_extra_headers_json)
+    combined_extra_headers_error = "\n".join(
+        item for item in [extra_headers_error, image_extra_headers_error] if item
+    )
     return {
         "resolution": refine_resolution,
         "aspect_ratio": refine_aspect_ratio,
         "num_images": refine_num_images,
         "provider": runtime_connection_id,
         "connection_id": runtime_connection_id,
-        "provider_type": str(refine_provider_defaults.get("provider_type", DEFAULT_PROVIDER) or DEFAULT_PROVIDER),
+        "provider_type": refine_provider_type,
         "provider_display_name": str(st.session_state.get(state_keys["display_name"], refine_provider_defaults.get("display_name", runtime_connection_id)) or runtime_connection_id),
         "connection_pending_save": connection_pending_save,
         "api_key": refine_api_key,
+        "model_name": refine_model_name,
         "base_url": refine_base_url,
         "extra_headers": extra_headers,
-        "extra_headers_error": extra_headers_error,
+        "extra_headers_error": combined_extra_headers_error,
+        "image_connection_id": image_runtime_connection_id,
+        "image_provider_type": refine_image_provider_type,
+        "image_provider_display_name": str(refine_image_provider_defaults.get("display_name", image_runtime_connection_id) or image_runtime_connection_id),
+        "image_api_key": refine_image_api_key,
+        "image_base_url": refine_image_base_url,
+        "image_extra_headers": image_extra_headers,
         "image_model_name": refine_image_model_name,
     }
 
@@ -7521,6 +7521,7 @@ def render_generation_workspace() -> None:
 
 def render_refine_workbench_panel(
     *,
+    refine_settings: dict,
     refine_is_running: bool,
     refine_resolution: str,
     refine_aspect_ratio: str,
@@ -7576,10 +7577,11 @@ def render_refine_workbench_panel(
             )
             if default_refine_source not in source_options:
                 default_refine_source = source_options[0]
+            if st.session_state.get("refine_input_source") != default_refine_source:
+                st.session_state["refine_input_source"] = default_refine_source
             refine_input_source = st.radio(
                 "图像来源",
                 source_options,
-                index=source_options.index(default_refine_source),
                 key="refine_input_source",
                 horizontal=True,
                 label_visibility="collapsed",
@@ -7729,8 +7731,8 @@ def render_refine_workbench_panel(
             st.error("当前选择的是未保存的自定义连接草稿；请先点击“保存连接”，再启动正式精修。")
         elif refine_extra_headers_error:
             st.error(refine_extra_headers_error)
-        elif refine_provider_type not in {"gemini", "evolink"}:
-            st.error("当前精修链路仅支持 Gemini 或 Evolink 图像编辑接口；如需验证其他连接，请先使用“测试连接”。")
+        elif refine_settings["image_provider_type"] not in {"gemini", "evolink"}:
+            st.error("当前文生图/图像精修链路仅支持 Gemini 或 Evolink 图像编辑接口；VLM 文本链路可单独选择 GPT 或 Gemini。")
         else:
             job_id = start_refine_background_job(
                 image_bytes=selected_image_bytes,
@@ -7738,9 +7740,14 @@ def render_refine_workbench_panel(
                 num_images=int(refine_num_images),
                 aspect_ratio=refine_aspect_ratio,
                 image_size=refine_resolution,
-                api_key=refine_api_key,
-                provider=refine_provider,
+                api_key=refine_settings["api_key"],
+                provider=refine_settings["provider"],
                 connection_id=refine_settings["connection_id"],
+                model_name=refine_settings["model_name"],
+                image_connection_id=refine_settings["image_connection_id"],
+                image_api_key=refine_settings["image_api_key"],
+                image_base_url=refine_settings["image_base_url"],
+                image_extra_headers=refine_settings["image_extra_headers"],
                 image_model_name=refine_image_model_name,
                 base_url=refine_settings["base_url"],
                 extra_headers=refine_settings["extra_headers"],
@@ -7795,6 +7802,7 @@ def render_refine_workspace() -> None:
     selected_input_mime_type = st.session_state.get("refine_selected_input_mime_type", "image/png")
     if current_refine_view == REFINE_WORKSPACE_VIEW_OPTIONS[0]:
         selected_image_bytes, selected_input_mime_type = render_refine_workbench_panel(
+            refine_settings=refine_settings,
             refine_is_running=refine_is_running,
             refine_resolution=refine_settings["resolution"],
             refine_aspect_ratio=refine_settings["aspect_ratio"],

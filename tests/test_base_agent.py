@@ -64,6 +64,10 @@ class BaseAgentImageApiTest(unittest.TestCase):
                 getattr(captured["config"], "response_modalities", None),
                 ["IMAGE"],
             )
+            image_config = getattr(captured["config"], "image_config", None)
+            self.assertIsNotNone(image_config)
+            self.assertEqual(getattr(image_config, "aspect_ratio", None), "16:9")
+            self.assertEqual(getattr(image_config, "image_size", None), "4K")
         finally:
             generation_utils.call_gemini_with_retry_async = original
 
@@ -236,10 +240,17 @@ class BaseAgentProviderValidationTest(unittest.TestCase):
                 exp_config=exp_config,
             )
 
-            result = asyncio.run(agent.call_image_api(prompt="Draw a diagram."))
+            result = asyncio.run(
+                agent.call_image_api(
+                    prompt="Draw a diagram.",
+                    aspect_ratio="16:9",
+                    image_resolution="4K",
+                )
+            )
 
             self.assertEqual(result, ["fake-image-b64"])
             self.assertEqual(captured["model_name"], "custom-image-model")
+            self.assertEqual(captured["config"]["size"], "3840x2160")
         finally:
             generation_utils.call_openai_image_generation_with_retry_async = original
 

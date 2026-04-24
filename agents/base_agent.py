@@ -218,6 +218,13 @@ class BaseAgent(ABC):
                     candidate_count=1,
                     max_output_tokens=max_output_tokens,
                     response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                        image_size=image_utils.normalize_gemini_image_size(
+                            image_resolution,
+                            default_size="2K",
+                        ),
+                    ),
                 ),
                 max_attempts=max_attempts,
                 retry_delay=retry_delay,
@@ -245,7 +252,10 @@ class BaseAgent(ABC):
                 model_name=_model,
                 prompt=prompt,
                 config={
-                    "size": "1536x1024",
+                    "size": image_utils.openai_image_size_from_controls(
+                        aspect_ratio,
+                        image_resolution,
+                    ),
                     "quality": "high",
                     "background": "opaque",
                     "output_format": "png",

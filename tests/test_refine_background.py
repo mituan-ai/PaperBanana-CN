@@ -364,6 +364,42 @@ class RefineBackgroundJobTest(unittest.TestCase):
             demo.generation_utils = original_generation_utils
             demo.refine_image_with_nanoviz = original_refine_one
 
+    def test_refine_gemini_request_passes_image_config(self):
+        from utils import generation_utils
+
+        original_call = generation_utils.call_gemini_with_retry_async
+        captured = {}
+
+        async def fake_call_gemini_with_retry_async(**kwargs):
+            captured.update(kwargs)
+            return ["ZmFrZS1pbWFnZQ=="]
+
+        generation_utils.call_gemini_with_retry_async = fake_call_gemini_with_retry_async
+        try:
+            result_bytes, message = asyncio.run(
+                demo.refine_image_with_nanoviz(
+                    image_bytes=_build_png_bytes(),
+                    edit_prompt="make it cleaner",
+                    aspect_ratio="16:9",
+                    image_size="4K",
+                    api_key="local-test-key",
+                    provider="gemini",
+                    image_model_name="gemini-3.1-flash-image-preview",
+                    input_mime_type="image/png",
+                    max_attempts=1,
+                    runtime_context=object(),
+                )
+            )
+
+            self.assertEqual(result_bytes, b"fake-image")
+            self.assertIn("成功", message)
+            image_config = getattr(captured["config"], "image_config", None)
+            self.assertIsNotNone(image_config)
+            self.assertEqual(getattr(image_config, "aspect_ratio", None), "16:9")
+            self.assertEqual(getattr(image_config, "image_size", None), "4K")
+        finally:
+            generation_utils.call_gemini_with_retry_async = original_call
+
     def test_refine_job_snapshot_falls_back_to_disk_store(self):
         job_id = "refine_disk_snapshot"
         job = demo.RefineJobState(
