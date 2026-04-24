@@ -58,6 +58,85 @@ DEFAULT_GEMINI_TEXT_FALLBACK_MODELS = (
     "gemini-3-flash-preview",
 )
 
+
+DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS = 360.0
+DEFAULT_OPENAI_IMAGE_MAX_ATTEMPTS = 3
+
+
+def _get_openai_image_request_timeout_seconds() -> float:
+    """获取 OpenAI-compatible 图像请求超时；中转站 2K/4K 高画质需至少 360 秒。"""
+    for env_name in ("PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC", "OPENAI_IMAGE_TIMEOUT_SEC"):
+        env_val = os.getenv(env_name, "").strip()
+        if not env_val:
+            continue
+        try:
+            return max(float(env_val), DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS)
+        except ValueError:
+            logger.warning("忽略无效的 %s=%r", env_name, env_val)
+    return DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS
+
+
+def _get_openai_image_max_attempts(requested_attempts: int) -> int:
+    """限制 OpenAI-compatible 图像重试次数，避免 360s 长请求被外层 5 次重试拖太久。"""
+    requested = max(int(requested_attempts or 1), 1)
+    for env_name in ("PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS", "OPENAI_IMAGE_MAX_ATTEMPTS"):
+        env_val = os.getenv(env_name, "").strip()
+        if not env_val:
+            continue
+        try:
+            return max(int(env_val), 1)
+        except ValueError:
+            logger.warning("忽略无效的 %s=%r", env_name, env_val)
+    return min(requested, DEFAULT_OPENAI_IMAGE_MAX_ATTEMPTS)
+
+
+def _openai_image_retry_delay(base_delay: float, attempt_index: int) -> float:
+    """指数退避，单次等待封顶 120 秒。"""
+    try:
+        base = float(base_delay)
+    except (TypeError, ValueError):
+        base = 30.0
+    return min(max(base, 0.0) * (2 ** max(attempt_index, 0)), 120.0)
+
+
+def _is_gpt_image_2_model(model_name: str) -> bool:
+    return str(model_name or "").strip().lower().replace("_", "-") == "gpt-image-2"
+
+
+def _build_openai_image_generation_params(model_name: str, prompt: str, config: dict) -> dict[str, Any]:
+    """构造 OpenAI Images generation 参数，并过滤 gpt-image-2 中转站已知不支持字段。"""
+    params = {
+        "model": model_name,
+        "prompt": prompt,
+        "n": 1,
+        "size": config.get("size", "1536x1024"),
+        "quality": config.get("quality", "high"),
+        "background": config.get("background", "opaque"),
+        "output_format": config.get("output_format", "png"),
+    }
+    if _is_gpt_image_2_model(model_name) and params.get("background") == "transparent":
+        params["background"] = "opaque"
+    return params
+
+
+def _build_openai_image_edit_params(model_name: str, prompt: str, config: dict) -> dict[str, Any]:
+    """构造 OpenAI Images edit 参数；gpt-image-2 不传 input_fidelity 和透明背景。"""
+    params = {
+        "model": model_name,
+        "prompt": prompt,
+        "n": 1,
+        "size": config.get("size", "auto"),
+        "quality": config.get("quality", "auto"),
+        "background": config.get("background", "opaque"),
+        "output_format": config.get("output_format", "png"),
+    }
+    if _is_gpt_image_2_model(model_name):
+        if params.get("background") == "transparent":
+            params["background"] = "opaque"
+    else:
+        params["input_fidelity"] = config.get("input_fidelity", "high")
+    return params
+
 evolink_base_url = get_config_val(
     model_config,
     "evolink",
@@ -1768,30 +1847,21 @@ async def call_openrouter_image_generation_with_retry_async(
 async def call_openai_image_generation_with_retry_async(
     model_name, prompt, config, max_attempts=5, retry_delay=30, error_context=""
 ):
-    """原始 OpenAI 图像生成 API 异步调用（保留兼容性）"""
+    """OpenAI-compatible 图像生成 API 异步调用。"""
     client = get_openai_image_client()
     if client is None:
         raise RuntimeError("OpenAI 图像 Client 未初始化，请检查 OpenAI 图像 API Key。")
-    size = config.get("size", "1536x1024")
-    quality = config.get("quality", "high")
-    background = config.get("background", "opaque")
-    output_format = config.get("output_format", "png")
 
-    gen_params = {
-        "model": model_name,
-        "prompt": prompt,
-        "n": 1,
-        "size": size,
-        "quality": quality,
-        "background": background,
-        "output_format": output_format,
-    }
+    request_timeout_seconds = _get_openai_image_request_timeout_seconds()
+    effective_max_attempts = _get_openai_image_max_attempts(max_attempts)
+    gen_params = _build_openai_image_generation_params(model_name, prompt, config)
 
     last_exception: Exception | None = None
     last_error_text = ""
-    for attempt in range(max_attempts):
+    for attempt in range(effective_max_attempts):
+        current_retry_delay = _openai_image_retry_delay(retry_delay, attempt)
         try:
-            response = await client.images.generate(**gen_params)
+            response = await client.images.generate(**gen_params, timeout=request_timeout_seconds)
             if response.data and response.data[0].b64_json:
                 return [response.data[0].b64_json]
             else:
@@ -1808,8 +1878,8 @@ async def call_openai_image_generation_with_retry_async(
                     message="OpenAI 图像生成未返回数据，将继续重试",
                 )
                 logger.warning("OpenAI 图像生成失败，未返回数据")
-                if attempt < max_attempts - 1:
-                    await asyncio.sleep(retry_delay)
+                if attempt < effective_max_attempts - 1:
+                    await asyncio.sleep(current_retry_delay)
                 continue
         except Exception as e:
             last_exception = e
@@ -1824,19 +1894,19 @@ async def call_openai_image_generation_with_retry_async(
                 model=model_name,
                 attempt=attempt + 1,
                 status="retrying",
-                message=f"OpenAI 图像生成第 {attempt + 1}/{max_attempts} 次尝试失败，{retry_delay}s 后重试",
+                message=f"OpenAI 图像生成第 {attempt + 1}/{effective_max_attempts} 次尝试失败，{current_retry_delay:g}s 后重试",
                 details=f"{context_msg}: {e}",
             )
             logger.warning(
                 "OpenAI 图像生成第 %s 次尝试失败%s，%ss 后重试",
                 attempt + 1,
                 context_msg,
-                retry_delay,
+                current_retry_delay,
             )
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(retry_delay)
+            if attempt < effective_max_attempts - 1:
+                await asyncio.sleep(current_retry_delay)
     context_msg = f" for {error_context}" if error_context else ""
-    failure_message = f"OpenAI 图像生成在 {max_attempts} 次尝试后仍然失败{context_msg}"
+    failure_message = f"OpenAI 图像生成在 {effective_max_attempts} 次尝试后仍然失败{context_msg}"
     if last_error_text:
         failure_message = f"{failure_message}: {last_error_text}"
     _emit_runtime_event(
@@ -1847,10 +1917,10 @@ async def call_openai_image_generation_with_retry_async(
         provider="openai",
         model=model_name,
         status="failed",
-        message=f"OpenAI 图像生成在 {max_attempts} 次尝试后仍然失败",
+        message=f"OpenAI 图像生成在 {effective_max_attempts} 次尝试后仍然失败",
         details=failure_message,
     )
-    logger.error("OpenAI 图像生成全部 %s 次尝试失败%s", max_attempts, context_msg)
+    logger.error("OpenAI 图像生成全部 %s 次尝试失败%s", effective_max_attempts, context_msg)
     raise RuntimeError(failure_message) from last_exception
 
 
@@ -1875,7 +1945,12 @@ async def call_openai_image_edit_with_retry_async(
 
     last_exception: Exception | None = None
     last_error_text = ""
-    for attempt in range(max_attempts):
+    effective_max_attempts = _get_openai_image_max_attempts(max_attempts)
+    request_timeout_seconds = _get_openai_image_request_timeout_seconds()
+    edit_params = _build_openai_image_edit_params(model_name, prompt, config)
+
+    for attempt in range(effective_max_attempts):
+        current_retry_delay = _openai_image_retry_delay(retry_delay, attempt)
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
@@ -1883,15 +1958,9 @@ async def call_openai_image_edit_with_retry_async(
                 tmp_path = tmp_file.name
             with open(tmp_path, "rb") as image_file:
                 response = await client.images.edit(
-                    model=model_name,
                     image=image_file,
-                    prompt=prompt,
-                    n=1,
-                    size=size,
-                    quality=quality,
-                    background=background,
-                    output_format=output_format,
-                    input_fidelity=input_fidelity,
+                    **edit_params,
+                    timeout=request_timeout_seconds,
                 )
             if response.data and response.data[0].b64_json:
                 return [response.data[0].b64_json]
@@ -1907,8 +1976,8 @@ async def call_openai_image_edit_with_retry_async(
                 status="retrying",
                 message="OpenAI 图像编辑未返回数据，将继续重试",
             )
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(retry_delay)
+            if attempt < effective_max_attempts - 1:
+                await asyncio.sleep(current_retry_delay)
         except Exception as e:
             last_exception = e
             last_error_text = str(e)
@@ -1922,17 +1991,17 @@ async def call_openai_image_edit_with_retry_async(
                 model=model_name,
                 attempt=attempt + 1,
                 status="retrying",
-                message=f"OpenAI 图像编辑第 {attempt + 1}/{max_attempts} 次尝试失败，{retry_delay}s 后重试",
+                message=f"OpenAI 图像编辑第 {attempt + 1}/{effective_max_attempts} 次尝试失败，{current_retry_delay:g}s 后重试",
                 details=f"{context_msg}: {e}",
             )
             logger.warning(
                 "OpenAI 图像编辑第 %s 次尝试失败%s，%ss 后重试",
                 attempt + 1,
                 context_msg,
-                retry_delay,
+                current_retry_delay,
             )
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(retry_delay)
+            if attempt < effective_max_attempts - 1:
+                await asyncio.sleep(current_retry_delay)
         finally:
             if tmp_path:
                 try:
@@ -1940,7 +2009,7 @@ async def call_openai_image_edit_with_retry_async(
                 except OSError:
                     pass
     context_msg = f" for {error_context}" if error_context else ""
-    failure_message = f"OpenAI 图像编辑在 {max_attempts} 次尝试后仍然失败{context_msg}"
+    failure_message = f"OpenAI 图像编辑在 {effective_max_attempts} 次尝试后仍然失败{context_msg}"
     if last_error_text:
         failure_message = f"{failure_message}: {last_error_text}"
     _emit_runtime_event(

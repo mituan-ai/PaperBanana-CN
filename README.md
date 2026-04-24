@@ -84,9 +84,11 @@ PaperBanana-CN 把模型调用拆成两类：
 export PAPERBANANA_OPENAI_BASE_URL="https://api.apiyi.com/v1"
 export PAPERBANANA_OPENAI_IMAGE_MODEL="gpt-image-2"
 export PAPERBANANA_OPENAI_IMAGE_API_KEY="你的 API Key"
+export PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC=360
+export PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS=3
 ```
 
-这里只配置图像链路即可；VLM 文本链路仍可继续使用你自己的 GPT 或 Gemini 文本模型配置。
+这里只配置图像链路即可；VLM 文本链路仍可继续使用你自己的 GPT 或 Gemini 文本模型配置。`PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC` 默认就是 360 秒，用于避开 Cloudflare / 中转站在 2K、4K、高画质下的长尾误超时；`PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS` 默认限制为 3 次，避免单个任务被 5 次 360 秒请求拖住。
 
 ### 分辨率、比例与精修边界
 
@@ -103,9 +105,9 @@ export PAPERBANANA_OPENAI_IMAGE_API_KEY="你的 API Key"
 | 参数 | 对应 OpenAI 字段 | 说明 |
 | --- | --- | --- |
 | 图片质量 | `quality` | 官方参数，支持 `auto`、`low`、`medium`、`high`；API易界面的“低/中/高/自动”对应这里。 |
-| 背景 | `background` | 官方参数，支持 `opaque`、`transparent`、`auto`。 |
+| 背景 | `background` | 官方参数，支持 `opaque`、`transparent`、`auto`；`gpt-image-2` 中转站暂不支持透明背景时会自动改为 `opaque`。 |
 | 输出格式 | `output_format` | 官方参数，支持 `png`、`jpeg`、`webp`。 |
-| 输入保真度 | `input_fidelity` | OpenAI image edit 参数，支持 `high`、`low`，仅精修/改图时显示。 |
+| 输入保真度 | `input_fidelity` | OpenAI image edit 参数，支持 `high`、`low`，仅精修/改图时显示；`gpt-image-2` 会自动高保真，实际请求会省略该字段以兼容 API易。 |
 | 自定义尺寸 | `size` | 可手动输入 `3840x2160` 等；留空时由宽高比和分辨率自动换算。 |
 
 当前能力边界请特别注意：

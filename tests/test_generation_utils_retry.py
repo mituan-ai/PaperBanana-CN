@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, mock_open, patch
 
 from utils import generation_utils
 
@@ -140,6 +140,62 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, ["image-b64"])
         image_client.images.generate.assert_awaited_once()
+        self.assertEqual(image_client.images.generate.await_args.kwargs["timeout"], 360.0)
+
+    async def test_openai_image_generation_caps_retries_and_uses_exponential_backoff(self):
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(side_effect=RuntimeError("gateway timeout")),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            with patch("utils.generation_utils.asyncio.sleep", new=AsyncMock()) as sleep_mock:
+                with self.assertRaisesRegex(RuntimeError, "gateway timeout"):
+                    await generation_utils.call_openai_image_generation_with_retry_async(
+                        model_name="gpt-image-2",
+                        prompt="draw a circle",
+                        config={"size": "1024x1024", "quality": "high"},
+                        max_attempts=5,
+                        retry_delay=30,
+                    )
+
+        self.assertEqual(fake_client.images.generate.await_count, 3)
+        self.assertEqual([call.args[0] for call in sleep_mock.await_args_list], [30.0, 60.0])
+        self.assertEqual(fake_client.images.generate.await_args.kwargs["timeout"], 360.0)
+
+    async def test_openai_image_edit_filters_gpt_image_2_incompatible_fields(self):
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                edit=AsyncMock(return_value=SimpleNamespace(data=[SimpleNamespace(b64_json="edit-b64")]))
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            with patch("utils.generation_utils.open", mock_open(read_data=b"image")):
+                with patch("utils.generation_utils.tempfile.NamedTemporaryFile") as tmp_file:
+                    with patch("utils.generation_utils.os.unlink"):
+                        tmp_file.return_value.__enter__.return_value.name = "/tmp/input.png"
+                        result = await generation_utils.call_openai_image_edit_with_retry_async(
+                            model_name="gpt-image-2",
+                            image_bytes=b"image",
+                            prompt="edit it",
+                            config={
+                                "size": "2048x2048",
+                                "quality": "high",
+                                "background": "transparent",
+                                "output_format": "png",
+                                "input_fidelity": "high",
+                            },
+                            max_attempts=1,
+                            retry_delay=0,
+                        )
+
+        self.assertEqual(result, ["edit-b64"])
+        kwargs = fake_client.images.edit.await_args.kwargs
+        self.assertEqual(kwargs["timeout"], 360.0)
+        self.assertEqual(kwargs["background"], "opaque")
+        self.assertNotIn("input_fidelity", kwargs)
 
     async def test_gemini_image_generation_uses_image_client_inside_retry_stage(self):
         text_client = SimpleNamespace()

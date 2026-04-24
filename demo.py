@@ -512,6 +512,14 @@ def get_refine_request_timeout_seconds(provider: str) -> float:
             pass
     if provider == "gemini":
         return 240.0
+    if provider in {"openai", "openai_compatible"}:
+        env_val = os.getenv("PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC", "").strip()
+        if env_val:
+            try:
+                return max(float(env_val), 360.0)
+            except ValueError:
+                pass
+        return 360.0
     return 180.0
 
 
@@ -523,7 +531,17 @@ def get_refine_max_attempts(provider: str) -> int:
             return max(int(env_val), 1)
         except ValueError:
             pass
-    return 12 if provider == "gemini" else 10
+    if provider == "gemini":
+        return 12
+    if provider in {"openai", "openai_compatible"}:
+        env_val = os.getenv("PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS", "").strip()
+        if env_val:
+            try:
+                return max(int(env_val), 1)
+            except ValueError:
+                pass
+        return 3
+    return 10
 
 
 def get_refine_total_timeout_seconds(provider: str) -> float:
