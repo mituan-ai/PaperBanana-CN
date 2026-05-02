@@ -111,12 +111,16 @@ def _print_viewer_help() -> None:
     print(
         """
 Viewer 子命令：
-    paperbanana viewer evolution [args]   启动流程回放 viewer
-    paperbanana viewer eval [args]        启动参考评测 viewer
+    uv run paperbanana viewer evolution [args]   启动流程回放 viewer
+    uv run paperbanana viewer eval [args]        启动参考评测 viewer
 
 兼容别名：
-    paperbanana-cn viewer evolution [args]
-    paperbanana-cn viewer eval [args]
+    uv run paperbanana-cn viewer evolution [args]
+    uv run paperbanana-cn viewer eval [args]
+
+已全局安装后也可以省略 uv run：
+    paperbanana viewer evolution [args]
+    paperbanana viewer eval [args]
 
 别名映射：
     pipeline -> evolution
@@ -131,27 +135,30 @@ def _print_help() -> None:
 PaperBanana-CN 🍌  —  Academic Illustration Workbench
 
 主命令：
-    paperbanana
-    paperbanana gui [args]
-    paperbanana run [args]
-    paperbanana viewer evolution [args]
-    paperbanana viewer eval [args]
-    paperbanana --help
+    uv run paperbanana
+    uv run paperbanana gui [args]
+    uv run paperbanana run [args]
+    uv run paperbanana viewer evolution [args]
+    uv run paperbanana viewer eval [args]
+    uv run paperbanana --help
 
 兼容别名：
-    paperbanana-cn
+    uv run paperbanana-cn
 
 示例：
-    paperbanana
-    paperbanana gui --server.port 9000
-    paperbanana run --exp_mode dev_full --task_name diagram
-    paperbanana run --resume
-    paperbanana viewer evolution
-    paperbanana viewer eval
-    paperbanana-cn --help
+    uv run paperbanana
+    uv run paperbanana gui --server.port 9000
+    uv run paperbanana run --exp_mode dev_full --task_name diagram
+    uv run paperbanana run --resume
+    uv run paperbanana viewer evolution
+    uv run paperbanana viewer eval
+    uv run paperbanana-cn --help
 
-安装方式（当前正式支持）：
+新手推荐：
     uv sync --locked
+    uv run paperbanana
+
+可选：安装成全局命令后，可直接使用 paperbanana / paperbanana-cn：
     uv tool install --editable . --force
 
 未来路线（暂未支持）：

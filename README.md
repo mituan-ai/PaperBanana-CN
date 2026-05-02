@@ -1,266 +1,334 @@
 <p align="center">
-  <img src="assets/hero_banner.png" alt="PaperBanana-CN" width="420">
+  <img src="assets/ui_cover.png" alt="PaperBanana-CN cover" width="920">
 </p>
 
 <h1 align="center">PaperBanana-CN · 纸香蕉</h1>
 
 <p align="center">
-  <strong>科研绘图，中英文友好，模型随心接入</strong><br>
-  GPT-5.5 · GPT-Image-2 · Gemini · 主流中转站兼容 · 中文工作流优先
+  <strong>没有官方 API、只会一点 GitHub，也能用中转站跑起来的中文科研绘图工作台。</strong><br>
+  复制项目，填入第三方 Base URL 和 API Key，就能在浏览器里生成、筛选、精修论文图。
 </p>
 
 <p align="center">
-  <a href="https://github.com/917940234/PaperBanana-CN/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"></a>&nbsp;
-  <img src="https://img.shields.io/badge/Python-≥3.12-3776AB?logo=python&logoColor=white" alt="Python">&nbsp;
-  <a href="https://github.com/917940234/PaperBanana-CN/actions"><img src="https://img.shields.io/github/actions/workflow/status/917940234/PaperBanana-CN/ci.yml?label=CI&logo=github" alt="CI"></a>&nbsp;
-  <img src="https://img.shields.io/badge/GPT--5.5-ready-111827" alt="GPT-5.5 ready">&nbsp;
-  <img src="https://img.shields.io/badge/GPT--Image--2-ready-7C3AED" alt="GPT-Image-2 ready">&nbsp;
-  <img src="https://img.shields.io/badge/Gemini-gateway%20ready-4285F4" alt="Gemini gateway ready">
-  <br>
-  <a href="https://huggingface.co/datasets/dwzhu/PaperBananaBench"><img src="https://img.shields.io/badge/🤗_Dataset-PaperBananaBench-yellow" alt="Dataset"></a>&nbsp;
-  <a href="https://huggingface.co/papers/2601.23265"><img src="https://img.shields.io/badge/📄_Paper-HuggingFace-orange" alt="Paper"></a>&nbsp;
-  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
+  <a href="https://github.com/917940234/PaperBanana-CN/stargazers"><img src="https://img.shields.io/github/stars/917940234/PaperBanana-CN?style=for-the-badge&logo=github&color=ffdd55" alt="GitHub stars"></a>
+  <a href="https://github.com/917940234/PaperBanana-CN/network/members"><img src="https://img.shields.io/github/forks/917940234/PaperBanana-CN?style=for-the-badge&logo=github&color=8bd5ff" alt="GitHub forks"></a>
+  <a href="https://github.com/917940234/PaperBanana-CN/actions"><img src="https://img.shields.io/github/actions/workflow/status/917940234/PaperBanana-CN/ci.yml?style=for-the-badge&label=tests&logo=githubactions" alt="Tests"></a>
+  <a href="https://github.com/917940234/PaperBanana-CN/blob/main/LICENSE"><img src="https://img.shields.io/github/license/917940234/PaperBanana-CN?style=for-the-badge&color=7c3aed" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/uv-ready-0B7285?style=flat-square" alt="uv ready">
+  <img src="https://img.shields.io/badge/Streamlit-GUI-FF4B4B?style=flat-square&logo=streamlit&logoColor=white" alt="Streamlit GUI">
+  <img src="https://img.shields.io/badge/OpenAI--compatible-GPT%20%2B%20Image-111827?style=flat-square" alt="OpenAI compatible">
+  <img src="https://img.shields.io/badge/Gemini-compatible-4285F4?style=flat-square" alt="Gemini compatible">
+  <img src="https://img.shields.io/badge/Chinese%20workflow-first-D7263D?style=flat-square" alt="Chinese workflow first">
+</p>
+
+<p align="center">
+  <a href="https://huggingface.co/papers/2601.23265"><img src="https://img.shields.io/badge/Paper-HuggingFace-orange?style=flat-square" alt="Paper"></a>
+  <a href="https://huggingface.co/datasets/dwzhu/PaperBananaBench"><img src="https://img.shields.io/badge/Dataset-PaperBananaBench-yellow?style=flat-square" alt="PaperBananaBench"></a>
+  <a href="https://github.com/dwzhu-pku/PaperBanana"><img src="https://img.shields.io/badge/Upstream-PaperBanana-lightgrey?style=flat-square" alt="Upstream PaperBanana"></a>
 </p>
 
 ---
 
-## 这是什么？
+## 一句话
 
-**PaperBanana-CN** 是面向中文与英文科研写作场景的学术绘图工作台。它继承 PaperBanana 的多 Agent 学术图解生成思路，同时重做了本地 GUI、后台任务、批量导出、历史回放和模型接入体验。
+PaperBanana-CN 是给中文科研用户用的论文图生成工具。它把“理解论文的 VLM 文本模型”和“真正出图的文生图模型”拆开配置，所以你没有 OpenAI / Gemini 官方 API，也可以用第三方中转站、自建 gateway 或不同平台的 Key 跑起来。
 
-本仓库最核心的目标很直接：
+你只需要会三件事：从 GitHub 下载项目、在终端复制命令、在网页里填 API Key 和 Base URL。
 
-> 让 PaperBanana 更适合中文科研用户，也更适合今天常见的 GPT / Gemini / 中转站平台使用方式。
+## 它解决什么痛点
 
-你可以把 **VLM 文本规划** 和 **文生图生成** 分成两条独立链路：文本可以走 GPT-5.5，图像可以走 GPT-Image-2；也可以文本走 Gemini、图像走 Gemini；还可以混合使用不同中转站的 Base URL、API Key 和模型名。
-
----
-
-## 核心亮点
-
-| 能力 | 说明 |
+| 新手真实痛点 | PaperBanana-CN 怎么帮你 |
 | --- | --- |
-| **中英文科研绘图友好** | 中文界面、中文提示词输入、英文论文内容也能直接处理，适合国内科研工作流。 |
-| **GPT-5.5 / GPT-Image-2 适配** | 内置 GPT 文本模型与 OpenAI 图像模型配置入口，支持 OpenAI-compatible 中转站。 |
-| **Gemini 图文链路适配** | 支持 Gemini VLM 与 Gemini 图像模型，兼容 Gemini-compatible 网关地址。 |
-| **VLM 与文生图彻底解耦** | 两块设置：`VLM 文本` 和 `文生图`。每块都可单独选择 GPT 或 Gemini。 |
-| **分辨率与比例真实传参** | Gemini 使用 `image_config`，GPT-Image-2 自动把 UI 中的分辨率/宽高比转换为 OpenAI `size`。 |
-| **OpenAI 图像生成与精修** | GPT 图像链路支持 `images.generate` 和 `images.edit`，可配置质量、背景、格式、输入保真度等官方参数。 |
-| **主流中转站平台友好** | 每条链路独立填写 API Key、Base URL、模型名，适配常见聚合平台、反代平台和自建 gateway。 |
-| **多候选后台生成** | Streamlit 前端不阻塞，支持并发生成、实时事件流、候选收藏/淘汰/最终选择。 |
-| **全流程导出与回放** | Bundle/ZIP 保存候选图、阶段描述、评审建议、绘图代码和原始 JSON。 |
-| **Plot 与 Diagram 双模式** | 支持论文示意图生成，也支持统计图表代码生成与本地重渲染。 |
+| 官方 API 申请麻烦、贵、或者访问不稳定 | 支持 OpenAI-compatible 和 Gemini-compatible 中转站，只要平台给你 Base URL 和 API Key。 |
+| 文本模型和生图模型不是同一个平台 | GUI 里有两块：**VLM 文本** 和 **文生图**，各填各的 Key、URL、模型名。 |
+| 不想学一堆 YAML 配置 | 首次使用直接在网页左侧填，不需要手写配置文件。 |
+| 怕一上来花很多钱 | 首次试跑可以用 `候选数=1`、`检索=none`、`最大评审轮次=0`。 |
+| 不知道论文图该怎么改 | 生成多个候选后，可以收藏、淘汰、选最终图，再送去精修。 |
+| 想做实验结果图，不只是文生图 | `plot` 任务会偏向生成 Matplotlib 代码并本地渲染。 |
 
----
+## 三步启动
 
-## 模型与中转站配置
-
-PaperBanana-CN 把模型调用拆成两类：
-
-1. **VLM 文本**：用于规划、检索判断、图解描述、评审建议。
-2. **文生图**：用于真正生成 diagram 图像。
-
-每一类都可以选择 GPT 或 Gemini，并分别配置：
-
-- API Key
-- Base URL
-- 模型名称
-
-推荐使用环境变量或 `configs/local/*.txt` 保存密钥，不要把真实 key 写进 Git。
-
-| 链路 | GPT / OpenAI-compatible | Gemini-compatible |
-| --- | --- | --- |
-| VLM API Key | `PAPERBANANA_OPENAI_VLM_API_KEY` | `PAPERBANANA_GEMINI_VLM_API_KEY` |
-| 文生图 API Key | `PAPERBANANA_OPENAI_IMAGE_API_KEY` | `PAPERBANANA_GEMINI_IMAGE_API_KEY` |
-| Base URL | `PAPERBANANA_OPENAI_BASE_URL`，通常形如 `https://xxx/v1` | `PAPERBANANA_GEMINI_BASE_URL`，通常形如 `https://xxx` |
-| VLM 模型 | `PAPERBANANA_OPENAI_VLM_MODEL`，例如 `gpt-5.5` | `PAPERBANANA_GEMINI_VLM_MODEL` |
-| 文生图模型 | `PAPERBANANA_OPENAI_IMAGE_MODEL`，例如 `gpt-image-2` | `PAPERBANANA_GEMINI_IMAGE_MODEL` |
-
-> OpenAI-compatible SDK 会在 `base_url` 后追加 `/images/generations`，因此 OpenAI 中转站一般要填写带 `/v1` 的 Base URL，例如 `https://api.example.com/v1`。
-
-例如 API易 的 GPT-Image-2 图像链路可以配置为：
-
-```bash
-export PAPERBANANA_OPENAI_BASE_URL="https://api.apiyi.com/v1"
-export PAPERBANANA_OPENAI_IMAGE_MODEL="gpt-image-2"
-export PAPERBANANA_OPENAI_IMAGE_API_KEY="你的 API Key"
-export PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC=360
-export PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS=3
-```
-
-这里只配置图像链路即可；VLM 文本链路仍可继续使用你自己的 GPT 或 Gemini 文本模型配置。`PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC` 默认就是 360 秒，用于避开 Cloudflare / 中转站在 2K、4K、高画质下的长尾误超时；`PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS` 默认限制为 3 次，避免单个任务被 5 次 360 秒请求拖住。
-
-### 分辨率、比例与精修边界
-
-生成候选方案时，GUI 的“宽高比”和“图像分辨率”会按当前 **文生图 Provider** 转成真实 API 参数：
-
-| 文生图 Provider | 参数策略 | 示例 |
-| --- | --- | --- |
-| GPT / OpenAI-compatible | 转成 OpenAI Images `size` | `16:9 + 4K → 3840x2160`，`9:16 + 4K → 2160x3840`，`1:1 + 2K → 2048x2048` |
-| Gemini-compatible | 写入 Gemini `image_config.aspect_ratio` 与 `image_config.image_size` | `16:9 + 4K → aspect_ratio=16:9, image_size=4K` |
-| OpenRouter / Evolink | 透传为对应 provider 的图像配置字段 | `aspect_ratio`、`image_size` 或 `quality` |
-
-当文生图或精修图像选择 GPT / OpenAI-compatible 时，GUI 会额外显示 OpenAI 图像参数：
-
-| 参数 | 对应 OpenAI 字段 | 说明 |
-| --- | --- | --- |
-| 图片质量 | `quality` | 官方参数，支持 `auto`、`low`、`medium`、`high`；API易界面的“低/中/高/自动”对应这里。 |
-| 背景 | `background` | 官方参数，支持 `opaque`、`transparent`、`auto`；`gpt-image-2` 中转站暂不支持透明背景时会自动改为 `opaque`。 |
-| 输出格式 | `output_format` | 官方参数，支持 `png`、`jpeg`、`webp`。 |
-| 输入保真度 | `input_fidelity` | OpenAI image edit 参数，支持 `high`、`low`，仅精修/改图时显示；`gpt-image-2` 会自动高保真，实际请求会省略该字段以兼容 API易。 |
-| 自定义尺寸 | `size` | 可手动输入 `3840x2160` 等；留空时由宽高比和分辨率自动换算。 |
-
-当前能力边界请特别注意：
-
-- **GPT / OpenAI-compatible 文生图生成**：已支持，用于生成候选方案，包含 GPT-Image-2 尺寸转换。
-- **GPT / OpenAI-compatible 图像精修**：已支持，走 OpenAI-compatible `images.edits`，并复用同一套 `size`、`quality`、`background`、`output_format` 与 `input_fidelity` 参数。
-- **Gemini 图像精修**：已支持，上传图像后走 Gemini 图像模型并传入比例/分辨率配置。
-- **Evolink 图像精修**：保留支持路径。
-
----
-
-## 快速开始
+适合只懂一点 GitHub 的用户：
 
 ```bash
 git clone https://github.com/917940234/PaperBanana-CN.git
 cd PaperBanana-CN
-uv python install 3.12
 uv sync --locked
-uv tool install --editable . --force
+uv run paperbanana
 ```
 
-未来发布到 PyPI 后，也会支持：`uv tool install paperbanana-cn`。
-
-启动 GUI：
-
-```bash
-paperbanana gui
-```
-
-或者直接：
-
-```bash
-paperbanana
-```
-
-如果只想本地运行而不安装命令：
-
-```bash
-uv run streamlit run demo.py
-```
-
----
-
-## 典型使用方式
-
-### 1. 生成学术图解
-
-输入论文方法段落、图注或可视化意图，选择候选数，启动后台任务。系统会自动完成：
+浏览器打开：
 
 ```text
-检索参考 → 规划图解 → 首轮出图 → 评审 → 修正出图 → 导出结果
+http://localhost:8501
 ```
 
-适合生成方法框架图、流程图、机制图、系统图和论文级 graphical abstract 草图。
-
-### 2. 生成统计图表
-
-选择 `plot` 任务后，系统会更偏向生成 Matplotlib 代码，并在本地执行渲染。适合把实验数据、CSV、表格或绘图意图转成论文图。
-
-### 3. 图像精修
-
-在精修工作台中上传已有候选图或外部图片，输入修改要求，生成多个精修版本，并保留版本链。
-
----
-
-## GUI 工作台
-
-| 工作区 | 作用 |
-| --- | --- |
-| **生成候选方案** | 多候选并发生成，实时展示状态、事件、候选图和阶段描述。 |
-| **候选决策工作台** | 收藏、淘汰、设为最终候选，并按筛选范围批量导出。 |
-| **历史运行回放** | 读取历史 bundle，恢复完整运行过程和结果。 |
-| **精修图像** | 多版本图像重绘，支持从任意历史版本继续修改。 |
-
----
-
-## CLI 与 Viewer
-
-批处理运行：
+如果没有安装 `uv`，先装一次：
 
 ```bash
-paperbanana run --task_name diagram --exp_mode demo_planner_critic --provider gemini
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Windows 用户可以在 PowerShell 安装 `uv` 后进入项目目录运行同样命令。如果 `uv run paperbanana` 异常，用备用方式：
+
+```bash
+uv run python -m streamlit run demo.py
+```
+
+## 第一次怎么填
+
+打开 GUI 后，不要被所有高级选项吓到。第一次只看左侧这两块：
+
+<p align="center">
+  <img src="assets/readme/gui-provider-split.png" alt="VLM and image provider split settings" width="360">
+</p>
+
+| GUI 区域 | 它负责什么 | 新手该填什么 |
+| --- | --- | --- |
+| **VLM 文本** | 理解论文、规划图、评审候选图 | 文本模型的 API Key、Base URL、模型名 |
+| **文生图** | 真正生成图像，或对已有图继续精修 | 生图模型的 API Key、Base URL、模型名 |
+
+最简单的首次试跑：
+
+1. 生成任务选 `学术图解`。
+2. 候选方案数量设为 `1`。
+3. 参考样例策略选 `none` 或 `智能检索（轻量）`。
+4. 最大评审轮次设为 `0` 或 `1`。
+5. VLM 文本和文生图都先填你同一个中转站提供的 URL、Key 和模型名。
+6. 能跑通后，再增加候选数、检索和评审轮次。
+
+常见填写方式：
+
+```text
+VLM 文本:
+  Provider: GPT
+  Base URL: https://你的中转站/v1
+  API Key: 你的文本模型 key
+  模型名: gpt-5.5 或平台给你的模型名
+
+文生图:
+  Provider: GPT
+  Base URL: https://你的中转站/v1
+  API Key: 你的生图模型 key
+  模型名: gpt-image-2 或平台给你的模型名
+```
+
+也可以混用：
+
+```text
+VLM 文本: GPT + 中转站 A
+文生图: Gemini + 中转站 B
+```
+
+这就是本项目对国内用户最友好的地方：两条链路不用绑死在同一个官方平台。
+
+## 界面长什么样
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/readme/gui-generate-workbench.png" alt="Generate workbench"></td>
+    <td width="50%"><img src="assets/readme/02-prelaunch-check.png" alt="Prelaunch check"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>生成工作台</strong><br>右侧粘贴方法段和图注，左侧控制候选数、检索、宽高比、模型链路。</td>
+    <td align="center"><strong>启动前检查</strong><br>真正调用模型前先检查 Key、模型名、检索策略和输出目录。</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/readme/gui-refine-workbench.png" alt="Refine workbench"></td>
+    <td width="50%"><img src="assets/readme/03-candidate-results.png" alt="Candidate decision workbench"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>精修图像</strong><br>选中候选图或上传图片后继续改图，仍然支持中转站和分离模型。</td>
+    <td align="center"><strong>候选决策</strong><br>收藏、淘汰、设为最终候选，并把结果打包导出。</td>
+  </tr>
+</table>
+
+## 你可以用它做什么
+
+| 任务 | 适合场景 |
+| --- | --- |
+| 学术图解 | 方法框架图、流程图、机制图、系统图、graphical abstract 草图。 |
+| 统计图表 | 把 CSV、实验数据或绘图意图转成 Matplotlib 图。 |
+| 多候选生成 | 一次生成多个版本，横向比较后选最终图。 |
+| 图像精修 | 对已有候选图继续改图、放大、统一风格。 |
+| 历史回放 | 查看每次运行的阶段输出、评审建议和最终结果。 |
+| ZIP 导出 | 打包候选图、JSON、阶段描述、绘图代码和全流程记录。 |
+
+## 模型链路
+
+```mermaid
+flowchart LR
+    A[方法段 / Figure Caption / 绘图目标] --> B[VLM 文本链路]
+    B --> C[检索判断 / 图解规划 / 风格描述 / Critic 评审]
+    C --> D[文生图链路]
+    D --> E[候选图像]
+    E --> F[筛选 / 精修 / ZIP 导出]
+
+    B -. 可选 .-> G[GPT / OpenAI-compatible]
+    B -. 可选 .-> H[Gemini-compatible]
+    D -. 可选 .-> I[GPT-Image / OpenAI-compatible Images]
+    D -. 可选 .-> J[Gemini Image]
+```
+
+推荐组合：
+
+| 场景 | VLM 文本 | 文生图 |
+| --- | --- | --- |
+| 一个中转站同时提供文本和生图 | GPT / OpenAI-compatible | GPT / OpenAI-compatible |
+| 文本想用 GPT，出图想用 Gemini | GPT / OpenAI-compatible | Gemini-compatible |
+| 只有 Gemini 网关 | Gemini-compatible | Gemini-compatible |
+| 先省钱试跑 | 任意可用文本模型 | 候选数设低，检索和评审先关小 |
+
+## 环境变量配置
+
+GUI 足够新手使用。长期使用时，也可以把配置写进环境变量：
+
+```bash
+# GPT / OpenAI-compatible 文本链路
+export PAPERBANANA_OPENAI_BASE_URL="https://your-openai-compatible-gateway/v1"
+export PAPERBANANA_OPENAI_VLM_API_KEY="sk-..."
+export PAPERBANANA_OPENAI_VLM_MODEL="gpt-5.5"
+
+# GPT / OpenAI-compatible 图像链路
+export PAPERBANANA_OPENAI_IMAGE_API_KEY="sk-..."
+export PAPERBANANA_OPENAI_IMAGE_MODEL="gpt-image-2"
+export PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC=360
+export PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS=3
+```
+
+```bash
+# Gemini-compatible 文本与图像链路
+export PAPERBANANA_GEMINI_BASE_URL="https://your-gemini-compatible-gateway"
+export PAPERBANANA_GEMINI_VLM_API_KEY="your-key"
+export PAPERBANANA_GEMINI_IMAGE_API_KEY="your-image-key"
+export PAPERBANANA_GEMINI_VLM_MODEL="gemini-3.1-flash-lite-preview"
+export PAPERBANANA_GEMINI_IMAGE_MODEL="gemini-3.1-flash-image-preview"
+```
+
+也可以把密钥放到本地文件，避免写进 Git：
+
+```text
+configs/local/openai_vlm_api_key.txt
+configs/local/openai_image_api_key.txt
+configs/local/gemini_vlm_api_key.txt
+configs/local/gemini_image_api_key.txt
+```
+
+这些路径已被 `.gitignore` 忽略。
+
+## 参数怎么传
+
+| Provider | 宽高比/分辨率如何传参 | 示例 |
+| --- | --- | --- |
+| GPT / OpenAI-compatible | 自动换算为 OpenAI Images `size` | `16:9 + 4K -> 3840x2160`，`9:16 + 4K -> 2160x3840` |
+| Gemini-compatible | 写入 Gemini `image_config.aspect_ratio` 与 `image_config.image_size` | `16:9 + 4K -> aspect_ratio=16:9, image_size=4K` |
+| Plot 任务 | 不调用文生图模型，生成 Matplotlib 代码后本地渲染 | 适合统计图、折线图、柱状图、消融图 |
+
+当文生图选择 GPT / OpenAI-compatible 时，GUI 会显示 OpenAI 图像参数，例如 `quality`、`background`、`output_format`、`size`、`input_fidelity`。新手可以先保持默认，能跑通后再调。
+
+## CLI 用法
+
+多数用户先用 GUI。需要批处理时再用 CLI：
+
+```bash
+uv run paperbanana run \
+  --task_name diagram \
+  --exp_mode demo_planner_critic \
+  --provider gemini \
+  --retrieval_setting none
 ```
 
 查看流程演化：
 
 ```bash
-paperbanana viewer evolution
+uv run paperbanana viewer evolution
 ```
 
 查看参考评测：
 
 ```bash
-paperbanana viewer eval
+uv run paperbanana viewer eval
 ```
 
-可用命令：
+查看全部命令：
 
 ```bash
-paperbanana-cn --help
+uv run paperbanana --help
 ```
-
----
 
 ## 数据集
 
-推荐下载 [`dwzhu/PaperBananaBench`](https://huggingface.co/datasets/dwzhu/PaperBananaBench) 并放到：
+基础 GUI 可以不下载数据集直接试用。若需要参考样例检索、few-shot 质量提升或复现实验，推荐下载 PaperBananaBench：
 
 ```text
 data/PaperBananaBench/
+├── diagram/
+│   ├── ref.json
+│   ├── test.json
+│   └── images/
+└── plot/
+    ├── ref.json
+    ├── test.json
+    └── images/
 ```
 
-它用于 few-shot 检索、参考样例和基准评测。若只想快速试用，可以在 GUI 中把检索设置为 `none`。
-
----
+数据集地址：[`dwzhu/PaperBananaBench`](https://huggingface.co/datasets/dwzhu/PaperBananaBench)
 
 ## 项目结构
 
 ```text
 PaperBanana-CN/
-├── agents/          # 多 Agent 阶段实现
-├── configs/         # 模型、中转站与本地密钥配置
-├── prompts/         # 任务提示词
-├── providers/       # Provider 接入层
-├── utils/           # 运行时、配置、导出、图像处理工具
-├── visualize/       # Streamlit Viewer
-├── demo.py          # 主 GUI
-├── main.py          # 批处理 CLI
-├── cli.py           # paperbanana 命令入口
-└── pyproject.toml   # Python 项目元数据
+├── agents/                # Retriever / Planner / Stylist / Visualizer / Critic / Polish
+├── configs/               # 模型配置、Provider 注册、本地密钥目录
+├── prompts/               # 图解与图表任务提示词
+├── providers/             # Provider 接入层
+├── utils/                 # 配置、运行时、导出、图像处理、checkpoint
+├── visualize/             # 历史回放与参考评测 viewer
+├── assets/readme/         # README 截图
+├── demo.py                # Streamlit GUI
+├── main.py                # 批处理入口
+├── cli.py                 # paperbanana / paperbanana-cn 命令入口
+└── pyproject.toml         # Python 包元数据
 ```
 
----
+## Star History
+
+如果这个项目帮你省下了调图和接 API 的时间，欢迎点一个 Star。开源项目传播主要靠早期使用者把真实体验传出去。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=917940234/PaperBanana-CN&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=917940234/PaperBanana-CN&type=Date" />
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=917940234/PaperBanana-CN&type=Date" />
+</picture>
+
+<p align="center">
+  <a href="https://github.com/917940234/PaperBanana-CN">
+    <img src="https://github-readme-stats.vercel.app/api/pin/?username=917940234&repo=PaperBanana-CN&theme=transparent&show_owner=true" alt="PaperBanana-CN repo card">
+  </a>
+</p>
+
+## Roadmap
+
+- 更完整的中文示例库与 prompt 模板。
+- 更多国内中转站的预设说明。
+- 更稳的批量任务恢复与失败重试报告。
+- 适合论文投稿的图像导出命名规范。
+- 面向真实工业图片和截图素材的多图组合工作流。
 
 ## 与原项目的关系
 
-PaperBanana-CN 不是从零开始的新方法，而是建立在 PaperBanana 生态上的中文增强与网关适配版本：
+PaperBanana-CN 建立在 PaperBanana 生态之上，主要做中文化体验、模型网关适配和工程化增强。
 
-- **原始项目**：[`dwzhu-pku/PaperBanana`](https://github.com/dwzhu-pku/PaperBanana) 提出了多 Agent 自动学术插图生成流程。
-- **原始论文**：[*PaperBanana: Automating Academic Illustration for AI Scientists*](https://huggingface.co/papers/2601.23265) 是方法和数据集来源。
-- **中文化参考**：[`Mylszd/PaperBanana-CN`](https://github.com/Mylszd/PaperBanana-CN) 提供了中文界面与国内使用体验方向的参考。
-- **本仓库贡献**：重构前端配置体验，增强 GPT/Gemini 中转站兼容，解耦 VLM 与文生图链路，支持 GPT-5.5、GPT-Image-2、Gemini 图文模型，并补充后台任务、导出回放、测试覆盖与错误隔离。
+- 原始项目：[`dwzhu-pku/PaperBanana`](https://github.com/dwzhu-pku/PaperBanana)
+- 原始论文：[*PaperBanana: Automating Academic Illustration for AI Scientists*](https://huggingface.co/papers/2601.23265)
+- 数据集：[`dwzhu/PaperBananaBench`](https://huggingface.co/datasets/dwzhu/PaperBananaBench)
 
----
+如果你的工作使用了 PaperBanana 方法或 PaperBananaBench，请优先引用原始论文与数据集。本仓库主要提供中文友好界面、模型网关适配、VLM/文生图分离配置、后台任务、导出回放和精修工作流。
 
-## 开源与使用限制
+## License
 
-本仓库代码以 Apache-2.0 许可证发布。
-
-请注意：PaperBanana 的核心多 Agent 学术绘图工作流由原作者在 Google 实习期间研发，相关工作流据原项目说明已涉及 Google 专利申请。请在商业用途前自行核查原项目说明、论文页面、许可证和专利限制。
-
----
-
-## Citation
-
-如果你的工作使用了 PaperBanana 方法或 PaperBananaBench，请优先引用原始 PaperBanana 论文与数据集。本仓库主要提供中文友好界面、模型网关适配和工程化增强。
+本仓库代码以 Apache-2.0 许可证发布。请在商业用途前自行核查原项目说明、论文页面、许可证和相关专利/使用限制。
