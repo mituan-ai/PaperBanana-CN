@@ -41,8 +41,8 @@ paperbanana-cn = "cli:main"
 paperbanana = "cli:main"
 
 [project.urls]
-Homepage = "https://github.com/917940234/PaperBanana-CN"
-Repository = "https://github.com/917940234/PaperBanana-CN"
+Homepage = "https://github.com/mituan-ai/PaperBanana-CN"
+Repository = "https://github.com/mituan-ai/PaperBanana-CN"
 
 [tool.hatch.build.targets.wheel]
 only-include = [

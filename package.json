@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/917940234/PaperBanana-CN.git"
+    "url": "git+https://github.com/mituan-ai/PaperBanana-CN.git"
   },
   "keywords": [
     "paperbanana",
@@ -26,7 +26,7 @@
   "license": "Apache-2.0",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/917940234/PaperBanana-CN/issues"
+    "url": "https://github.com/mituan-ai/PaperBanana-CN/issues"
   },
-  "homepage": "https://github.com/917940234/PaperBanana-CN#readme"
+  "homepage": "https://github.com/mituan-ai/PaperBanana-CN#readme"
 }

@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/917940234/PaperBanana-CN/stargazers"><img src="https://img.shields.io/github/stars/917940234/PaperBanana-CN?style=flat-square&logo=github&color=FACC15" alt="GitHub stars"></a>
-  <a href="https://github.com/917940234/PaperBanana-CN/blob/main/LICENSE"><img src="https://img.shields.io/github/license/917940234/PaperBanana-CN?style=flat-square&color=2563EB" alt="License"></a>
+  <a href="https://github.com/mituan-ai/PaperBanana-CN/stargazers"><img src="https://img.shields.io/github/stars/mituan-ai/PaperBanana-CN?style=flat-square&logo=github&color=FACC15" alt="GitHub stars"></a>
+  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/main/LICENSE"><img src="https://img.shields.io/github/license/mituan-ai/PaperBanana-CN?style=flat-square&color=2563EB" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/GUI-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white" alt="Streamlit GUI">
   <img src="https://img.shields.io/badge/API-OpenAI--compatible-111827?style=flat-square" alt="OpenAI compatible API">
@@ -54,7 +54,7 @@ PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBa
 
 如果只熟悉 GitHub 的基础操作，可以使用下载压缩包的方式。
 
-1. 打开仓库页面：<https://github.com/917940234/PaperBanana-CN>
+1. 打开仓库页面：<https://github.com/mituan-ai/PaperBanana-CN>
 2. 点击绿色 `Code` 按钮。
 3. 选择 `Download ZIP`。
 4. 解压后进入项目目录，目录名通常类似 `PaperBanana-CN-main`。
@@ -64,7 +64,7 @@ PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBa
 如果已经安装 Git，推荐使用克隆方式，后续更新更方便：
 
 ```bash
-git clone https://github.com/917940234/PaperBanana-CN.git
+git clone https://github.com/mituan-ai/PaperBanana-CN.git
 cd PaperBanana-CN
 ```
 
@@ -365,7 +365,7 @@ PaperBananaPro 是在原始 PaperBanana 基础上的增强版本之一，提供�
 LINUX DO - The New Ideal Community
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=917940234/PaperBanana-CN&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=917940234/PaperBanana-CN&type=Date" />
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=917940234/PaperBanana-CN&type=Date" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=mituan-ai/PaperBanana-CN&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=mituan-ai/PaperBanana-CN&type=Date" />
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=mituan-ai/PaperBanana-CN&type=Date" />
 </picture>
