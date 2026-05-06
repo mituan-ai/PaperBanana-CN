@@ -20,6 +20,7 @@ from utils.config_loader import (
     load_model_config,
     load_provider_defaults,
 )
+from utils.image_generation_options import normalize_image_generation_options
 
 
 DEFAULT_PROVIDER_REGISTRY_VERSION = 1
@@ -1091,15 +1092,18 @@ async def probe_image(connection: ProviderConnection) -> ProbeResult:
                     error_context="provider_probe[image]",
                 )
             else:
+                probe_options = normalize_image_generation_options(
+                    provider_type=connection.provider_type,
+                    model_name=tested_model,
+                    aspect_ratio="1:1",
+                    image_resolution="1K",
+                ).to_dict()
+                probe_options["responses_model"] = connection.text_model
                 await generation_utils.call_openai_image_generation_with_retry_async(
                     model_name=tested_model,
                     prompt="A simple blue circle icon on white background.",
-                    config={
-                        "size": "1024x1024",
-                        "quality": "low",
-                        "background": "opaque",
-                        "output_format": "png",
-                    },
+                    config=probe_options,
+                    provider_type=connection.provider_type,
                     max_attempts=1,
                     retry_delay=0,
                     error_context="provider_probe[image]",

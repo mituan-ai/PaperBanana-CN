@@ -33,9 +33,9 @@ gemini:
   image_api_key: ""
 
 openai:
-  base_url: ""
-  vlm_model: ""
-  image_model: ""
+  base_url: "https://api.openai.com/v1"
+  vlm_model: "gpt-5.4-mini"
+  image_model: "gpt-image-2"
   vlm_api_key: ""
   image_api_key: ""
   

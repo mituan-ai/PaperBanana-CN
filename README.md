@@ -35,6 +35,19 @@ PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBa
 
 本项目尤其关注一个常见使用场景：用户没有官方 OpenAI 或 Gemini API，但可以使用第三方兼容服务、自建网关或学校/团队提供的统一接口。PaperBanana-CN 允许分别配置用于理解论文内容的 VLM 文本模型，以及用于生成或精修图像的图像模型，因此不要求所有能力来自同一个平台。
 
+| | 特性 | 说明 |
+|---|---|---|
+| 🚀 | **流式高并发生成** | 后台异步作业队列 + 实时事件时间线，支持 40+ 候选并发，界面永不卡死 |
+| 📦 | **Bundle 便携式交付** | 独创 `Bundle v1` 架构，一个 `.bundle.json` 还原完整图文时间线和评审记录 |
+| 🛡️ | **智能容灾重试** | Pro 到 Flash 模型梯队平滑降级，确定性任务状态，增强长任务稳定性 |
+| 🎨 | **2K/4K 精修工作台** | 独立精修闭环，支持并发多版本重绘、树状演化链和版本回退 |
+| 🇨🇳 | **全中文产品界面** | 从输入到输出全中文，侧边栏参数人性化，即开即用 |
+| 🔧 | **注册制流水线** | Pipeline Registry 驱动，告别硬编码分支，一行配置扩展新流程 |
+| 📊 | **Plot 全链路** | 数据输入解析 → 代码生成 → 本地重渲染 → 精修，统计图端到端闭环 |
+| ⚡ | **`uv` 一键启动** | 使用锁定依赖启动本地 GUI，减少环境差异 |
+| 🔌 | **自定义模型供应商** | 支持 OpenAI-compatible / Gemini-compatible 接口，可填写 Base URL 接入第三方或自建服务 |
+| 🖼️ | **OpenAI GPT Image 2 适配** | 支持 OpenAI Images API、Responses API 兜底、参考图编辑、流式图像事件和自定义尺寸 |
+
 > [!NOTE]
 > 这里的“中转站”指提供 OpenAI-compatible 或 Gemini-compatible API 的第三方兼容服务。具体模型名、Base URL 格式、额度和稳定性由服务方决定，建议先用低候选数完成连通性验证。
 
@@ -112,6 +125,7 @@ http://localhost:8501
 
 ```bash
 uv run python -m streamlit run demo.py
+uv run python main.py --help
 ```
 
 > [!TIP]

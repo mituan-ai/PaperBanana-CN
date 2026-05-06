@@ -1,8 +1,13 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, mock_open, patch
+from unittest.mock import AsyncMock, patch
 
 from utils import generation_utils
+from utils.image_generation_options import (
+    get_image_model_capabilities,
+    is_valid_custom_image_size,
+    normalize_image_generation_options,
+)
 
 
 class GeminiRetryPolicyTest(unittest.TestCase):
@@ -68,6 +73,57 @@ class GeminiRetryPolicyTest(unittest.TestCase):
 
 
 class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
+    def test_gpt_image_2_4k_square_maps_to_custom_2880(self):
+        options = normalize_image_generation_options(
+            provider_type="openai",
+            model_name="gpt-image-2",
+            aspect_ratio="1:1",
+            image_resolution="4K",
+        )
+
+        self.assertEqual(options.size, "2880x2880")
+
+    def test_gpt_image_2_accepts_custom_size_for_ui(self):
+        capabilities = get_image_model_capabilities("openai", "gpt-image-2")
+
+        self.assertTrue(is_valid_custom_image_size("2304x1024", capabilities))
+        self.assertFalse(is_valid_custom_image_size("2305x1024", capabilities))
+
+    async def test_openai_compatible_unknown_model_uses_conservative_params(self):
+        fake_response = SimpleNamespace(data=[SimpleNamespace(b64_json="fake-image-b64")])
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(return_value=fake_response),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            result = await generation_utils.call_openai_image_generation_with_retry_async(
+                model_name="gateway-image-model",
+                prompt="draw a circle",
+                config={
+                    "size": "2304x1024",
+                    "quality": "high",
+                    "background": "opaque",
+                    "output_format": "jpeg",
+                    "moderation": "low",
+                    "stream": True,
+                    "partial_images": 2,
+                },
+                provider_type="openai_compatible",
+                max_attempts=1,
+                retry_delay=0,
+            )
+
+        self.assertEqual(result, ["fake-image-b64"])
+        sent = fake_client.images.generate.call_args.kwargs
+        self.assertEqual(sent["size"], "auto")
+        self.assertEqual(sent["quality"], "high")
+        self.assertNotIn("background", sent)
+        self.assertNotIn("output_format", sent)
+        self.assertNotIn("moderation", sent)
+        self.assertNotIn("stream", sent)
+
     async def test_text_retry_exhaustion_raises_instead_of_returning_error_string(self):
         fake_client = SimpleNamespace(
             chat=SimpleNamespace(
@@ -164,7 +220,40 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.args[0] for call in sleep_mock.await_args_list], [30.0, 60.0])
         self.assertEqual(fake_client.images.generate.await_args.kwargs["timeout"], 360.0)
 
-    async def test_openai_image_edit_filters_gpt_image_2_incompatible_fields(self):
+    async def test_gpt_image_2_generate_sanitizes_transparent_and_png_compression(self):
+        fake_response = SimpleNamespace(data=[SimpleNamespace(b64_json="fake-image-b64")])
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(return_value=fake_response),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            result = await generation_utils.call_openai_image_generation_with_retry_async(
+                model_name="gpt-image-2",
+                prompt="draw a circle",
+                config={
+                    "aspect_ratio": "16:9",
+                    "image_resolution": "4K",
+                    "background": "transparent",
+                    "output_format": "png",
+                    "output_compression": 50,
+                    "input_fidelity": "high",
+                },
+                max_attempts=1,
+                retry_delay=0,
+            )
+
+        self.assertEqual(result, ["fake-image-b64"])
+        sent = fake_client.images.generate.call_args.kwargs
+        self.assertEqual(sent["model"], "gpt-image-2")
+        self.assertEqual(sent["size"], "3840x2160")
+        self.assertEqual(sent["background"], "auto")
+        self.assertEqual(sent["output_format"], "png")
+        self.assertNotIn("output_compression", sent)
+        self.assertNotIn("input_fidelity", sent)
+
+    async def test_openai_image_edit_wrapper_filters_gpt_image_2_incompatible_fields(self):
         fake_client = SimpleNamespace(
             images=SimpleNamespace(
                 edit=AsyncMock(return_value=SimpleNamespace(data=[SimpleNamespace(b64_json="edit-b64")]))
@@ -172,30 +261,310 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
-            with patch("utils.generation_utils.open", mock_open(read_data=b"image")):
-                with patch("utils.generation_utils.tempfile.NamedTemporaryFile") as tmp_file:
-                    with patch("utils.generation_utils.os.unlink"):
-                        tmp_file.return_value.__enter__.return_value.name = "/tmp/input.png"
-                        result = await generation_utils.call_openai_image_edit_with_retry_async(
-                            model_name="gpt-image-2",
-                            image_bytes=b"image",
-                            prompt="edit it",
-                            config={
-                                "size": "2048x2048",
-                                "quality": "high",
-                                "background": "transparent",
-                                "output_format": "png",
-                                "input_fidelity": "high",
-                            },
-                            max_attempts=1,
-                            retry_delay=0,
-                        )
+            result = await generation_utils.call_openai_image_edit_with_retry_async(
+                model_name="gpt-image-2",
+                image_bytes=b"image",
+                prompt="edit it",
+                config={
+                    "size": "2048x2048",
+                    "quality": "high",
+                    "background": "transparent",
+                    "output_format": "png",
+                    "input_fidelity": "high",
+                },
+                max_attempts=1,
+                retry_delay=0,
+            )
 
         self.assertEqual(result, ["edit-b64"])
         kwargs = fake_client.images.edit.await_args.kwargs
         self.assertEqual(kwargs["timeout"], 360.0)
-        self.assertEqual(kwargs["background"], "opaque")
+        self.assertEqual(kwargs["background"], "auto")
         self.assertNotIn("input_fidelity", kwargs)
+
+    async def test_gpt_image_2_edit_uses_images_edit_for_reference_image(self):
+        fake_response = SimpleNamespace(data=[SimpleNamespace(b64_json="edited-image-b64")])
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(side_effect=AssertionError("不应走 generate")),
+                edit=AsyncMock(return_value=fake_response),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            result = await generation_utils.call_openai_image_generation_with_retry_async(
+                model_name="gpt-image-2",
+                prompt="polish this image",
+                config={"size": "auto", "output_format": "jpeg", "output_compression": 80},
+                contents=[
+                    {"type": "text", "text": "polish this image"},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": "ZmFrZS1pbWFnZQ==",
+                        },
+                    },
+                ],
+                max_attempts=1,
+                retry_delay=0,
+            )
+
+        self.assertEqual(result, ["edited-image-b64"])
+        sent = fake_client.images.edit.call_args.kwargs
+        self.assertEqual(sent["model"], "gpt-image-2")
+        self.assertEqual(sent["output_compression"], 80)
+        self.assertEqual(len(sent["image"]), 1)
+        self.assertNotIn("input_fidelity", sent)
+
+    async def test_openai_image_generation_does_not_retry_non_recoverable_errors(self):
+        class _BadRequest(RuntimeError):
+            status_code = 400
+
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(side_effect=_BadRequest("unsupported parameter")),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            with patch("utils.generation_utils.asyncio.sleep", new=AsyncMock()) as mocked_sleep:
+                with self.assertRaisesRegex(RuntimeError, "unsupported parameter"):
+                    await generation_utils.call_openai_image_generation_with_retry_async(
+                        model_name="gpt-image-2",
+                        prompt="draw a circle",
+                        config={"size": "1024x1024", "output_format": "png"},
+                        max_attempts=5,
+                        retry_delay=0,
+                    )
+
+        self.assertEqual(fake_client.images.generate.call_count, 1)
+        mocked_sleep.assert_not_awaited()
+
+    async def test_openai_stream_response_is_consumed(self):
+        class _FakeStream:
+            def __aiter__(self):
+                self._events = iter(
+                    [
+                        SimpleNamespace(type="image_generation.partial_image", b64_json="partial-b64"),
+                        SimpleNamespace(type="image_generation.completed", b64_json="final-b64"),
+                    ]
+                )
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._events)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(return_value=_FakeStream()),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            result = await generation_utils.call_openai_image_generation_with_retry_async(
+                model_name="gpt-image-2",
+                prompt="draw a circle",
+                config={"size": "1024x1024", "output_format": "png", "stream": True, "partial_images": 1},
+                max_attempts=1,
+                retry_delay=0,
+            )
+
+        self.assertEqual(result, ["final-b64"])
+        sent = fake_client.images.generate.call_args.kwargs
+        self.assertTrue(sent["stream"])
+        self.assertEqual(sent["partial_images"], 1)
+
+    async def test_openai_stream_emits_candidate_preview_events(self):
+        class _FakeStream:
+            def __aiter__(self):
+                self._events = iter(
+                    [
+                        SimpleNamespace(type="image_generation.partial_image", b64_json="partial-b64"),
+                        SimpleNamespace(type="image_generation.completed", b64_json="final-b64"),
+                    ]
+                )
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._events)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(return_value=_FakeStream()),
+            )
+        )
+        captured_events = []
+        original_hook = generation_utils.runtime_event_hook
+        generation_utils.runtime_event_hook = captured_events.append
+
+        try:
+            with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+                result = await generation_utils.call_openai_image_generation_with_retry_async(
+                    model_name="gpt-image-2",
+                    prompt="draw a circle",
+                    config={"size": "1024x1024", "output_format": "png", "stream": True, "partial_images": 1},
+                    max_attempts=1,
+                    retry_delay=0,
+                    error_context="visualizer-image[candidate=7,key=render]",
+                )
+        finally:
+            generation_utils.runtime_event_hook = original_hook
+
+        self.assertEqual(result, ["final-b64"])
+        preview_events = [event for event in captured_events if event.get("kind") == "preview_ready"]
+        self.assertEqual(len(preview_events), 2)
+        self.assertEqual(preview_events[0]["candidate_id"], "7")
+        self.assertEqual(preview_events[0]["preview_image"], "partial-b64")
+        self.assertEqual(preview_events[1]["preview_image"], "final-b64")
+
+    async def test_openai_image_response_url_is_downloaded_to_base64(self):
+        fake_response = SimpleNamespace(data=[SimpleNamespace(url="https://example.test/image.png")])
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(return_value=fake_response),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            with patch.object(
+                generation_utils,
+                "_fetch_image_url_as_base64",
+                new=AsyncMock(return_value="downloaded-image-b64"),
+            ) as mocked_fetch:
+                result = await generation_utils.call_openai_image_generation_with_retry_async(
+                    model_name="gpt-image-2",
+                    prompt="draw a circle",
+                    config={"size": "1024x1024", "output_format": "png"},
+                    max_attempts=1,
+                    retry_delay=0,
+                )
+
+        self.assertEqual(result, ["downloaded-image-b64"])
+        mocked_fetch.assert_awaited_once_with("https://example.test/image.png")
+
+    async def test_openai_image_generation_falls_back_to_responses_tool(self):
+        class _BadGateway(RuntimeError):
+            status_code = 502
+
+        fake_response = SimpleNamespace(
+            output=[
+                SimpleNamespace(
+                    type="image_generation_call",
+                    result="responses-image-b64",
+                    status="completed",
+                )
+            ]
+        )
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(side_effect=_BadGateway("upstream request failed")),
+            ),
+            responses=SimpleNamespace(
+                create=AsyncMock(return_value=fake_response),
+            ),
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            result = await generation_utils.call_openai_image_generation_with_retry_async(
+                model_name="gpt-image-2",
+                prompt="draw a circle",
+                config={
+                    "size": "1024x1024",
+                    "quality": "low",
+                    "output_format": "png",
+                    "responses_model": "gpt-5.4-mini",
+                },
+                max_attempts=1,
+                retry_delay=0,
+            )
+
+        self.assertEqual(result, ["responses-image-b64"])
+        sent = fake_client.responses.create.call_args.kwargs
+        self.assertEqual(sent["model"], "gpt-5.4-mini")
+        self.assertEqual(sent["tools"][0]["type"], "image_generation")
+        self.assertEqual(sent["tools"][0]["model"], "gpt-image-2")
+        self.assertEqual(sent["tool_choice"], {"type": "image_generation"})
+
+    async def test_openai_responses_stream_fallback_emits_preview_events(self):
+        class _BadGateway(RuntimeError):
+            status_code = 502
+
+        class _FakeStream:
+            def __aiter__(self):
+                self._events = iter(
+                    [
+                        SimpleNamespace(
+                            type="response.image_generation_call.partial_image",
+                            partial_image_b64="responses-partial-b64",
+                        ),
+                        SimpleNamespace(
+                            type="response.image_generation_call.completed",
+                            result="responses-final-b64",
+                        ),
+                    ]
+                )
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._events)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(side_effect=_BadGateway("upstream request failed")),
+            ),
+            responses=SimpleNamespace(
+                create=AsyncMock(return_value=_FakeStream()),
+            ),
+        )
+        captured_events = []
+        original_hook = generation_utils.runtime_event_hook
+        generation_utils.runtime_event_hook = captured_events.append
+
+        try:
+            with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+                result = await generation_utils.call_openai_image_generation_with_retry_async(
+                    model_name="gpt-image-2",
+                    prompt="draw a circle",
+                    config={
+                        "size": "1024x1024",
+                        "output_format": "png",
+                        "stream": True,
+                        "partial_images": 1,
+                        "responses_model": "gpt-5.4-mini",
+                    },
+                    max_attempts=1,
+                    retry_delay=0,
+                    error_context="visualizer-image[candidate=9,key=render]",
+                )
+        finally:
+            generation_utils.runtime_event_hook = original_hook
+
+        self.assertEqual(result, ["responses-final-b64"])
+        sent = fake_client.responses.create.call_args.kwargs
+        self.assertTrue(sent["stream"])
+        self.assertEqual(sent["tools"][0]["partial_images"], 1)
+        preview_events = [event for event in captured_events if event.get("kind") == "preview_ready"]
+        self.assertEqual([event["preview_image"] for event in preview_events], ["responses-partial-b64", "responses-final-b64"])
+        self.assertEqual(preview_events[0]["candidate_id"], "9")
+
+    def test_safe_log_text_redacts_openai_keys_and_bearer_tokens(self):
+        text = generation_utils._safe_text_for_log(
+            "Authorization: Bearer secret-token-value-12345 api_key='sk-1234567890abcdefSECRET'"
+        )
+
+        self.assertNotIn("secret-token-value-12345", text)
+        self.assertNotIn("abcdefSECRET", text)
 
     async def test_gemini_image_generation_uses_image_client_inside_retry_stage(self):
         text_client = SimpleNamespace()

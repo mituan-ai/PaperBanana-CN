@@ -22,7 +22,7 @@ PROVIDER_UI_META = {
     },
     "openai": {
         "api_key_label": "OpenAI API Key",
-        "api_key_help": "OpenAI 或 OpenAI 兼容网关 API 密钥",
+        "api_key_help": "OpenAI 或 OpenAI-compatible 中转站 API 密钥",
     },
     "evolink": {
         "api_key_label": "API Key",

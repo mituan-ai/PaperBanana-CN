@@ -184,6 +184,34 @@ class BaseAgentProviderValidationTest(unittest.TestCase):
         finally:
             generation_utils.call_openai_with_retry_async = original
 
+    def test_text_api_routes_official_openai_to_openai_chat(self):
+        captured = {}
+
+        async def fake_call_openai_with_retry_async(**kwargs):
+            captured.update(kwargs)
+            return ["ok"]
+
+        original = generation_utils.call_openai_with_retry_async
+        generation_utils.call_openai_with_retry_async = fake_call_openai_with_retry_async
+        try:
+            exp_config = types.SimpleNamespace(
+                provider="openai",
+                temperature=0.5,
+            )
+            agent = _DummyAgent(
+                model_name="gpt-5.5",
+                system_prompt="System prompt",
+                exp_config=exp_config,
+            )
+
+            result = asyncio.run(agent.call_text_api([{"type": "text", "text": "hello"}]))
+
+            self.assertEqual(result, ["ok"])
+            self.assertEqual(captured["model_name"], "gpt-5.5")
+            self.assertEqual(captured["config"]["max_completion_tokens"], 50000)
+        finally:
+            generation_utils.call_openai_with_retry_async = original
+
     def test_image_api_routes_openrouter_to_chat_image_generation(self):
         captured = {}
 
@@ -233,9 +261,7 @@ class BaseAgentProviderValidationTest(unittest.TestCase):
             exp_config = types.SimpleNamespace(
                 provider="openai_compatible",
                 temperature=0.5,
-                image_quality="high",
-                image_background="transparent",
-                image_output_format="webp",
+                model_name="custom-text-model",
             )
             agent = _DummyAgent(
                 model_name="custom-image-model",
@@ -248,11 +274,21 @@ class BaseAgentProviderValidationTest(unittest.TestCase):
                     prompt="Draw a diagram.",
                     aspect_ratio="16:9",
                     image_resolution="4K",
+                    image_generation_options={
+                        "size": "3840x2160",
+                        "quality": "high",
+                        "background": "transparent",
+                        "output_format": "webp",
+                    },
                 )
             )
 
             self.assertEqual(result, ["fake-image-b64"])
             self.assertEqual(captured["model_name"], "custom-image-model")
+            self.assertEqual(captured["provider_type"], "openai_compatible")
+            self.assertEqual(captured["config"]["aspect_ratio"], "16:9")
+            self.assertEqual(captured["config"]["image_resolution"], "4K")
+            self.assertEqual(captured["config"]["responses_model"], "custom-text-model")
             self.assertEqual(captured["config"]["size"], "3840x2160")
             self.assertEqual(captured["config"]["quality"], "high")
             self.assertEqual(captured["config"]["background"], "transparent")

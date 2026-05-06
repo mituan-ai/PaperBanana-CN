@@ -173,6 +173,11 @@ try:
         normalize_retrieval_setting,
     )
     from utils.run_report import build_failure_manifest, build_result_summary
+    from utils.image_generation_options import (
+        get_image_model_capabilities,
+        is_valid_custom_image_size,
+        normalize_image_generation_options,
+    )
     from utils.runtime_settings import (
         DEFAULT_PROVIDER,
         build_all_provider_ui_defaults,
@@ -552,7 +557,11 @@ def get_refine_total_timeout_seconds(provider: str) -> float:
             return max(float(env_val), 60.0)
         except ValueError:
             pass
-    return 1800.0 if provider == "gemini" else 1200.0
+    if provider == "gemini":
+        return 1800.0
+    if provider in {"openai", "openai_compatible"}:
+        return 1500.0
+    return 1200.0
 
 
 def extract_retry_delay_seconds(error_text: str) -> Optional[float]:
@@ -1416,6 +1425,138 @@ def build_api_key_storage_notice(
     if str(provider_defaults.get("api_key_default", "") or "").strip():
         return "已在本机保存当前 Provider 的密钥，刷新页面后仍会保留。"
     return "密钥只保存在当前电脑；输入后会自动写入本地 txt。"
+
+
+def render_image_generation_option_controls(
+    *,
+    provider_type: str,
+    image_model_name: str,
+    aspect_ratio: str,
+    image_resolution: str,
+    widget_prefix: str = "tab1",
+) -> dict[str, Any]:
+    capabilities = get_image_model_capabilities(provider_type, image_model_name)
+    st.caption(f"当前图像能力：{capabilities.model_family}")
+
+    default_options = normalize_image_generation_options(
+        provider_type=provider_type,
+        model_name=image_model_name,
+        aspect_ratio=aspect_ratio,
+        image_resolution=image_resolution,
+    )
+    size_choices = list(capabilities.size_options)
+    default_size = default_options.size
+    custom_size_key = f"{widget_prefix}_image_custom_size"
+    use_custom_size = capabilities.supports_custom_size and default_size not in size_choices
+    if capabilities.supports_custom_size:
+        size_choices.append("自定义像素尺寸")
+        if custom_size_key not in st.session_state:
+            st.session_state[custom_size_key] = default_size if default_size != "auto" else "2048x2048"
+
+    selected_size_label = st.selectbox(
+        "OpenAI 输出尺寸",
+        size_choices,
+        index=size_choices.index("自定义像素尺寸") if use_custom_size else size_choices.index(default_size),
+        key=f"{widget_prefix}_image_size",
+        help="GPT Image 2 可使用 auto、常用尺寸或满足约束的自定义像素尺寸。",
+    )
+    size = selected_size_label
+    if capabilities.supports_custom_size and selected_size_label == "自定义像素尺寸":
+        requested_custom_size = st.text_input(
+            "自定义像素尺寸",
+            key=custom_size_key,
+            help="格式为 宽x高，例如 2304x1024；宽高需为 16 的倍数，单边不超过 3840。",
+        )
+        if is_valid_custom_image_size(requested_custom_size, capabilities):
+            size = str(requested_custom_size).strip()
+        else:
+            st.warning("当前自定义尺寸不满足 GPT Image 2 约束，已回退为 auto。")
+            size = "auto"
+    quality = st.selectbox(
+        "OpenAI 渲染质量",
+        list(capabilities.quality_options),
+        index=list(capabilities.quality_options).index(default_options.quality),
+        key=f"{widget_prefix}_image_quality",
+    )
+    background = st.selectbox(
+        "OpenAI 背景",
+        list(capabilities.background_options),
+        index=list(capabilities.background_options).index(default_options.background),
+        key=f"{widget_prefix}_image_background",
+        help="GPT Image 2 当前不支持 transparent，界面会自动隐藏该选项。",
+    )
+    output_format = st.selectbox(
+        "OpenAI 输出格式",
+        list(capabilities.output_format_options),
+        index=list(capabilities.output_format_options).index(default_options.output_format),
+        key=f"{widget_prefix}_image_output_format",
+    )
+    output_compression = None
+    if capabilities.supports_output_compression and output_format in {"jpeg", "webp"}:
+        output_compression = int(
+            st.slider(
+                "OpenAI 输出压缩",
+                min_value=0,
+                max_value=100,
+                value=100,
+                key=f"{widget_prefix}_image_output_compression",
+                help="仅 jpeg/webp 生效；png 不发送该参数。",
+            )
+        )
+    moderation = "auto"
+    if capabilities.supports_moderation:
+        moderation = st.selectbox(
+            "OpenAI 审核强度",
+            ["auto", "low"],
+            key=f"{widget_prefix}_image_moderation",
+        )
+    input_fidelity = "auto"
+    if capabilities.supports_input_fidelity:
+        input_fidelity = st.selectbox(
+            "OpenAI 参考图保真度",
+            ["auto", "low", "high"],
+            key=f"{widget_prefix}_image_input_fidelity",
+            help="仅带参考图的编辑链路生效。",
+        )
+    stream = False
+    partial_images = 0
+    if capabilities.supports_stream:
+        stream = st.checkbox(
+            "启用流式图像事件",
+            value=False,
+            key=f"{widget_prefix}_image_stream",
+            help="当前仅在后台消费最终图；partial images 会额外消耗图像输出 token。",
+        )
+        if stream and capabilities.supports_partial_images:
+            partial_images = int(
+                st.slider(
+                    "流式预览张数",
+                    min_value=0,
+                    max_value=3,
+                    value=0,
+                    key=f"{widget_prefix}_image_partial_images",
+                    help="仅用于流式请求；当前不会在前端实时展示中间图。",
+                )
+            )
+
+    options = normalize_image_generation_options(
+        provider_type=provider_type,
+        model_name=image_model_name,
+        aspect_ratio=aspect_ratio,
+        image_resolution=image_resolution,
+        raw_options={
+            "size": size,
+            "quality": quality,
+            "background": background,
+            "output_format": output_format,
+            "output_compression": output_compression,
+            "moderation": moderation,
+            "input_fidelity": input_fidelity,
+            "stream": stream,
+            "partial_images": partial_images,
+        },
+    )
+    return options.to_dict()
 
 
 def get_selected_connection_runtime_id(prefix: str, selected_connection_id: str) -> str:
@@ -4012,10 +4153,6 @@ def start_generation_background_job(
     image_api_key: str = "",
     image_base_url: str = "",
     image_extra_headers: dict[str, str] | None = None,
-    image_quality: str = "auto",
-    image_background: str = "opaque",
-    image_output_format: str = "png",
-    image_size_override: str = "",
     base_url: str = "",
     extra_headers: dict[str, str] | None = None,
     concurrency_mode: str,
@@ -4024,6 +4161,7 @@ def start_generation_background_job(
     max_critic_rounds: int,
     aspect_ratio: str,
     image_resolution: str,
+    image_generation_options: dict[str, Any] | None = None,
     content: str,
     visual_intent: str,
 ) -> str:
@@ -4116,6 +4254,7 @@ def start_generation_background_job(
                     num_copies=requested_candidates,
                     max_critic_rounds=runtime_settings.max_critic_rounds,
                     image_resolution=image_resolution,
+                    image_generation_options=image_generation_options,
                 )
 
                 def on_progress(done_count: int, total_count: int, effective_count: int):
@@ -4144,10 +4283,6 @@ def start_generation_background_job(
                         image_api_key=getattr(runtime_settings, "image_api_key", runtime_settings.api_key),
                         image_base_url=getattr(runtime_settings, "image_base_url", runtime_settings.base_url),
                         image_extra_headers=getattr(runtime_settings, "image_extra_headers", runtime_settings.extra_headers),
-                        image_quality=image_quality,
-                        image_background=image_background,
-                        image_output_format=image_output_format,
-                        image_size_override=image_size_override,
                         provider=runtime_settings.provider,
                         connection_id=runtime_settings.connection_id,
                         api_key=runtime_settings.api_key,
@@ -4277,10 +4412,6 @@ async def process_parallel_candidates(
     image_api_key="",
     image_base_url="",
     image_extra_headers: dict[str, str] | None = None,
-    image_quality: str = "auto",
-    image_background: str = "opaque",
-    image_output_format: str = "png",
-    image_size_override: str = "",
     provider=DEFAULT_PROVIDER,
     connection_id="",
     api_key="",
@@ -4412,10 +4543,6 @@ async def process_parallel_candidates(
         image_provider=getattr(runtime_settings, "image_provider", "") or runtime_settings.provider,
         image_connection_id=getattr(runtime_settings, "image_connection_id", runtime_settings.connection_id),
         image_provider_display_name=runtime_settings.image_provider_display_name,
-        image_quality=image_quality,
-        image_background=image_background,
-        image_output_format=image_output_format,
-        image_size_override=image_size_override,
         provider=runtime_settings.provider,
         connection_id=runtime_settings.connection_id,
         provider_display_name=runtime_settings.provider_display_name,
@@ -4503,13 +4630,9 @@ async def refine_image_with_nanoviz(
     image_base_url="",
     image_extra_headers: dict[str, str] | None = None,
     image_model_name="",
-    image_quality="auto",
-    image_background="opaque",
-    image_output_format="png",
-    image_input_fidelity="high",
-    image_size_override="",
     base_url="",
     extra_headers: dict[str, str] | None = None,
+    image_generation_options: dict[str, Any] | None = None,
     task_id: int = 1,
     event_callback: Optional[Callable[[dict], None]] = None,
     status_callback: Optional[Callable[[str], None]] = None,
@@ -4520,7 +4643,7 @@ async def refine_image_with_nanoviz(
     runtime_context=None,
 ):
     """
-    使用图像编辑 API 精修图像，支持 Evolink 和 Gemini 两种 Provider。
+    使用图像编辑 API 精修图像，支持 Gemini、Evolink 和 OpenAI 图像 Provider。
 
     参数：
         image_bytes: 图像字节数据
@@ -4528,7 +4651,7 @@ async def refine_image_with_nanoviz(
         aspect_ratio: 输出宽高比 (21:9, 16:9, 3:2)
         image_size: 输出分辨率 (2K 或 4K)
         api_key: API 密钥
-        provider: "evolink" 或 "gemini"
+        provider: "gemini"、"evolink"、"openai" 或 "openai_compatible"
 
     返回：
         元组 (编辑后的图像字节数据, 成功消息)
@@ -4664,15 +4787,16 @@ async def refine_image_with_nanoviz(
                         return None, "❌ 图像精修失败：Gemini 返回不可恢复错误"
 
                     if active_image_provider in {"openai", "openai_compatible"}:
-                        openai_size = resolve_openai_image_size_control(
-                            aspect_ratio=aspect_ratio,
-                            image_resolution=image_size,
-                            size_override=image_size_override,
-                        )
+                        openai_refine_options = {
+                            "aspect_ratio": aspect_ratio,
+                            "image_resolution": image_size,
+                            "responses_model": getattr(runtime_settings, "model_name", ""),
+                            **dict(image_generation_options or {}),
+                        }
                         emit_refine_event(
                             message=(
                                 f"[精修][任务 {task_id}] 开始 OpenAI 图像编辑，"
-                                f"模型={runtime_settings.image_model_name}，size={openai_size}"
+                                f"模型={runtime_settings.image_model_name}，size={openai_refine_options.get('size', 'auto')}"
                             ),
                             event_callback=event_callback,
                             status_callback=status_callback,
@@ -4683,20 +4807,29 @@ async def refine_image_with_nanoviz(
                             model=runtime_settings.image_model_name,
                             attempt=attempt,
                         )
-                        response_list = await generation_utils.call_openai_image_edit_with_retry_async(
-                            model_name=runtime_settings.image_model_name,
-                            image_bytes=image_bytes,
-                            prompt=edit_prompt,
-                            config={
-                                "size": openai_size,
-                                "quality": image_quality or "auto",
-                                "background": image_background or "opaque",
-                                "output_format": image_output_format or "png",
-                                "input_fidelity": image_input_fidelity or "high",
-                            },
-                            max_attempts=1,
-                            retry_delay=3,
-                            error_context=f"refine-openai-image[{task_prefix}]",
+                        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                        response_list = await asyncio.wait_for(
+                            generation_utils.call_openai_image_generation_with_retry_async(
+                                model_name=runtime_settings.image_model_name,
+                                prompt=edit_prompt,
+                                config=openai_refine_options,
+                                contents=[
+                                    {"type": "text", "text": edit_prompt},
+                                    {
+                                        "type": "image",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": normalized_mime_type,
+                                            "data": image_b64,
+                                        },
+                                    },
+                                ],
+                                provider_type=active_image_provider,
+                                max_attempts=max(1, attempt_limit - attempt + 1),
+                                retry_delay=3,
+                                error_context=f"refine-image[{task_prefix}]",
+                            ),
+                            timeout=min(total_time_limit, timeout_seconds * max(1, attempt_limit - attempt + 1)),
                         )
                         if response_list and response_list[0] and response_list[0] != "Error":
                             emit_refine_event(
@@ -4806,6 +4939,20 @@ async def refine_image_with_nanoviz(
                     # 不向前端抛错，持续重试直到成功
                     error_text = safe_log_text(e, max_len=2000)
                     lower_error = error_text.lower()
+                    if runtime_settings.provider in {"openai", "openai_compatible"} and "openai 图像生成在" in lower_error:
+                        emit_refine_event(
+                            message=f"[精修][任务 {task_id}] OpenAI 图像精修失败：{error_text[:160]}",
+                            event_callback=event_callback,
+                            status_callback=status_callback,
+                            kind="error",
+                            level="ERROR",
+                            status="failed",
+                            provider=runtime_settings.provider,
+                            model=runtime_settings.image_model_name,
+                            attempt=attempt,
+                            details=error_text,
+                        )
+                        return None, f"❌ 图像精修失败：{error_text[:300]}"
 
                     # Windows 套接字异常自愈：重建 client/provider 后继续。
                     if "winerror 10038" in lower_error:
@@ -4883,13 +5030,9 @@ async def refine_images_with_count(
     image_base_url="",
     image_extra_headers: dict[str, str] | None = None,
     image_model_name="",
-    image_quality="auto",
-    image_background="opaque",
-    image_output_format="png",
-    image_input_fidelity="high",
-    image_size_override="",
     base_url="",
     extra_headers: dict[str, str] | None = None,
+    image_generation_options: dict[str, Any] | None = None,
     input_mime_type="image/png",
     progress_callback: Optional[Callable[[int, int], None]] = None,
     event_callback: Optional[Callable[[dict], None]] = None,
@@ -4951,13 +5094,9 @@ async def refine_images_with_count(
                                 image_base_url=getattr(runtime_settings, "image_base_url", runtime_settings.base_url),
                                 image_extra_headers=getattr(runtime_settings, "image_extra_headers", runtime_settings.extra_headers),
                                 image_model_name=runtime_settings.image_model_name,
-                                image_quality=image_quality,
-                                image_background=image_background,
-                                image_output_format=image_output_format,
-                                image_input_fidelity=image_input_fidelity,
-                                image_size_override=image_size_override,
                                 base_url=runtime_settings.base_url,
                                 extra_headers=runtime_settings.extra_headers,
+                                image_generation_options=image_generation_options,
                                 task_id=task_idx + 1,
                                 event_callback=event_callback,
                                 status_callback=status_callback,
@@ -5019,13 +5158,9 @@ def start_refine_background_job(
     image_base_url: str = "",
     image_extra_headers: dict[str, str] | None = None,
     image_model_name: str = "",
-    image_quality: str = "auto",
-    image_background: str = "opaque",
-    image_output_format: str = "png",
-    image_input_fidelity: str = "high",
-    image_size_override: str = "",
     base_url: str = "",
     extra_headers: dict[str, str] | None = None,
+    image_generation_options: dict[str, Any] | None = None,
     input_mime_type: str,
 ) -> str:
     job_id = f"refine_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -5117,13 +5252,9 @@ def start_refine_background_job(
                         image_base_url=getattr(runtime_settings, "image_base_url", runtime_settings.base_url),
                         image_extra_headers=getattr(runtime_settings, "image_extra_headers", runtime_settings.extra_headers),
                         image_model_name=runtime_settings.image_model_name,
-                        image_quality=image_quality,
-                        image_background=image_background,
-                        image_output_format=image_output_format,
-                        image_input_fidelity=image_input_fidelity,
-                        image_size_override=image_size_override,
                         base_url=runtime_settings.base_url,
                         extra_headers=runtime_settings.extra_headers,
+                        image_generation_options=image_generation_options,
                         input_mime_type=input_mime_type,
                         progress_callback=on_progress,
                         event_callback=on_event,
@@ -5827,6 +5958,25 @@ def render_refine_runtime_panel(snapshot: dict | None, *, requested_images: int)
         )
         st.progress(ratio, text=f"总体进度：已完成 {progress_done}/{progress_total} 张精修图")
 
+        preview_events = [
+            event
+            for event in event_history
+            if str(event.get("kind", "") or "") == "preview_ready" and event.get("preview_image")
+        ]
+        if preview_events:
+            st.markdown("**流式图像预览**")
+            latest_preview_events = preview_events[-min(3, len(preview_events)):]
+            preview_cols = st.columns(len(latest_preview_events))
+            for col, event in zip(preview_cols, latest_preview_events):
+                with col:
+                    preview = base64_to_image(str(event.get("preview_image", "") or ""))
+                    if preview is not None:
+                        st.image(
+                            preview,
+                            width="stretch",
+                            caption=str(event.get("preview_label", "") or event.get("stage", "") or "最新预览"),
+                        )
+
         if latest_lines:
             st.markdown("**实时日志**")
             st.code("\n".join(latest_lines), language="text")
@@ -6146,6 +6296,7 @@ def _build_generation_effective_settings(
     effective_settings = dict(advanced_settings)
     if not get_task_ui_config(task_name)["uses_render_controls"]:
         effective_settings["image_resolution"] = ""
+        effective_settings["image_generation_options"] = {}
     return effective_settings
 
 
@@ -6633,7 +6784,14 @@ def render_generation_sidebar_controls() -> dict:
             provider_for_resolution = (
                 selected_connection.provider_type if selected_connection is not None else DEFAULT_PROVIDER
             )
-            resolution_options = ["1K", "2K", "4K"] if provider_for_resolution == "gemini" else ["2K", "4K"]
+            image_model_for_resolution = (
+                selected_connection.image_model if selected_connection is not None else ""
+            )
+            resolution_capabilities = get_image_model_capabilities(
+                provider_for_resolution,
+                image_model_for_resolution,
+            )
+            resolution_options = list(resolution_capabilities.legacy_resolution_options)
             default_resolution = st.session_state.get("tab1_image_resolution", "2K")
             if default_resolution not in resolution_options:
                 default_resolution = "2K" if "2K" in resolution_options else resolution_options[0]
@@ -6784,23 +6942,26 @@ def render_generation_sidebar_controls() -> dict:
             image_provider_type = str(image_provider_defaults.get("provider_type", image_provider) or image_provider)
             if is_openai_image_provider(image_provider_type):
                 with st.expander("OpenAI / GPT 图像参数", expanded=False):
-                    openai_image_controls = render_openai_image_advanced_controls("tab1")
-                    resolved_size = resolve_openai_image_size_control(
+                    image_generation_options = render_image_generation_option_controls(
+                        provider_type=image_provider_type,
+                        image_model_name=image_model_name,
                         aspect_ratio=aspect_ratio,
                         image_resolution=image_resolution,
-                        size_override=openai_image_controls["size_override"],
+                        widget_prefix="tab1",
                     )
                     st.caption(
-                        f"OpenAI size={resolved_size} | quality={openai_image_controls['quality']} | "
-                        f"background={openai_image_controls['background']} | format={openai_image_controls['output_format']}"
+                        f"OpenAI size={image_generation_options.get('size', 'auto')} | "
+                        f"quality={image_generation_options.get('quality', 'auto')} | "
+                        f"background={image_generation_options.get('background', 'auto')} | "
+                        f"format={image_generation_options.get('output_format', 'png')}"
                     )
             else:
-                openai_image_controls = {
-                    "quality": "auto",
-                    "background": "opaque",
-                    "output_format": "png",
-                    "size_override": "",
-                }
+                image_generation_options = normalize_image_generation_options(
+                    provider_type=image_provider_type,
+                    model_name=image_model_name,
+                    aspect_ratio=aspect_ratio,
+                    image_resolution=image_resolution,
+                ).to_dict()
         else:
             image_provider = provider
             image_runtime_connection_id = runtime_connection_id
@@ -6808,13 +6969,8 @@ def render_generation_sidebar_controls() -> dict:
             image_model_name = ""
             image_base_url = base_url
             image_extra_headers_json = ""
-            openai_image_controls = {
-                "quality": "auto",
-                "background": "opaque",
-                "output_format": "png",
-                "size_override": "",
-            }
             st.caption("当前任务不会调用文生图模型，最终图像由文本模型生成的 Matplotlib 代码渲染。")
+            image_generation_options = {}
 
         if task_config["uses_image_model"]:
             st.caption(f"当前组合：VLM 文本={text_provider_choice} / {model_name or '未填写'}；文生图={image_provider_choice} / {image_model_name or '未填写'}。")
@@ -6839,6 +6995,7 @@ def render_generation_sidebar_controls() -> dict:
         "max_concurrent": int(max_concurrent),
         "aspect_ratio": aspect_ratio,
         "image_resolution": image_resolution,
+        "image_generation_options": image_generation_options,
         "max_critic_rounds": int(max_critic_rounds),
         "provider": runtime_connection_id,
         "connection_id": runtime_connection_id,
@@ -6855,10 +7012,6 @@ def render_generation_sidebar_controls() -> dict:
         "image_base_url": image_base_url,
         "image_extra_headers": image_extra_headers,
         "image_model_name": image_model_name,
-        "image_quality": openai_image_controls["quality"],
-        "image_background": openai_image_controls["background"],
-        "image_output_format": openai_image_controls["output_format"],
-        "image_size_override": openai_image_controls["size_override"],
     }
 
 
@@ -7022,24 +7175,25 @@ def render_refine_sidebar_controls() -> dict:
         refine_image_provider_type = str(refine_image_provider_defaults.get("provider_type", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
         if is_openai_image_provider(refine_image_provider_type):
             with st.expander("OpenAI / GPT 图像编辑参数", expanded=False):
-                refine_openai_image_controls = render_openai_image_edit_controls("refine")
-                resolved_size = resolve_openai_image_size_control(
+                refine_image_generation_options = render_image_generation_option_controls(
+                    provider_type=refine_image_provider_type,
+                    image_model_name=refine_image_model_name,
                     aspect_ratio=refine_aspect_ratio,
                     image_resolution=refine_resolution,
-                    size_override=refine_openai_image_controls["size_override"],
+                    widget_prefix="refine",
                 )
                 st.caption(
-                    f"OpenAI edit size={resolved_size} | quality={refine_openai_image_controls['quality']} | "
-                    f"fidelity={refine_openai_image_controls['input_fidelity']}"
+                    f"OpenAI edit size={refine_image_generation_options.get('size', 'auto')} | "
+                    f"quality={refine_image_generation_options.get('quality', 'auto')} | "
+                    f"fidelity={refine_image_generation_options.get('input_fidelity', 'auto')}"
                 )
         else:
-            refine_openai_image_controls = {
-                "quality": "auto",
-                "background": "opaque",
-                "output_format": "png",
-                "input_fidelity": "high",
-                "size_override": "",
-            }
+            refine_image_generation_options = normalize_image_generation_options(
+                provider_type=refine_image_provider_type,
+                model_name=refine_image_model_name,
+                aspect_ratio=refine_aspect_ratio,
+                image_resolution=refine_resolution,
+            ).to_dict()
         st.caption(
             f"当前组合：VLM 文本={refine_provider_choice} / {refine_model_name or '未填写'}；"
             f"文生图={refine_image_provider_choice} / {refine_image_model_name or '未填写'}。"
@@ -7080,11 +7234,7 @@ def render_refine_sidebar_controls() -> dict:
         "image_base_url": refine_image_base_url,
         "image_extra_headers": image_extra_headers,
         "image_model_name": refine_image_model_name,
-        "image_quality": refine_openai_image_controls["quality"],
-        "image_background": refine_openai_image_controls["background"],
-        "image_output_format": refine_openai_image_controls["output_format"],
-        "image_input_fidelity": refine_openai_image_controls["input_fidelity"],
-        "image_size_override": refine_openai_image_controls["size_override"],
+        "image_generation_options": refine_image_generation_options,
     }
 
 
@@ -7741,10 +7891,6 @@ def render_generation_workspace() -> None:
                 image_api_key=advanced_settings["image_api_key"],
                 image_base_url=advanced_settings["image_base_url"],
                 image_extra_headers=advanced_settings["image_extra_headers"],
-                image_quality=advanced_settings.get("image_quality", "auto"),
-                image_background=advanced_settings.get("image_background", "opaque"),
-                image_output_format=advanced_settings.get("image_output_format", "png"),
-                image_size_override=advanced_settings.get("image_size_override", ""),
                 base_url=advanced_settings["base_url"],
                 extra_headers=advanced_settings["extra_headers"],
                 concurrency_mode=advanced_settings["concurrency_mode"],
@@ -7753,6 +7899,7 @@ def render_generation_workspace() -> None:
                 max_critic_rounds=int(effective_settings["max_critic_rounds"]),
                 aspect_ratio=advanced_settings["aspect_ratio"],
                 image_resolution=effective_settings["image_resolution"],
+                image_generation_options=effective_settings.get("image_generation_options", {}),
                 content=content_for_generation,
                 visual_intent=visual_intent,
             )
@@ -7784,6 +7931,10 @@ def render_refine_workbench_panel(
     refine_provider_type: str,
     refine_api_key: str,
     refine_image_model_name: str,
+    refine_connection_id: str = "",
+    refine_base_url: str = "",
+    refine_extra_headers: dict[str, str] | None = None,
+    refine_image_generation_options: dict[str, Any] | None = None,
     refine_connection_pending_save: bool = False,
     refine_extra_headers_error: str = "",
 ) -> tuple[bytes, str]:
@@ -8003,11 +8154,7 @@ def render_refine_workbench_panel(
                 image_base_url=refine_settings["image_base_url"],
                 image_extra_headers=refine_settings["image_extra_headers"],
                 image_model_name=refine_image_model_name,
-                image_quality=refine_settings.get("image_quality", "auto"),
-                image_background=refine_settings.get("image_background", "opaque"),
-                image_output_format=refine_settings.get("image_output_format", "png"),
-                image_input_fidelity=refine_settings.get("image_input_fidelity", "high"),
-                image_size_override=refine_settings.get("image_size_override", ""),
+                image_generation_options=refine_image_generation_options,
                 base_url=refine_settings["base_url"],
                 extra_headers=refine_settings["extra_headers"],
                 input_mime_type=selected_input_mime_type,
@@ -8069,7 +8216,11 @@ def render_refine_workspace() -> None:
             refine_provider=refine_settings["provider"],
             refine_provider_type=refine_settings["provider_type"],
             refine_api_key=refine_settings["api_key"],
+            refine_connection_id=refine_settings["connection_id"],
             refine_image_model_name=refine_settings["image_model_name"],
+            refine_base_url=refine_settings["base_url"],
+            refine_extra_headers=refine_settings["extra_headers"],
+            refine_image_generation_options=refine_settings.get("image_generation_options", {}),
             refine_connection_pending_save=bool(refine_settings.get("connection_pending_save")),
             refine_extra_headers_error=str(refine_settings.get("extra_headers_error", "") or ""),
         )
