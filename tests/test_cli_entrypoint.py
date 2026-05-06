@@ -15,7 +15,7 @@ class CliEntrypointTest(unittest.TestCase):
             )
         )
 
-    def test_help_mentions_paperbanana_primary_command_and_repo_first_install(self):
+    def test_help_mentions_paperbanana_primary_command_and_uv_run_startup(self):
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             cli._print_help()
@@ -25,7 +25,8 @@ class CliEntrypointTest(unittest.TestCase):
         self.assertIn("paperbanana viewer eval", help_text)
         self.assertIn("paperbanana --help", help_text)
         self.assertIn("paperbanana-cn", help_text)
-        self.assertIn("uv tool install --editable . --force", help_text)
+        self.assertIn("uv sync --locked", help_text)
+        self.assertIn("uv run paperbanana", help_text)
         self.assertIn("未来路线", help_text)
 
     def test_viewer_help_mentions_paperbanana_primary_command(self):

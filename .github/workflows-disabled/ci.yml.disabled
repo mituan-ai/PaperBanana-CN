@@ -1,0 +1,6 @@
+#
+# Archived on 2026-05-06.
+# This workflow was disabled because the repo has moved to a simpler
+# doc-first / uv run startup path, and the old repo-first Windows CI
+# was failing on a README-vs-test contract mismatch.
+#

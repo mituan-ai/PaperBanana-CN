@@ -44,11 +44,13 @@ class DependencyMetadataTest(unittest.TestCase):
         readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("uv sync --locked", readme_text)
 
-    def test_readme_documents_repo_first_editable_contract(self):
+    def test_readme_documents_current_uv_run_startup_contract(self):
         readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("uv tool install --editable . --force", readme_text)
+        self.assertIn("uv run paperbanana", readme_text)
+        self.assertIn("当前推荐的启动方式", readme_text)
         self.assertIn("paperbanana", readme_text)
-        self.assertIn("uv tool install paperbanana-cn", readme_text)
+        self.assertNotIn("uv tool install --editable . --force", readme_text)
+        self.assertNotIn("uv tool install paperbanana-cn", readme_text)
         self.assertNotIn("standalone tool install", readme_text)
         self.assertNotIn("tool install / wheel 优先", readme_text)
         self.assertNotIn("当前主 CLI 命令是 `paperbanana-cn`", readme_text)

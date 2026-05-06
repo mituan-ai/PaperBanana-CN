@@ -158,9 +158,6 @@ PaperBanana-CN 🍌  —  Academic Illustration Workbench
     uv sync --locked
     uv run paperbanana
 
-可选：安装成全局命令后，可直接使用 paperbanana / paperbanana-cn：
-    uv tool install --editable . --force
-
 未来路线（暂未支持）：
     非 editable uv tool install
     PyPI / 索引发布

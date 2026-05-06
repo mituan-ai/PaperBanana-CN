@@ -100,6 +100,8 @@ uv sync --locked
 uv run paperbanana
 ```
 
+这是当前推荐的启动方式。先同步锁定依赖，再通过 `uv run` 启动主命令。
+
 启动后浏览器访问：
 
 ```text
