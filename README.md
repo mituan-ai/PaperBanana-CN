@@ -5,7 +5,7 @@
 <h1 align="center">PaperBanana-CN · 纸香蕉</h1>
 
 <p align="center">
-  <strong>面向中文科研场景的 PaperBanana 增强版：支持第三方兼容服务、自建网关，以及 VLM 与图像模型分离配置。</strong><br>
+  <strong>面向中文科研场景的 PaperBanana 增强版：支持第三方兼容服务、自建网关，以及多模态大模型与图像生成模型分离配置。</strong><br>
   适合需要生成论文图、方法示意图、实验图表和候选图精修的研究者。
 </p>
 
@@ -33,7 +33,7 @@
 
 PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBanana 面向学术插图自动化的核心思想，并在实际使用层面补充了更适合国内用户的模型接入方式、图形界面、任务回放、候选图管理和导出能力。
 
-本项目尤其关注一个常见使用场景：用户没有官方 OpenAI 或 Gemini API，但可以使用第三方兼容服务、自建网关或学校/团队提供的统一接口。PaperBanana-CN 允许分别配置用于理解论文内容的 VLM 文本模型，以及用于生成或精修图像的图像模型，因此不要求所有能力来自同一个平台。
+本项目尤其关注一个常见使用场景：用户没有官方 OpenAI 或 Gemini API，但可以使用第三方兼容服务、自建网关或学校/团队提供的统一接口。PaperBanana-CN 允许分别配置用于理解论文内容的多模态大模型，以及用于生成或精修图像的图像生成模型，因此不要求所有能力来自同一个平台。
 
 | | 特性 | 说明 |
 |---|---|---|
@@ -41,12 +41,12 @@ PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBa
 | 📦 | **Bundle 便携式交付** | 独创 `Bundle v1` 架构，一个 `.bundle.json` 还原完整图文时间线和评审记录 |
 | 🛡️ | **智能容灾重试** | Pro 到 Flash 模型梯队平滑降级，确定性任务状态，增强长任务稳定性 |
 | 🎨 | **2K/4K 精修工作台** | 独立精修闭环，支持并发多版本重绘、树状演化链和版本回退 |
-| 🇨🇳 | **全中文产品界面** | 从输入到输出全中文，侧边栏参数人性化，即开即用 |
+| 🇨🇳 | **全中文产品界面** | 从输入到输出全中文，左侧控制栏按任务、连接、画布和运行资源重新整理 |
 | 🔧 | **注册制流水线** | Pipeline Registry 驱动，告别硬编码分支，一行配置扩展新流程 |
 | 📊 | **Plot 全链路** | 数据输入解析 → 代码生成 → 本地重渲染 → 精修，统计图端到端闭环 |
 | ⚡ | **`uv` 一键启动** | 使用锁定依赖启动本地 GUI，减少环境差异 |
-| 🔌 | **自定义模型供应商** | 支持 OpenAI-compatible / Gemini-compatible 接口，可填写 Base URL 接入第三方或自建服务 |
-| 🖼️ | **OpenAI GPT Image 2 适配** | 支持 OpenAI Images API、Responses API 兜底、参考图编辑、流式图像事件和自定义尺寸 |
+| 🔌 | **自定义模型供应商** | 支持 OpenAI-compatible / Gemini-compatible 接口，可填写 URL 接入第三方或自建服务 |
+| 🖼️ | **GPT Image 2 适配** | 支持 `gpt-image-2` 与 `gpt-image-2-vip(apiyi)`，统一用宽高比和像素档控制最终尺寸 |
 
 > [!NOTE]
 > 这里的“中转站”指提供 OpenAI-compatible 或 Gemini-compatible API 的第三方兼容服务。具体模型名、Base URL 格式、额度和稳定性由服务方决定，建议先用低候选数完成连通性验证。
@@ -55,8 +55,8 @@ PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBa
 
 | 使用需求 | PaperBanana-CN 的支持方式 |
 | --- | --- |
-| 没有官方 API | 可通过第三方兼容服务或自建网关填写 Base URL 与 API Key。 |
-| 文本模型和图像模型来自不同平台 | VLM 文本链路与文生图链路独立配置，可分别填写模型名、Key 和 URL。 |
+| 没有官方 API | 可通过第三方兼容服务或自建网关填写 URL 与 API。 |
+| 文本模型和图像模型来自不同平台 | 多模态大模型与图像生成模型独立配置，可分别填写模型名、API 和 URL。 |
 | 需要尽快在本地打开图形界面 | 使用 `uv sync --locked` 安装依赖，`uv run paperbanana` 启动 Streamlit GUI。 |
 | 担心首次试运行成本 | 可将候选数设为 `1`、检索设为 `none`、评审轮次设为 `0`。 |
 | 需要比较多个候选图 | 支持候选图预览、收藏、淘汰、设为最终候选，并导出完整结果。 |
@@ -145,15 +145,15 @@ uv run python main.py --help
 
 | 配置区域 | 作用 | 需要填写 |
 | --- | --- | --- |
-| VLM 文本链路 | 理解论文内容、规划图像、生成评审建议 | 文本模型的 Provider、Base URL、API Key、模型名 |
-| 文生图链路 | 生成候选图、精修已有图像 | 图像模型的 Provider、Base URL、API Key、模型名 |
+| 多模态大模型 | 理解输入、规划内容、生成评审建议 | 服务、URL、API、模型名 |
+| 图像生成模型 | 生成候选图、精修已有图像 | 服务、URL、API、模型名 |
 
 常见配置形态：
 
 | 场景 | VLM 文本链路 | 文生图链路 |
 | --- | --- | --- |
 | 同一服务同时提供文本和图像模型 | 填同一服务的文本模型信息 | 填同一服务的图像模型信息 |
-| 文本使用 OpenAI-compatible，图像使用 Gemini-compatible | Provider 选择 GPT / OpenAI-compatible | Provider 选择 Gemini-compatible |
+| 文本使用 OpenAI-compatible，图像使用 Gemini-compatible | 服务选择 OpenAI | 服务选择 Google |
 | 只有一个 Gemini 兼容网关 | 两侧都使用该网关提供的 Gemini 模型 | 两侧都使用该网关提供的图像模型 |
 | 只做低成本连通性验证 | 使用可用的低成本文本模型 | 候选数设低，检索和评审先关闭或调低 |
 
@@ -161,20 +161,20 @@ uv run python main.py --help
 
 ```text
 VLM 文本链路
-Provider: GPT
-Base URL: https://your-gateway.example.com/v1
-API Key: sk-...
-模型名: gpt-5.5 或服务方提供的文本模型名
+服务: OpenAI
+URL: https://your-gateway.example.com/v1
+API: sk-...
+模型名: gpt-5.5 或服务方提供的多模态模型名
 
 文生图链路
-Provider: GPT
-Base URL: https://your-gateway.example.com/v1
-API Key: sk-...
+服务: OpenAI
+URL: https://your-gateway.example.com/v1
+API: sk-...
 模型名: gpt-image-2 或服务方提供的图像模型名
 ```
 
 > [!IMPORTANT]
-> 不同兼容服务对 Base URL 的要求可能不同。OpenAI-compatible 接口通常包含 `/v1`，Gemini-compatible 接口是否包含版本路径应以服务方文档为准。
+> 不同兼容服务对 URL 的要求可能不同。OpenAI-compatible 接口通常包含 `/v1`，Gemini-compatible 接口是否包含版本路径应以服务方文档为准。
 
 ## 初始运行建议
 
@@ -186,7 +186,7 @@ API Key: sk-...
 | 候选方案数量 | `1` | 降低首次调用成本。 |
 | 参考样例策略 | `none` | 未下载数据集时也可运行。 |
 | 最大评审轮次 | `0` 或 `1` | 先验证生成，再逐步增加自动评审。 |
-| 图像比例 | `16:9` 或 `4:3` | 通用横向论文图优先选择。 |
+| 图像比例 | `16:9`、`3:2` 或 `1:1` | 通用论文图优先选择这些常见比例。 |
 
 输入内容建议分为两部分：
 
@@ -194,6 +194,13 @@ API Key: sk-...
 | --- | --- |
 | Method Content | 粘贴方法段、系统流程、模块关系、变量含义或实验目标。 |
 | Figure Caption | 粘贴准备写入论文的图注，说明图要表达什么，而不是让模型把图注文字画进图片。 |
+
+## 使用提示
+
+- 左侧分成两个工作区：`生成候选方案` 和 `精修图像`。
+- 连接区先选服务，再填 URL、API 和模型名；保存后会落到 `configs/local/`。
+- 右侧或下方的测试按钮是手动的，不会自动消耗生图额度。
+- 如果你只想先看界面是否通，先把候选数设为 `1`，宽高比和像素档保留默认即可。
 
 ## 界面预览
 
@@ -236,14 +243,15 @@ flowchart LR
 
 GUI 默认使用项目内配置，不会用系统环境变量覆盖侧边栏里的 URL、模型和 API。新用户首次打开时是官方默认 URL、空 API；在侧边栏填写后会自动保存到 `configs/local/`。
 
-```text
-configs/local/provider_settings.yaml
-configs/local/openai_vlm_api_key.txt
-configs/local/openai_image_api_key.txt
-configs/local/gemini_vlm_api_key.txt
-configs/local/gemini_image_api_key.txt
-configs/local/provider_registry.yaml
-```
+建议直接记住这几项：
+
+- `configs/local/provider_settings.yaml`：保存 URL 和模型名
+- `configs/local/openai_vlm_api_key.txt`
+- `configs/local/openai_image_api_key.txt`
+- `configs/local/google_api_key.txt`
+- `configs/local/provider_registry.yaml`：保存自定义连接
+
+侧边栏里的“服务”现在显示为更直观的 `OpenAI` / `Google`，并支持新加的 `gpt-image-2-vip(apiyi)` 图像模型项。若你使用的是 APIYI 的 VIP 路由，模型会自动绑定到对应 URL。
 
 ## 功能范围
 
@@ -257,15 +265,23 @@ configs/local/provider_registry.yaml
 | 任务回放 | 查看每次运行的阶段输出、模型响应和候选结果。 |
 | ZIP 导出 | 打包候选图、JSON、阶段描述、绘图代码和运行记录。 |
 
+## 图像参数
+
+GUI 里现在统一用“宽高比 + 像素档”来描述输出画布。你只需要先选比例，再选 `1K`、`2K` 或 `4K`，界面会自动显示对应像素，后端会换算成模型实际需要的请求参数。
+
+OpenAI 系列图像模型另外支持更细的图像细节选项，例如质量、背景、输出格式和编辑保真度。只有在你确实需要微调时再打开这部分即可。
+
 ## 参数与模型行为
 
 | Provider | 宽高比与分辨率处理 | 适用说明 |
 | --- | --- | --- |
-| GPT / OpenAI-compatible | 转换为 OpenAI Images `size` 参数 | 适合兼容 OpenAI 图像接口的服务。 |
-| Gemini-compatible | 写入 Gemini `image_config.aspect_ratio` 与 `image_config.image_size` | 适合兼容 Gemini 图像接口的服务。 |
+| OpenAI / OpenAI-compatible | 转换为 OpenAI Images `size` 参数 | 适合兼容 OpenAI 图像接口的服务。 |
+| Google / Gemini-compatible | 写入 Gemini `image_config.aspect_ratio` 与 `image_config.image_size` | 适合兼容 Gemini 图像接口的服务。 |
 | Plot 任务 | 生成 Matplotlib 代码并本地渲染 | 适合折线图、柱状图、消融图等实验图表。 |
 
-当文生图链路选择 GPT / OpenAI-compatible 时，GUI 会提供 `quality`、`background`、`output_format`、`size`、`input_fidelity` 等图像参数。初始运行可以保持默认值，确认链路可用后再细调。
+当图像模型选择 `gpt-image-2-vip(apiyi)` 时，模型会固定走 `https://api.apiyi.com/v1`。它适合对接 APIYI 的 `gpt-image-2` VIP 路由，但不是普通的 OpenAI 默认项。
+
+当前侧栏里“测试模型 / 测试图像”都需要手动点击，不会自动发起真实生图；这样更省成本，也更适合先确认连通性。
 
 ## 数据集
 
