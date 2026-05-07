@@ -163,7 +163,7 @@ class RuntimeSettingsTest(unittest.TestCase):
 
             defaults = build_provider_ui_defaults("evolink", base_dir=root)
 
-            self.assertEqual(defaults["api_key_label"], "API Key")
+            self.assertEqual(defaults["api_key_label"], "API")
             self.assertEqual(defaults["model_name"], "evolink-text")
             self.assertEqual(defaults["image_model_name"], "evolink-image")
             self.assertEqual(defaults["api_key_default"], "yaml-evolink-key")

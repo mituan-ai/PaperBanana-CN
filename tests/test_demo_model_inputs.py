@@ -26,6 +26,10 @@ class _FakeInteractiveStreamlit:
         self.selectbox_calls = []
         self.text_input_calls = []
         self.html_calls = []
+        self.caption_calls = []
+        self.markdown_calls = []
+        self.button_calls = []
+        self.pills_calls = []
 
     def __enter__(self):
         return self
@@ -68,13 +72,51 @@ class _FakeInteractiveStreamlit:
         return [self for _ in spec]
 
     def caption(self, *args, **kwargs):
+        self.caption_calls.append({"args": args, "kwargs": dict(kwargs)})
+        return None
+
+    def markdown(self, body, **kwargs):
+        self.markdown_calls.append({"body": body, "kwargs": dict(kwargs)})
         return None
 
     def button(self, *args, **kwargs):
+        self.button_calls.append({"args": args, "kwargs": dict(kwargs)})
         return False
+
+    def pills(self, label, options, **kwargs):
+        self.pills_calls.append(
+            {
+                "label": label,
+                "options": list(options),
+                "kwargs": dict(kwargs),
+            }
+        )
+        key = kwargs.get("key")
+        default = kwargs.get("default")
+        if key not in self.session_state:
+            self.session_state[key] = default
+        return self.session_state[key]
+
+    def segmented_control(self, label, options, **kwargs):
+        key = kwargs.get("key")
+        default = kwargs.get("default", options[0] if options else None)
+        if key not in self.session_state:
+            self.session_state[key] = default
+        return self.session_state[key]
 
     def html(self, body, **kwargs):
         self.html_calls.append({"body": body, "kwargs": dict(kwargs)})
+        return None
+
+    def slider(self, label, min_value=None, max_value=None, value=None, key=None, **kwargs):
+        if key not in self.session_state:
+            self.session_state[key] = value
+        return self.session_state[key]
+
+    def expander(self, *args, **kwargs):
+        return self
+
+    def code(self, *args, **kwargs):
         return None
 
 
@@ -109,6 +151,194 @@ class DemoModelInputTest(unittest.TestCase):
             self.fake_streamlit.session_state["model_custom"],
             "vendor/custom-text-model",
         )
+
+    def test_image_canvas_caption_shows_only_resolved_pixels(self):
+        demo.render_image_canvas_controls(
+            provider_type="openai",
+            image_model_name="gpt-image-2",
+            aspect_ratio_key="aspect_ratio",
+            image_resolution_key="image_resolution",
+            default_aspect_ratio="1:1",
+            default_image_resolution="2K",
+        )
+
+        self.assertEqual(self.fake_streamlit.session_state["aspect_ratio"], "1:1")
+        self.assertEqual(self.fake_streamlit.session_state["image_resolution"], "2K")
+        self.assertTrue(any("2048x2048" in call["body"] for call in self.fake_streamlit.markdown_calls))
+        self.assertFalse(any(call["label"] == "宽高比" for call in self.fake_streamlit.selectbox_calls))
+        self.assertEqual(self.fake_streamlit.button_calls, [])
+        self.assertEqual(self.fake_streamlit.pills_calls[0]["options"], demo.COMMON_ASPECT_RATIOS)
+
+    def test_common_aspect_ratios_use_global_ten_size_grid(self):
+        self.assertEqual(len(demo.COMMON_ASPECT_RATIOS), 10)
+        self.assertIn("4:5", demo.COMMON_ASPECT_RATIOS)
+        self.assertIn("5:4", demo.COMMON_ASPECT_RATIOS)
+
+    def test_provider_defaults_are_cached_for_one_render_pass(self):
+        calls = []
+        with patch.object(
+            demo,
+            "build_all_provider_ui_defaults",
+            side_effect=lambda **kwargs: calls.append(kwargs) or {"openai": {"model_name": "gpt"}},
+        ):
+            first = demo.build_provider_defaults()
+            second = demo.build_provider_defaults()
+
+        self.assertIs(first, second)
+        self.assertEqual(len(calls), 1)
+
+        demo.invalidate_provider_connection_caches()
+        with patch.object(
+            demo,
+            "build_all_provider_ui_defaults",
+            side_effect=lambda **kwargs: calls.append(kwargs) or {"openai": {"model_name": "gpt-new"}},
+        ):
+            refreshed = demo.build_provider_defaults()
+
+        self.assertEqual(refreshed["openai"]["model_name"], "gpt-new")
+        self.assertEqual(len(calls), 2)
+
+    def test_restored_non_vip_image_url_does_not_keep_apiyi_residue(self):
+        self.fake_streamlit.session_state.update(
+            {
+                "tab1_image_model_name": "gpt-image-2",
+                "tab1_image_base_url": demo.APIYI_BASE_URL,
+                "refine_image_model_name": "gpt-image-2-vip(apiyi)",
+                "refine_image_base_url": demo.APIYI_BASE_URL,
+            }
+        )
+
+        with patch.object(
+            demo,
+            "get_connection_ui_defaults",
+            return_value={"base_url": "https://api.ikuncode.cc/v1"},
+        ):
+            demo.normalize_restored_openai_image_url_state()
+
+        self.assertEqual(
+            self.fake_streamlit.session_state["tab1_image_base_url"],
+            "https://api.ikuncode.cc/v1",
+        )
+        self.assertEqual(
+            self.fake_streamlit.session_state["refine_image_base_url"],
+            demo.APIYI_BASE_URL,
+        )
+
+    def test_connection_defaults_do_not_surface_stale_probe_results(self):
+        with patch.object(
+            demo,
+            "get_connection_ui_defaults",
+            return_value={
+                "connection_id": "openai",
+                "display_name": "OpenAI",
+                "base_url": "",
+                "extra_headers": {},
+                "supports_text": True,
+                "supports_image": True,
+                "enabled": True,
+                "model_discovery_mode": "hybrid",
+                "model_allowlist": [],
+                "probe_results": {"image": {"status": "failed"}},
+            },
+        ):
+            defaults = demo._apply_connection_defaults_to_session("tab1", "openai")
+
+        state_keys = demo._build_connection_state_keys("tab1")
+        self.assertEqual(defaults["probe_results"], {"image": {"status": "failed"}})
+        self.assertEqual(self.fake_streamlit.session_state[state_keys["probe_results"]], {})
+
+    def test_openai_image_options_ignore_stale_size_widget_state(self):
+        self.fake_streamlit.session_state.update(
+            {
+                "refine_image_size": "3840x2160",
+                "refine_image_quality": "auto",
+                "refine_image_background": "auto",
+                "refine_image_output_format": "png",
+                "refine_image_moderation": "auto",
+            }
+        )
+
+        options = demo.render_image_generation_option_controls(
+            provider_type="openai",
+            image_model_name="gpt-image-2",
+            aspect_ratio="1:1",
+            image_resolution="1K",
+            widget_prefix="refine",
+            edit=True,
+        )
+
+        self.assertEqual(options["size"], "1280x1280")
+
+    def test_apiyi_image_model_forces_apiyi_url_and_wire_model_name(self):
+        self.assertEqual(
+            demo.normalize_display_model_name("gpt-image-2-vip(apiyi)"),
+            "gpt-image-2-vip",
+        )
+        self.assertEqual(
+            demo.display_image_model_name("gpt-image-2-vip"),
+            "gpt-image-2-vip(apiyi)",
+        )
+        self.assertEqual(
+            demo.coerce_apiyi_image_base_url("https://other.example/v1", "gpt-image-2-vip"),
+            demo.APIYI_BASE_URL,
+        )
+
+    def test_openai_image_model_options_default_to_standard_gpt_image_2(self):
+        self.assertEqual(demo.OPENAI_IMAGE_MODELS[0], "gpt-image-2")
+        options = demo.get_connection_model_options(
+            {
+                "provider_type": "openai",
+                "image_model_name": "",
+                "model_allowlist": [],
+            },
+            image=True,
+        )
+
+        self.assertEqual(options[0], "gpt-image-2")
+        self.assertIn("gpt-image-2-vip(apiyi)", options)
+        self.assertNotIn("gpt-image-1", options)
+
+    def test_probe_summary_only_uses_requested_targets_without_unknown_entries(self):
+        message = demo._build_probe_summary_message(
+            {
+                "discovery": {"status": "failed", "message": "模型发现失败，可继续手动填写模型名。"},
+                "text": {"status": "success", "message": "多模态模型测试成功。"},
+                "image": {},
+            }
+        )
+
+        self.assertEqual(message, "多模态模型：多模态模型测试成功。")
+        self.assertNotIn("unknown", message)
+        self.assertNotIn("图像模型", message)
+
+    def test_probe_results_prefer_last_tested_target(self):
+        state_keys = demo._build_connection_state_keys("tab1")
+        self.fake_streamlit.session_state[state_keys["last_probe_target"]] = "text"
+        self.fake_streamlit.session_state[state_keys["probe_results"]] = {
+            "image": {"status": "failed", "message": "旧的图像失败", "tested_model": "old-image"},
+            "text": {"status": "success", "message": "新的文本成功", "tested_model": "gpt-text"},
+        }
+
+        demo.render_connection_probe_results("tab1")
+
+        rendered = "\n".join(str(call["body"]) for call in self.fake_streamlit.markdown_calls)
+        self.assertIn("多模态模型", rendered)
+        self.assertIn("新的文本成功", rendered)
+        self.assertNotIn("旧的图像失败", rendered)
+
+    def test_builtin_connection_labels_do_not_show_builtin_suffix(self):
+        with patch.object(
+            demo,
+            "list_available_connections",
+            return_value=[
+                types.SimpleNamespace(connection_id="openai", display_name="OpenAI", builtin=True),
+                types.SimpleNamespace(connection_id="custom", display_name="自定义", builtin=False),
+            ],
+        ):
+            options = demo.get_connection_options()
+
+        self.assertIn(("openai", "OpenAI"), options)
+        self.assertIn(("custom", "自定义（自定义）"), options)
 
     def test_custom_selector_uses_manual_input_value(self):
         self.fake_streamlit.session_state.update(
@@ -258,13 +488,13 @@ class DemoModelInputTest(unittest.TestCase):
         self.fake_streamlit.session_state["tab1_api_key"] = "saved-google-key"
         original_persist = demo.persist_provider_api_key_input
         captured_calls = []
-        demo.persist_provider_api_key_input = lambda provider, api_key: captured_calls.append((provider, api_key))
+        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
 
         try:
             restored = demo.render_provider_api_key_controls(
                 provider="gemini",
                 provider_defaults={
-                    "api_key_label": "Google API Key",
+                    "api_key_label": "API",
                     "api_key_help": "Google AI Studio API 密钥",
                     "api_key_default": "saved-google-key",
                 },
@@ -282,12 +512,13 @@ class DemoModelInputTest(unittest.TestCase):
         )
         self.assertEqual(len(self.fake_streamlit.text_input_calls), 1)
         self.assertFalse(self.fake_streamlit.text_input_calls[0]["value_provided"])
-        self.assertEqual(captured_calls, [("gemini", "saved-google-key")])
+        self.assertEqual(captured_calls, [])
+        self.assertEqual(self.fake_streamlit.button_calls, [])
 
     def test_build_api_key_storage_notice_reflects_local_secret_state(self):
         self.assertEqual(
             demo.build_api_key_storage_notice({"api_key_default": "saved-key"}),
-            "已在本机保存当前 Provider 的密钥，刷新页面后仍会保留。",
+            "已在本机保存当前连接的 API，刷新页面后仍会保留。",
         )
         self.assertEqual(
             demo.build_api_key_storage_notice({"api_key_default": ""}),
@@ -303,20 +534,46 @@ class DemoModelInputTest(unittest.TestCase):
                 persist_secret=True,
                 allow_local_persist=False,
             ),
-            "当前是未保存的自定义连接草稿；API Key 会先保留在本次会话，保存连接后才会写入本地 txt。",
+            "当前是未保存的自定义连接草稿；API 会先保留在本次会话，保存连接后才会写入本地 txt。",
         )
 
-    def test_render_provider_api_key_controls_skips_persist_when_session_only(self):
-        self.fake_streamlit.session_state["tab1_api_key"] = "session-only-key"
+    def test_render_provider_api_key_controls_persists_changed_key_without_status_expander(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = "new-google-key"
+        self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")] = "new-google-key"
         original_persist = demo.persist_provider_api_key_input
         captured_calls = []
-        demo.persist_provider_api_key_input = lambda provider, api_key: captured_calls.append((provider, api_key))
+        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
 
         try:
             restored = demo.render_provider_api_key_controls(
                 provider="gemini",
                 provider_defaults={
-                    "api_key_label": "Google API Key",
+                    "api_key_label": "API",
+                    "api_key_help": "Google AI Studio API 密钥",
+                    "api_key_default": "old-google-key",
+                },
+                session_key="tab1_api_key",
+                clear_request_key="tab1_api_key_clear_requested",
+                clear_button_key="tab1_clear_provider_api_key",
+            )
+        finally:
+            demo.persist_provider_api_key_input = original_persist
+
+        self.assertEqual(restored, "new-google-key")
+        self.assertEqual(captured_calls, [("gemini", "new-google-key", False)])
+        self.assertEqual(self.fake_streamlit.button_calls, [])
+
+    def test_render_provider_api_key_controls_skips_persist_when_session_only(self):
+        self.fake_streamlit.session_state["tab1_api_key"] = "session-only-key"
+        original_persist = demo.persist_provider_api_key_input
+        captured_calls = []
+        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
+
+        try:
+            restored = demo.render_provider_api_key_controls(
+                provider="gemini",
+                provider_defaults={
+                    "api_key_label": "API",
                     "api_key_help": "Google AI Studio API 密钥",
                     "api_key_default": "session-only-key",
                 },
@@ -335,13 +592,13 @@ class DemoModelInputTest(unittest.TestCase):
         self.fake_streamlit.session_state["tab1_api_key"] = "draft-key"
         original_persist = demo.persist_provider_api_key_input
         captured_calls = []
-        demo.persist_provider_api_key_input = lambda provider, api_key: captured_calls.append((provider, api_key))
+        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
 
         try:
             restored = demo.render_provider_api_key_controls(
                 provider="custom-openai",
                 provider_defaults={
-                    "api_key_label": "兼容 API Key",
+                    "api_key_label": "API",
                     "api_key_help": "OpenAI 兼容接口密钥",
                     "api_key_default": "draft-key",
                 },
@@ -379,6 +636,7 @@ class DemoModelInputTest(unittest.TestCase):
                 "api_key_default": "new-key",
                 "model_name": "new-text",
                 "image_model_name": "new-image",
+                "base_url": "https://shared.example/v1",
             },
             sync_text_model=True,
             sync_image_model=True,
@@ -399,6 +657,86 @@ class DemoModelInputTest(unittest.TestCase):
             self.fake_streamlit.session_state["tab1_runtime_input_connection_id"],
             "custom-openai",
         )
+        self.assertEqual(self.fake_streamlit.session_state["tab1_base_url"], "https://shared.example/v1")
+
+    def test_role_connection_sync_uses_role_specific_base_url(self):
+        demo.sync_role_connection_runtime_input_state(
+            prefix="tab1",
+            selected_connection_id="openai",
+            provider_defaults={
+                "api_key_default": "text-key",
+                "image_api_key_default": "image-key",
+                "model_name": "gpt-text",
+                "image_model_name": "gpt-image-2",
+                "base_url": "https://shared.example/v1",
+                "vlm_base_url": "https://text.example/v1",
+                "image_base_url": "https://image.example/v1",
+            },
+            model_value_key="tab1_model_name",
+            model_selector_key="tab1_model_name_selector",
+            model_custom_value_key="tab1_model_name_custom",
+            image=False,
+        )
+        demo.sync_role_connection_runtime_input_state(
+            prefix="tab1_image",
+            selected_connection_id="openai",
+            provider_defaults={
+                "api_key_default": "text-key",
+                "image_api_key_default": "image-key",
+                "model_name": "gpt-text",
+                "image_model_name": "gpt-image-2",
+                "base_url": "https://shared.example/v1",
+                "vlm_base_url": "https://text.example/v1",
+                "image_base_url": "https://image.example/v1",
+            },
+            model_value_key="tab1_image_model_name",
+            model_selector_key="tab1_image_model_name_selector",
+            model_custom_value_key="tab1_image_model_name_custom",
+            image=True,
+        )
+
+        self.assertEqual(self.fake_streamlit.session_state["tab1_base_url"], "https://text.example/v1")
+        self.assertEqual(self.fake_streamlit.session_state["tab1_image_base_url"], "https://image.example/v1")
+        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "text-key")
+        self.assertEqual(self.fake_streamlit.session_state["tab1_image_api_key"], "image-key")
+
+    def test_builtin_runtime_persist_keeps_apiyi_vip_url_ephemeral(self):
+        calls = []
+        defaults = {
+            "image_model_name": "gpt-image-2",
+            "image_base_url": "https://api.example/v1",
+            "base_url": "https://api.example/v1",
+        }
+        with patch.object(demo, "write_provider_runtime_defaults", side_effect=lambda provider, **kwargs: calls.append((provider, kwargs))):
+            with patch.object(demo, "get_provider_ui_defaults", return_value=defaults):
+                demo.persist_builtin_provider_runtime_input(
+                    provider="openai",
+                    base_url=demo.APIYI_BASE_URL,
+                    model_name="gpt-image-2-vip(apiyi)",
+                    image=True,
+                )
+
+        self.assertEqual(calls[0][0], "openai")
+        self.assertNotIn("base_url", calls[0][1])
+        self.assertEqual(calls[0][1]["image_model_name"], "gpt-image-2-vip")
+
+    def test_builtin_runtime_persist_skips_unchanged_values(self):
+        calls = []
+        defaults = {
+            "model_name": "gpt-5.5",
+            "vlm_base_url": "https://api.example/v1",
+            "base_url": "https://api.example/v1",
+        }
+        with patch.object(demo, "write_provider_runtime_defaults", side_effect=lambda provider, **kwargs: calls.append((provider, kwargs))):
+            with patch.object(demo, "get_provider_ui_defaults", return_value=defaults):
+                demo.persist_builtin_provider_runtime_input(
+                    provider="openai",
+                    base_url="https://api.example/v1",
+                    model_name="gpt-5.5",
+                    image=False,
+                )
+
+        self.assertEqual(calls, [])
 
     def test_vlm_sync_does_not_reset_image_model_state(self):
         self.fake_streamlit.session_state.update(
@@ -420,6 +758,7 @@ class DemoModelInputTest(unittest.TestCase):
                 "api_key_default": "new-openai-key",
                 "model_name": "gpt-5.5",
                 "image_model_name": "gpt-image-2",
+                "vlm_base_url": "https://openai.example/v1",
             },
             sync_text_model=True,
             sync_image_model=False,
@@ -444,7 +783,10 @@ class DemoModelInputTest(unittest.TestCase):
         }
 
         self.assertEqual(demo.get_connection_model_options(defaults, image=False), ["gpt-5.5"])
-        self.assertEqual(demo.get_connection_model_options(defaults, image=True), ["gpt-image-2"])
+        self.assertEqual(
+            demo.get_connection_model_options(defaults, image=True),
+            ["gpt-image-2", "gpt-image-2-vip(apiyi)"],
+        )
 
     def test_sync_connection_runtime_input_state_keeps_current_values_when_selection_unchanged(self):
         self.fake_streamlit.session_state.update(
@@ -463,6 +805,7 @@ class DemoModelInputTest(unittest.TestCase):
                 "api_key_default": "new-key",
                 "model_name": "new-text",
                 "image_model_name": "new-image",
+                "base_url": "https://new.example/v1",
             },
         )
 
@@ -612,6 +955,18 @@ class DemoModelInputTest(unittest.TestCase):
         self.assertIn("精修图像", html_call["body"])
         self.assertIn("stExpandSidebarButton", html_call["body"])
         self.assertIn("autoCollapsed", html_call["body"])
+        self.assertTrue(html_call["kwargs"]["unsafe_allow_javascript"])
+
+    def test_inject_sidebar_scroll_restoration_hook_registers_dom_script(self):
+        demo.inject_sidebar_scroll_restoration_hook()
+
+        self.assertEqual(len(self.fake_streamlit.html_calls), 1)
+        html_call = self.fake_streamlit.html_calls[0]
+        self.assertIn("__paperbananaSidebarScrollTop", html_call["body"])
+        self.assertIn("sessionStorage", html_call["body"])
+        self.assertIn("scrollTop", html_call["body"])
+        self.assertIn("ResizeObserver", html_call["body"])
+        self.assertIn("section.stSidebar", html_call["body"])
         self.assertTrue(html_call["kwargs"]["unsafe_allow_javascript"])
 
     def test_format_repo_relative_path_prefers_repo_relative_display(self):

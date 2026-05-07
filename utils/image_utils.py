@@ -26,6 +26,20 @@ from utils.log_config import get_logger
 logger = get_logger("ImageUtils")
 
 
+IMAGE_SIZE_PRESET_MAP = {
+    "1:1": {"1K": "1280x1280", "2K": "2048x2048", "4K": "2880x2880"},
+    "2:3": {"1K": "848x1280", "2K": "1360x2048", "4K": "2336x3520"},
+    "3:2": {"1K": "1280x848", "2K": "2048x1360", "4K": "3520x2336"},
+    "3:4": {"1K": "960x1280", "2K": "1536x2048", "4K": "2480x3312"},
+    "4:3": {"1K": "1280x960", "2K": "2048x1536", "4K": "3312x2480"},
+    "4:5": {"1K": "1024x1280", "2K": "1632x2048", "4K": "2560x3216"},
+    "5:4": {"1K": "1280x1024", "2K": "2048x1632", "4K": "3216x2560"},
+    "9:16": {"1K": "720x1280", "2K": "1152x2048", "4K": "2160x3840"},
+    "16:9": {"1K": "1280x720", "2K": "2048x1152", "4K": "3840x2160"},
+    "21:9": {"1K": "1280x544", "2K": "2048x864", "4K": "3840x1632"},
+}
+
+
 def detect_image_mime_from_bytes(image_bytes: bytes) -> str:
     """
     Detect MIME type from raw image bytes using file signatures.
@@ -139,46 +153,51 @@ def openai_image_size_from_controls(
     most 3840 px, aspect ratio is at most 3:1, and total pixels stay under
     8,294,400.
     """
-    normalized_ratio = normalize_aspect_ratio(aspect_ratio, default_ratio="3:2")
-    width_ratio, height_ratio = (int(part) for part in normalized_ratio.split(":", 1))
     normalized_resolution = str(image_resolution or "").strip().upper()
+    raw_ratio = str(aspect_ratio or "").strip()
+    mapped_size = IMAGE_SIZE_PRESET_MAP.get(raw_ratio, {}).get(normalized_resolution)
+    if mapped_size:
+        return mapped_size
+
+    normalized_ratio = normalize_aspect_ratio(aspect_ratio, default_ratio="3:2")
+    mapped_size = IMAGE_SIZE_PRESET_MAP.get(normalized_ratio, {}).get(normalized_resolution)
+    if mapped_size:
+        return mapped_size
+
+    width_ratio, height_ratio = (int(part) for part in normalized_ratio.split(":", 1))
 
     if normalized_resolution == "4K":
-        long_edge = 3840
+        target_long_edge = 3840
     elif normalized_resolution == "2K":
-        long_edge = 2048
+        target_long_edge = 2048
     elif normalized_resolution == "1K":
-        long_edge = 1024
+        target_long_edge = 1024
     else:
         return default_size
 
-    if width_ratio >= height_ratio:
-        width = long_edge
-        height = round(long_edge * height_ratio / width_ratio)
-    else:
-        height = long_edge
-        width = round(long_edge * width_ratio / height_ratio)
+    def _dims_for_long_edge(long_edge: int) -> tuple[int, int]:
+        if width_ratio >= height_ratio:
+            width = long_edge
+            height = round(long_edge * height_ratio / width_ratio)
+        else:
+            height = long_edge
+            width = round(long_edge * width_ratio / height_ratio)
+        width = max(16, round(width / 16) * 16)
+        height = max(16, round(height / 16) * 16)
+        return width, height
 
-    width = max(16, round(width / 16) * 16)
-    height = max(16, round(height / 16) * 16)
+    width, height = _dims_for_long_edge(target_long_edge)
 
     max_pixels = 8_294_400
-    while width * height > max_pixels:
-        if width >= height:
-            width -= 16
-            height = max(16, round(width * height_ratio / width_ratio / 16) * 16)
-        else:
-            height -= 16
-            width = max(16, round(height * width_ratio / height_ratio / 16) * 16)
-
     min_pixels = 655_360
-    while width * height < min_pixels and max(width, height) < long_edge:
-        if width >= height:
-            width = min(long_edge, width + 16)
-            height = max(16, round(width * height_ratio / width_ratio / 16) * 16)
-        else:
-            height = min(long_edge, height + 16)
-            width = max(16, round(height * width_ratio / height_ratio / 16) * 16)
+
+    while width * height < min_pixels and max(width, height) < 3840:
+        target_long_edge = min(3840, target_long_edge + 16)
+        width, height = _dims_for_long_edge(target_long_edge)
+
+    while width * height > max_pixels and target_long_edge > 16:
+        target_long_edge = max(16, target_long_edge - 16)
+        width, height = _dims_for_long_edge(target_long_edge)
 
     return f"{width}x{height}"
 

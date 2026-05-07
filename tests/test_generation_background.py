@@ -202,7 +202,7 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertEqual(demo.st.session_state["tab1_curated_profile"], "paper-profile")
         self.assertEqual(demo.st.session_state["tab1_curated_profile_input"], "paper-profile")
         self.assertEqual(demo.st.session_state["tab1_num_candidates"], 8)
-        self.assertEqual(demo.st.session_state["refine_staged_image_bytes"], b"preview-bytes")
+        self.assertNotIn("refine_staged_image_bytes", demo.st.session_state)
         self.assertNotIn("tab1_api_key", demo.st.session_state)
         self.assertNotIn("tab1_extra_headers_json", demo.st.session_state)
         self.assertNotIn("active_generation_job_id", demo.st.session_state)

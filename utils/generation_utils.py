@@ -2268,9 +2268,10 @@ async def call_openai_image_generation_with_retry_async(
     base_gen_params: Dict[str, Any] = {
         "model": model_name,
         "prompt": prompt,
-        "n": 1,
         **request_params,
     }
+    if capabilities.sends_n:
+        base_gen_params["n"] = 1
 
     last_exception: Exception | None = None
     last_error_text = ""

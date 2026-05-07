@@ -83,6 +83,16 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(options.size, "2880x2880")
 
+    def test_gpt_image_2_vip_uses_apiyi_size_grid(self):
+        options = normalize_image_generation_options(
+            provider_type="openai",
+            model_name="gpt-image-2-vip",
+            aspect_ratio="4:5",
+            image_resolution="2K",
+        )
+
+        self.assertEqual(options.size, "1632x2048")
+
     def test_gpt_image_2_accepts_custom_size_for_ui(self):
         capabilities = get_image_model_capabilities("openai", "gpt-image-2")
 
@@ -123,6 +133,35 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("output_format", sent)
         self.assertNotIn("moderation", sent)
         self.assertNotIn("stream", sent)
+
+    async def test_gpt_image_2_vip_omits_n_and_quality(self):
+        fake_response = SimpleNamespace(data=[SimpleNamespace(b64_json="fake-image-b64")])
+        fake_client = SimpleNamespace(
+            images=SimpleNamespace(
+                generate=AsyncMock(return_value=fake_response),
+            )
+        )
+
+        with patch.object(generation_utils, "get_openai_image_client", return_value=fake_client):
+            result = await generation_utils.call_openai_image_generation_with_retry_async(
+                model_name="gpt-image-2-vip",
+                prompt="draw a circle",
+                config={
+                    "aspect_ratio": "16:9",
+                    "image_resolution": "1K",
+                },
+                max_attempts=1,
+                retry_delay=0,
+            )
+
+        self.assertEqual(result, ["fake-image-b64"])
+        sent = fake_client.images.generate.call_args.kwargs
+        self.assertEqual(sent["model"], "gpt-image-2-vip")
+        self.assertEqual(sent["size"], "1280x720")
+        self.assertNotIn("n", sent)
+        self.assertNotIn("quality", sent)
+        self.assertNotIn("background", sent)
+        self.assertNotIn("output_format", sent)
 
     async def test_text_retry_exhaustion_raises_instead_of_returning_error_string(self):
         fake_client = SimpleNamespace(

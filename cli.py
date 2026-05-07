@@ -60,6 +60,14 @@ def resolve_module_script_path(module_name: str) -> Path:
     return Path(spec.origin).resolve()
 
 
+def _call_subprocess(cmd: list[str]) -> int:
+    try:
+        return subprocess.call(cmd)
+    except KeyboardInterrupt:
+        _safe_print("\n[PaperBanana-CN] 已停止。")
+        return 130
+
+
 def launch_streamlit_module(
     module_name: str,
     extra_args: list[str],
@@ -78,7 +86,7 @@ def launch_streamlit_module(
         cmd.extend(["--server.port", str(default_port)])
     cmd.extend(extra_args)
     _safe_print(f"[PaperBanana-CN] 启动 Streamlit 应用：{module_name}")
-    return subprocess.call(cmd)
+    return _call_subprocess(cmd)
 
 
 def launch_python_module(module_name: str, extra_args: list[str]) -> int:
@@ -87,7 +95,7 @@ def launch_python_module(module_name: str, extra_args: list[str]) -> int:
         raise FileNotFoundError(f"无法解析 Python 模块：{module_name}")
     cmd = [sys.executable, "-m", module_name, *extra_args]
     _safe_print(f"[PaperBanana-CN] 运行 CLI 模块：{module_name}")
-    return subprocess.call(cmd)
+    return _call_subprocess(cmd)
 
 
 def _launch_gui(extra_args: list[str]) -> int:

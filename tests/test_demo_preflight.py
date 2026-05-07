@@ -36,9 +36,26 @@ class DemoPreflightTest(unittest.TestCase):
 
         self.assertEqual(len(report["errors"]), 1)
         self.assertTrue(any("plot 输入尚未通过结构化解析" in item for item in report["errors"]))
-        self.assertTrue(any("API Key" in item for item in report["warnings"]))
+        self.assertTrue(any("API" in item for item in report["warnings"]))
         self.assertTrue(any("当前参数" in item for item in report["notes"]))
         self.assertTrue(any("未找到参考样例库" in item for item in report["warnings"]))
+
+    def test_preflight_success_message_does_not_claim_model_probe_success(self):
+        fake = types.SimpleNamespace(
+            messages=[],
+            error=lambda message, **kwargs: fake.messages.append(("error", message)),
+            warning=lambda message, **kwargs: fake.messages.append(("warning", message)),
+            info=lambda message, **kwargs: fake.messages.append(("info", message)),
+            caption=lambda message, **kwargs: fake.messages.append(("caption", message)),
+        )
+        original_st = demo.st
+        demo.st = fake
+        try:
+            demo.render_preflight_summary({"errors": [], "warnings": [], "notes": []})
+        finally:
+            demo.st = original_st
+
+        self.assertEqual(fake.messages, [("info", "启动前检查未发现阻断项；模型连通性只按侧栏手动测试结果判断。")])
 
     def test_build_generation_effective_settings_preserves_manual_advanced_values(self):
         effective = demo._build_generation_effective_settings(

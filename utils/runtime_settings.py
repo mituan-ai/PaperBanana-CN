@@ -13,28 +13,29 @@ from utils.provider_connections import (
     list_provider_connections,
     resolve_connection,
 )
+from utils.config_loader import load_model_config, load_provider_defaults
 
 
 PROVIDER_UI_META = {
     "gemini": {
-        "api_key_label": "Google API Key",
-        "api_key_help": "Google AI Studio API 密钥",
+        "api_key_label": "API",
+        "api_key_help": "Google AI Studio 或兼容中转站的 API 密钥。",
     },
     "openai": {
-        "api_key_label": "OpenAI API Key",
-        "api_key_help": "OpenAI 或 OpenAI-compatible 中转站 API 密钥",
+        "api_key_label": "API",
+        "api_key_help": "OpenAI 或兼容中转站的 API 密钥。",
     },
     "evolink": {
-        "api_key_label": "API Key",
-        "api_key_help": "Evolink API 密钥（Bearer Token）",
+        "api_key_label": "API",
+        "api_key_help": "Evolink API 密钥。",
     },
     "openrouter": {
-        "api_key_label": "OpenRouter API Key",
-        "api_key_help": "OpenRouter API 密钥，从 openrouter.ai 获取",
+        "api_key_label": "API",
+        "api_key_help": "OpenRouter API 密钥。",
     },
     "openai_compatible": {
-        "api_key_label": "兼容 API Key",
-        "api_key_help": "任意 OpenAI 兼容服务的 API 密钥；若服务无需密钥，可留空。",
+        "api_key_label": "API",
+        "api_key_help": "兼容服务的 API 密钥；若服务无需密钥，可留空。",
     },
 }
 
@@ -187,6 +188,14 @@ def build_provider_ui_defaults(
         base_dir=base_dir,
         model_config_data=model_config_data,
     )
+    role_base_defaults: dict[str, Any] = {}
+    if connection.connection_id in BUILTIN_CONNECTION_IDS:
+        config_data = model_config_data if model_config_data is not None else load_model_config(base_dir)
+        role_base_defaults = load_provider_defaults(
+            connection.connection_id,
+            config_data,
+            base_dir=base_dir,
+        )
     ui_meta = PROVIDER_UI_META.get(connection.provider_type, PROVIDER_UI_META["openai_compatible"])
     return {
         "connection_id": connection.connection_id,
@@ -199,6 +208,8 @@ def build_provider_ui_defaults(
         "model_name": settings.model_name,
         "image_model_name": settings.image_model_name,
         "base_url": settings.base_url,
+        "vlm_base_url": str(role_base_defaults.get("vlm_base_url", settings.base_url) or "").strip(),
+        "image_base_url": str(role_base_defaults.get("image_base_url", settings.base_url) or "").strip(),
         "api_key_env_var": connection.api_key_env_var,
         "extra_headers": dict(connection.extra_headers),
         "model_discovery_mode": connection.model_discovery_mode,

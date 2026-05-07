@@ -232,42 +232,18 @@ flowchart LR
     D -. 可选 .-> J[Gemini Image]
 ```
 
-## 环境变量配置
+## 本地配置
 
-GUI 配置适合交互式使用。长期使用或多次启动时，可以将模型信息写入环境变量。
-
-```bash
-# OpenAI-compatible 文本链路
-export PAPERBANANA_OPENAI_BASE_URL="https://your-openai-compatible-gateway/v1"
-export PAPERBANANA_OPENAI_VLM_API_KEY="sk-..."
-export PAPERBANANA_OPENAI_VLM_MODEL="gpt-5.5"
-
-# OpenAI-compatible 图像链路
-export PAPERBANANA_OPENAI_IMAGE_API_KEY="sk-..."
-export PAPERBANANA_OPENAI_IMAGE_MODEL="gpt-image-2"
-export PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC=360
-export PAPERBANANA_OPENAI_IMAGE_MAX_ATTEMPTS=3
-```
-
-```bash
-# Gemini-compatible 文本与图像链路
-export PAPERBANANA_GEMINI_BASE_URL="https://your-gemini-compatible-gateway"
-export PAPERBANANA_GEMINI_VLM_API_KEY="your-key"
-export PAPERBANANA_GEMINI_IMAGE_API_KEY="your-image-key"
-export PAPERBANANA_GEMINI_VLM_MODEL="gemini-3.1-flash-lite-preview"
-export PAPERBANANA_GEMINI_IMAGE_MODEL="gemini-3.1-flash-image-preview"
-```
-
-也可以把密钥放入本地文件，避免写入 Git：
+GUI 默认使用项目内配置，不会用系统环境变量覆盖侧边栏里的 URL、模型和 API。新用户首次打开时是官方默认 URL、空 API；在侧边栏填写后会自动保存到 `configs/local/`。
 
 ```text
+configs/local/provider_settings.yaml
 configs/local/openai_vlm_api_key.txt
 configs/local/openai_image_api_key.txt
 configs/local/gemini_vlm_api_key.txt
 configs/local/gemini_image_api_key.txt
+configs/local/provider_registry.yaml
 ```
-
-这些路径已被 `.gitignore` 忽略。
 
 ## 功能范围
 

@@ -78,6 +78,8 @@ class ProviderConnectionsTest(unittest.TestCase):
 
         self.assertEqual(connection.connection_id, "my-custom-api")
         self.assertEqual(registry["connections"][0]["connection_id"], "my-custom-api")
+        self.assertFalse((root / "configs" / "provider_registry.yaml").exists())
+        self.assertTrue((root / "configs" / "local" / "provider_registry.yaml").exists())
         self.assertTrue(secret_path.exists())
         self.assertEqual(secret_path.read_text(encoding="utf-8").strip(), "secret-key")
         self.assertTrue(any(item.connection_id == "my-custom-api" for item in connections))

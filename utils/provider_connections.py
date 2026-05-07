@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -25,6 +24,7 @@ from utils.image_generation_options import normalize_image_generation_options
 
 DEFAULT_PROVIDER_REGISTRY_VERSION = 1
 DEFAULT_PROVIDER_REGISTRY_FILE = "provider_registry.yaml"
+LOCAL_PROVIDER_REGISTRY_FILE = "provider_registry.yaml"
 DEFAULT_CONNECTION_META_FILE = "provider_connection_meta.json"
 CUSTOM_PROVIDER_DIRNAME = "providers"
 BUILTIN_CONNECTION_IDS = ("gemini", "openai", "evolink", "openrouter")
@@ -118,6 +118,10 @@ def _registry_path(base_dir: Path | None = None) -> Path:
     return _config_dir(base_dir) / DEFAULT_PROVIDER_REGISTRY_FILE
 
 
+def _local_registry_path(base_dir: Path | None = None) -> Path:
+    return _local_dir(base_dir) / LOCAL_PROVIDER_REGISTRY_FILE
+
+
 def _meta_path(base_dir: Path | None = None) -> Path:
     return _local_dir(base_dir) / DEFAULT_CONNECTION_META_FILE
 
@@ -200,15 +204,32 @@ def delete_custom_provider_api_key(
 
 
 def load_provider_registry(base_dir: Path | None = None) -> dict[str, Any]:
-    path = _registry_path(base_dir)
-    payload = _read_yaml_payload(path)
-    version = int(payload.get("version", DEFAULT_PROVIDER_REGISTRY_VERSION) or DEFAULT_PROVIDER_REGISTRY_VERSION)
-    connections = payload.get("connections", [])
-    if not isinstance(connections, list):
-        connections = []
+    local_payload = _read_yaml_payload(_local_registry_path(base_dir))
+    template_payload = _read_yaml_payload(_registry_path(base_dir))
+    payloads = [local_payload, template_payload]
+    version = DEFAULT_PROVIDER_REGISTRY_VERSION
+    merged: dict[str, dict[str, Any]] = {}
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        version = max(
+            version,
+            int(payload.get("version", DEFAULT_PROVIDER_REGISTRY_VERSION) or DEFAULT_PROVIDER_REGISTRY_VERSION),
+        )
+        raw_connections = payload.get("connections", [])
+        if not isinstance(raw_connections, list):
+            continue
+        for item in raw_connections:
+            if not isinstance(item, dict):
+                continue
+            connection_id = normalize_connection_id(item.get("connection_id"))
+            if not connection_id:
+                continue
+            if connection_id not in merged:
+                merged[connection_id] = item
     return {
         "version": version,
-        "connections": connections,
+        "connections": list(merged.values()),
     }
 
 
@@ -221,7 +242,7 @@ def save_provider_registry(
         "version": DEFAULT_PROVIDER_REGISTRY_VERSION,
         "connections": [item.to_registry_dict() for item in connections if not item.builtin],
     }
-    return _write_yaml_payload(_registry_path(base_dir), payload)
+    return _write_yaml_payload(_local_registry_path(base_dir), payload)
 
 
 def load_connection_metadata(base_dir: Path | None = None) -> dict[str, Any]:
@@ -271,8 +292,8 @@ def _build_builtin_connection(
         "openrouter": "hybrid",
     }.get(connection_id, "manual")
     display_name = {
-        "gemini": "Gemini",
-        "openai": "GPT / OpenAI",
+        "gemini": "Google",
+        "openai": "OpenAI",
         "evolink": "Evolink",
         "openrouter": "OpenRouter",
     }.get(connection_id, connection_id)
@@ -359,25 +380,17 @@ def list_provider_connections(
         if not isinstance(item, dict):
             continue
         connection = _coerce_connection_payload(item)
-        api_key = ""
-        env_var = str(connection.api_key_env_var or "").strip()
-        if env_var:
-            api_key = str(os.getenv(env_var, "") or "").strip()
-        if not api_key:
-            api_key = read_custom_provider_api_key(connection.connection_id, base_dir=repo_root)
+        api_key = read_custom_provider_api_key(connection.connection_id, base_dir=repo_root)
         image_api_key = str(connection.image_api_key or "").strip()
-        if connection.provider_type == CUSTOM_PROVIDER_TYPE:
-            api_key = api_key or str(os.getenv("PAPERBANANA_OPENAI_VLM_API_KEY", "") or os.getenv("OPENAI_VLM_API_KEY", "") or os.getenv("OPENAI_API_KEY", "") or "").strip()
-            image_api_key = image_api_key or str(os.getenv("PAPERBANANA_OPENAI_IMAGE_API_KEY", "") or os.getenv("OPENAI_IMAGE_API_KEY", "") or api_key or "").strip()
         connections.append(
             ProviderConnection(
                 **{
                     **asdict(connection),
                     "api_key": api_key,
                     "image_api_key": image_api_key or api_key,
-                    "base_url": connection.base_url or str(os.getenv("PAPERBANANA_OPENAI_BASE_URL", "") or os.getenv("OPENAI_BASE_URL", "") or "").strip(),
-                    "text_model": connection.text_model or str(os.getenv("PAPERBANANA_OPENAI_VLM_MODEL", "") or os.getenv("OPENAI_VLM_MODEL", "") or "").strip(),
-                    "image_model": connection.image_model or str(os.getenv("PAPERBANANA_OPENAI_IMAGE_MODEL", "") or os.getenv("OPENAI_IMAGE_MODEL", "") or "").strip(),
+                    "base_url": connection.base_url,
+                    "text_model": connection.text_model,
+                    "image_model": connection.image_model,
                     "probe_results": _extract_connection_probe_results(connection.connection_id, base_dir=repo_root),
                 }
             )
@@ -530,10 +543,33 @@ def format_extra_headers_json(headers: dict[str, str] | None) -> str:
 
 
 def _clip_raw_excerpt(value: Any, *, max_length: int = 280) -> str:
-    text = str(value or "").strip()
+    text = re.sub(r"\[[A-Za-z0-9_-]{16,}\]", "[已隐藏令牌]", str(value or "").strip())
+    text = re.sub(r"(?i)(api[_-]?key|token|authorization)(['\"\s:=]+)([^,'\"\s}{]{8,})", r"\1\2[已隐藏]", text)
     if len(text) <= max_length:
         return text
     return text[:max_length] + "..."
+
+
+def _friendly_probe_error_message(error_type: str, http_status: int, raw_message: str) -> str:
+    message = str(raw_message or "").strip()
+    lowered = message.lower()
+    if error_type == "invalid_credentials" or http_status == 401 or "无效的令牌" in message:
+        return "API 无效或已过期，请检查当前连接填写的 API。"
+    if error_type == "model_not_found":
+        return "模型名称不可用，请检查模型是否由当前服务支持。"
+    if error_type == "insufficient_credits":
+        return "账户余额或额度不足，请检查服务商后台。"
+    if error_type == "rate_limited":
+        return "请求过于频繁或触发限流，请稍后再试。"
+    if error_type == "base_url_error":
+        return "URL 无法访问或不是兼容接口，请检查中转站地址。"
+    if error_type == "timeout":
+        return "请求超时，请检查网络或服务商状态。"
+    if error_type == "provider_unavailable":
+        return "服务暂时不可用，请稍后再试或切换服务。"
+    if "unsupported" in lowered or error_type == "response_incompatible":
+        return "接口返回不兼容，请检查模型和 URL 是否匹配。"
+    return "测试失败，详情见下方诊断。"
 
 
 def _gemini_finish_reason_name(response: Any) -> str:
@@ -701,8 +737,10 @@ def classify_probe_error(exc: Exception) -> tuple[str, int, str]:
         error_type = "invalid_credentials"
     elif http_status == 404 and ("<!doctype html" in lowered or "<html" in lowered):
         error_type = "response_incompatible"
-    elif "invalid api key" in lowered or (
-        "unauthorized" in lowered and http_status in {0, 400, 401, 403}
+    elif (
+        "invalid api key" in lowered
+        or "无效的令牌" in message
+        or ("unauthorized" in lowered and http_status in {0, 400, 401, 403})
     ):
         error_type = "invalid_credentials"
     elif http_status == 402 or "insufficient" in lowered or "credit" in lowered or "quota" in lowered:
@@ -865,7 +903,7 @@ async def probe_text(connection: ProviderConnection) -> ProbeResult:
                     target="text",
                     stage="chat_completion",
                     status="success",
-                    message="文本链路探针成功。",
+                    message="多模态模型测试成功。",
                     raw_excerpt=_clip_raw_excerpt(" | ".join(response_texts)),
                     tested_model=tested_model,
                     latency_ms=_build_probe_latency_ms(started_at),
@@ -932,7 +970,7 @@ async def probe_text(connection: ProviderConnection) -> ProbeResult:
             target="text",
             stage="chat_completion",
             status="success",
-            message="文本链路探针成功。",
+            message="多模态模型测试成功。",
             tested_model=tested_model,
             latency_ms=_build_probe_latency_ms(started_at),
             timestamp=timestamp,
@@ -945,7 +983,7 @@ async def probe_text(connection: ProviderConnection) -> ProbeResult:
             status="failed",
             error_type=error_type,
             http_status=http_status,
-            message="文本链路探针失败。",
+            message=_friendly_probe_error_message(error_type, http_status, message),
             raw_excerpt=_clip_raw_excerpt(message),
             tested_model=tested_model,
             latency_ms=_build_probe_latency_ms(started_at),
@@ -1018,7 +1056,7 @@ async def probe_image(connection: ProviderConnection) -> ProbeResult:
                         target="image",
                         stage="image_generation",
                         status="success",
-                        message="图像链路探针成功。",
+                        message="图像模型测试成功。",
                         raw_excerpt=_clip_raw_excerpt(detail),
                         tested_model=tested_model,
                         latency_ms=_build_probe_latency_ms(started_at),
@@ -1112,7 +1150,7 @@ async def probe_image(connection: ProviderConnection) -> ProbeResult:
             target="image",
             stage="image_generation",
             status="success",
-            message="图像链路探针成功。",
+            message="图像模型测试成功。",
             tested_model=tested_model,
             latency_ms=_build_probe_latency_ms(started_at),
             timestamp=timestamp,
@@ -1125,7 +1163,7 @@ async def probe_image(connection: ProviderConnection) -> ProbeResult:
             status="failed",
             error_type=error_type,
             http_status=http_status,
-            message="图像链路探针失败。",
+            message=_friendly_probe_error_message(error_type, http_status, message),
             raw_excerpt=_clip_raw_excerpt(message),
             tested_model=tested_model,
             latency_ms=_build_probe_latency_ms(started_at),
@@ -1142,25 +1180,29 @@ async def probe_connection(
     connection: ProviderConnection,
     *,
     include_discovery: bool = True,
+    targets: tuple[str, ...] | None = None,
     stage_callback: Callable[[str, str], None] | None = None,
 ) -> dict[str, ProbeResult]:
     results: dict[str, ProbeResult] = {}
+    requested_targets = tuple(targets or ("text", "image"))
     if include_discovery:
         if stage_callback is not None:
             stage_callback("discovery", "running")
         results["discovery"] = await discover_models(connection)
         if stage_callback is not None:
             stage_callback("discovery", results["discovery"].status)
-    if stage_callback is not None:
-        stage_callback("text", "running")
-    results["text"] = await probe_text(connection)
-    if stage_callback is not None:
-        stage_callback("text", results["text"].status)
-    if stage_callback is not None:
-        stage_callback("image", "running")
-    results["image"] = await probe_image(connection)
-    if stage_callback is not None:
-        stage_callback("image", results["image"].status)
+    if "text" in requested_targets:
+        if stage_callback is not None:
+            stage_callback("text", "running")
+        results["text"] = await probe_text(connection)
+        if stage_callback is not None:
+            stage_callback("text", results["text"].status)
+    if "image" in requested_targets:
+        if stage_callback is not None:
+            stage_callback("image", "running")
+        results["image"] = await probe_image(connection)
+        if stage_callback is not None:
+            stage_callback("image", results["image"].status)
     return results
 
 

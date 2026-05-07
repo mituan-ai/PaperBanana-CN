@@ -105,9 +105,10 @@ class RunReportTest(unittest.TestCase):
     def test_openai_image_size_from_controls_maps_common_sizes(self):
         self.assertEqual(openai_image_size_from_controls("16:9", "4K"), "3840x2160")
         self.assertEqual(openai_image_size_from_controls("9:16", "4K"), "2160x3840")
+        self.assertEqual(openai_image_size_from_controls("1:1", "1K"), "1280x1280")
         self.assertEqual(openai_image_size_from_controls("1:1", "2K"), "2048x2048")
         self.assertEqual(openai_image_size_from_controls("16:9", "2K"), "2048x1152")
-        self.assertEqual(openai_image_size_from_controls("21:9", "4K"), "3840x1648")
+        self.assertEqual(openai_image_size_from_controls("21:9", "4K"), "3840x1632")
 
 
 if __name__ == "__main__":

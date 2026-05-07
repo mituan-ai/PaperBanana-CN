@@ -1,6 +1,7 @@
 import io
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest import mock
 
 import cli
@@ -65,6 +66,16 @@ class CliEntrypointTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, 0)
         launch_cli.assert_called_once_with(["--help"])
+
+    def test_streamlit_launch_treats_ctrl_c_as_normal_stop(self):
+        buffer = io.StringIO()
+        with mock.patch.object(cli, "resolve_module_script_path", return_value=Path("/tmp/demo.py")):
+            with mock.patch.object(cli.subprocess, "call", side_effect=KeyboardInterrupt):
+                with redirect_stdout(buffer):
+                    exit_code = cli.launch_streamlit_module("demo", [], default_port=8501)
+
+        self.assertEqual(exit_code, 130)
+        self.assertIn("已停止", buffer.getvalue())
 
 
 if __name__ == "__main__":

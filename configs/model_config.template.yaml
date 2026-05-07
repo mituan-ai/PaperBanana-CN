@@ -13,18 +13,21 @@
 # limitations under the License.
 
 # Model and Gateway Configuration for PaperBanana-CN
+#
+# GUI 配置优先写入 configs/local/，新用户默认没有 API Key。
+# 常用文件：
+# - configs/model_config.yaml: 本机基础默认值（已被 .gitignore 忽略）。
+# - configs/local/provider_settings.yaml: GUI 自动保存的 URL 和模型选择。
+# - configs/local/*.txt: GUI 自动保存的 API Key。
+# 环境变量只保留给脚本/高级运行场景；GUI 默认不会用环境变量覆盖这些项目内配置。
 
 # Shared defaults for Gemini provider
 defaults:
   model_name: "" # e.g., "gemini-3.1-flash-lite-preview"
   image_model_name: "" # e.g., "gemini-3.1-flash-image-preview"
 
-# Proxy-friendly channel settings. System environment variables take precedence:
-# PAPERBANANA_GEMINI_BASE_URL, PAPERBANANA_GEMINI_VLM_MODEL,
-# PAPERBANANA_GEMINI_IMAGE_MODEL, PAPERBANANA_GEMINI_VLM_API_KEY,
-# PAPERBANANA_GEMINI_IMAGE_API_KEY, PAPERBANANA_OPENAI_BASE_URL,
-# PAPERBANANA_OPENAI_VLM_MODEL, PAPERBANANA_OPENAI_IMAGE_MODEL,
-# PAPERBANANA_OPENAI_VLM_API_KEY, PAPERBANANA_OPENAI_IMAGE_API_KEY.
+# Provider channel settings. GUI changes should normally be made in the sidebar;
+# they are persisted to configs/local/provider_settings.yaml.
 gemini:
   base_url: ""
   vlm_model: ""
@@ -39,12 +42,10 @@ openai:
   vlm_api_key: ""
   image_api_key: ""
   
-# API Keys. Recommended precedence:
-# 1. Environment variables
-# 2. configs/local/*.txt
-# 3. This YAML file
+# API Keys. Recommended for GUI use: leave these blank and fill the sidebar.
+# Keys are written to configs/local/*.txt and are not tracked by git.
 api_keys:
-  google_api_key: "" # optional if using configs/local/google_api_key.txt
+  google_api_key: ""
   openai_api_key: ""
   anthropic_api_key: ""
 
