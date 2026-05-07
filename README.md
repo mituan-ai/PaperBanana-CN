@@ -46,7 +46,7 @@ PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBa
 | 📊 | **Plot 全链路** | 数据输入解析 → 代码生成 → 本地重渲染 → 精修，统计图端到端闭环 |
 | ⚡ | **`uv` 一键启动** | 使用锁定依赖启动本地 GUI，减少环境差异 |
 | 🔌 | **自定义模型供应商** | 支持 OpenAI-compatible / Gemini-compatible 接口，可填写 URL 接入第三方或自建服务 |
-| 🖼️ | **GPT Image 2 适配** | 支持 `gpt-image-2` 与 `gpt-image-2-vip(apiyi)`，统一用宽高比和像素档控制最终尺寸 |
+| 🖼️ | **GPT Image 2 适配** | 支持 `gpt-image-2`，统一用宽高比和像素档控制最终尺寸 |
 
 > [!NOTE]
 > 这里的“中转站”指提供 OpenAI-compatible 或 Gemini-compatible API 的第三方兼容服务。具体模型名、Base URL 格式、额度和稳定性由服务方决定，建议先用低候选数完成连通性验证。
@@ -251,7 +251,7 @@ GUI 默认使用项目内配置，不会用系统环境变量覆盖侧边栏里�
 - `configs/local/google_api_key.txt`
 - `configs/local/provider_registry.yaml`：保存自定义连接
 
-侧边栏里的“服务”现在显示为更直观的 `OpenAI` / `Google`，并支持新加的 `gpt-image-2-vip(apiyi)` 图像模型项。若你使用的是 APIYI 的 VIP 路由，模型会自动绑定到对应 URL。
+侧边栏里的“服务”现在显示为更直观的 `OpenAI` / `Google`。
 
 ## 功能范围
 
@@ -278,8 +278,6 @@ OpenAI 系列图像模型另外支持更细的图像细节选项，例如质量�
 | OpenAI / OpenAI-compatible | 转换为 OpenAI Images `size` 参数 | 适合兼容 OpenAI 图像接口的服务。 |
 | Google / Gemini-compatible | 写入 Gemini `image_config.aspect_ratio` 与 `image_config.image_size` | 适合兼容 Gemini 图像接口的服务。 |
 | Plot 任务 | 生成 Matplotlib 代码并本地渲染 | 适合折线图、柱状图、消融图等实验图表。 |
-
-当图像模型选择 `gpt-image-2-vip(apiyi)` 时，模型会固定走 `https://api.apiyi.com/v1`。它适合对接 APIYI 的 `gpt-image-2` VIP 路由，但不是普通的 OpenAI 默认项。
 
 当前侧栏里“测试模型 / 测试图像”都需要手动点击，不会自动发起真实生图；这样更省成本，也更适合先确认连通性。
 
