@@ -278,10 +278,12 @@ class DemoModelInputTest(unittest.TestCase):
             demo.display_image_model_name("gpt-image-2-vip"),
             "gpt-image-2-vip(apiyi)",
         )
-        self.assertEqual(
-            demo.coerce_apiyi_image_base_url("https://other.example/v1", "gpt-image-2-vip"),
-            demo.APIYI_BASE_URL,
+        self.fake_streamlit.session_state["image_base_url"] = "https://other.example/v1"
+        demo.sync_apiyi_url_for_image_model(
+            model_name="gpt-image-2-vip",
+            base_url_key="image_base_url",
         )
+        self.assertEqual(self.fake_streamlit.session_state["image_base_url"], demo.APIYI_BASE_URL)
 
     def test_openai_image_model_options_default_to_standard_gpt_image_2(self):
         self.assertEqual(demo.OPENAI_IMAGE_MODELS[0], "gpt-image-2")
@@ -938,6 +940,41 @@ class DemoModelInputTest(unittest.TestCase):
         self.assertEqual(connection.base_url, "https://example.com/v1")
         self.assertEqual(connection.extra_headers, {"X-Test": "demo"})
         self.assertEqual(connection.api_key, "draft-key")
+
+    def test_builtin_text_draft_keeps_base_url_when_image_model_is_apiyi(self):
+        state_keys = demo._build_connection_state_keys("tab1")
+        self.fake_streamlit.session_state[state_keys["base_url"]] = "https://api.ikuncode.cc/v1"
+        returned_connection = demo.ProviderConnection(
+            connection_id="openai",
+            display_name="OpenAI",
+            provider_type="openai",
+            protocol_family="openai",
+            base_url="https://api.ikuncode.cc/v1",
+            text_model="gpt-5.5",
+            image_model="gpt-image-2-vip",
+            api_key="draft-key",
+        )
+
+        with patch.object(demo, "resolve_connection", return_value=returned_connection) as resolve_connection:
+            connection = demo.build_connection_draft(
+                prefix="tab1",
+                selected_connection_id="openai",
+                api_key="draft-key",
+                model_name="gpt-5.5",
+                image_model_name="gpt-image-2-vip",
+            )
+
+        resolve_connection.assert_called_once_with(
+            "openai",
+            api_key="draft-key",
+            text_model="gpt-5.5",
+            image_model="gpt-image-2-vip",
+            base_url="https://api.ikuncode.cc/v1",
+            extra_headers={},
+            base_dir=demo.REPO_ROOT,
+            model_config_data=demo.model_config_data,
+        )
+        self.assertEqual(connection.base_url, "https://api.ikuncode.cc/v1")
 
     def test_parse_extra_headers_json_safe_returns_error_instead_of_raising(self):
         headers, error_message = demo.parse_extra_headers_json_safe("{not-json}")

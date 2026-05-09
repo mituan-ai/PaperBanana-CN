@@ -668,7 +668,10 @@ async def _gemini_generate_content_once(
             image_config_kwargs["image_size"] = image_size
         config_kwargs["image_config"] = types.ImageConfig(**image_config_kwargs)
     config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
-    client = genai.Client(api_key=connection.api_key)
+    client_kwargs: dict[str, Any] = {"api_key": connection.api_key}
+    if str(connection.base_url or "").strip():
+        client_kwargs["http_options"] = types.HttpOptions(base_url=str(connection.base_url).strip())
+    client = genai.Client(**client_kwargs)
     return await asyncio.to_thread(
         client.models.generate_content,
         model=model_name,

@@ -180,6 +180,50 @@ class ProviderConnectionsTest(unittest.TestCase):
         self.assertEqual(result.tested_model, "gemini-text")
         self.assertIn("OK", result.raw_excerpt)
 
+    def test_probe_text_passes_gemini_base_url_to_client(self):
+        connection = ProviderConnection(
+            connection_id="gemini",
+            display_name="Gemini",
+            provider_type="gemini",
+            protocol_family="gemini",
+            base_url="https://gemini.example",
+            text_model="gemini-text",
+            api_key="secret",
+        )
+        captured = {}
+
+        class _FakeClient:
+            def __init__(self, api_key: str, http_options=None):
+                captured["api_key"] = api_key
+                captured["base_url"] = getattr(http_options, "base_url", "")
+                self.models = types.SimpleNamespace(generate_content=self._generate_content)
+
+            def _generate_content(self, **kwargs):
+                return types.SimpleNamespace(
+                    candidates=[
+                        types.SimpleNamespace(
+                            finish_reason=types.SimpleNamespace(name="STOP"),
+                            content=types.SimpleNamespace(parts=[types.SimpleNamespace(text="OK")]),
+                        )
+                    ]
+                )
+
+        fake_genai_module = types.ModuleType("google.genai")
+        fake_genai_module.Client = _FakeClient
+        fake_genai_module.types = types.SimpleNamespace(
+            GenerateContentConfig=lambda **kwargs: dict(kwargs),
+            HttpOptions=lambda **kwargs: types.SimpleNamespace(**kwargs),
+        )
+        fake_google_module = types.ModuleType("google")
+        fake_google_module.genai = fake_genai_module
+
+        with patch.dict(sys.modules, {"google": fake_google_module, "google.genai": fake_genai_module}):
+            result = run_async_probe(probe_text(connection))
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(captured["api_key"], "secret")
+        self.assertEqual(captured["base_url"], "https://gemini.example")
+
     def test_probe_image_returns_skipped_when_image_capability_disabled(self):
         connection = ProviderConnection(
             connection_id="custom-openai",

@@ -199,6 +199,7 @@ try:
         normalize_connection_id,
         parse_extra_headers_json,
         probe_connection,
+        resolve_connection,
         run_async_probe,
         upsert_custom_connection,
         write_custom_provider_api_key,
@@ -1987,8 +1988,6 @@ def render_connection_control_section(
             else "官方直连可留空；使用中转站时填写对应 URL。"
         ),
     ).strip()
-    if image and should_force_apiyi_url(model_name):
-        base_url = APIYI_BASE_URL
 
     connection_pending_save = selected_connection_id == CUSTOM_CONNECTION_CREATE_OPTION
     if selected_runtime_id in BUILTIN_CONNECTION_IDS:
@@ -2131,23 +2130,16 @@ def build_connection_draft(
         raise ValueError(error_message)
 
     if selected_connection_id != CUSTOM_CONNECTION_CREATE_OPTION:
-        draft_base_url = str(st.session_state.get(state_keys["base_url"], "") or "").strip()
-        if should_force_apiyi_url(image_model_name):
-            draft_base_url = APIYI_BASE_URL
-        runtime_settings = resolve_runtime_settings(
+        return resolve_connection(
             runtime_connection_id,
-            connection_id=runtime_connection_id if runtime_connection_id not in BUILTIN_CONNECTION_IDS else "",
             api_key=api_key,
-            model_name=model_name,
-            image_model_name=image_model_name,
-            base_url=draft_base_url,
+            text_model=model_name,
+            image_model=image_model_name,
+            base_url=str(st.session_state.get(state_keys["base_url"], "") or "").strip(),
             extra_headers=extra_headers,
             base_dir=REPO_ROOT,
             model_config_data=model_config_data,
         )
-        if runtime_settings.provider_connection is None:
-            raise ValueError("未能解析当前连接。")
-        return runtime_settings.provider_connection
 
     model_allowlist = [
         line.strip()
@@ -2159,10 +2151,7 @@ def build_connection_draft(
         display_name=str(st.session_state.get(state_keys["display_name"], "") or runtime_connection_id).strip() or runtime_connection_id,
         provider_type=CUSTOM_PROVIDER_TYPE,
         protocol_family="openai",
-        base_url=coerce_apiyi_image_base_url(
-            str(st.session_state.get(state_keys["base_url"], "") or "").strip(),
-            image_model_name,
-        ),
+        base_url=str(st.session_state.get(state_keys["base_url"], "") or "").strip(),
         api_key_env_var="",
         text_model=str(model_name or "").strip(),
         image_model=str(image_model_name or "").strip(),
@@ -2335,10 +2324,6 @@ def render_connection_probe_results(prefix: str) -> None:
                 st.code(raw_excerpt, language="text")
             if discovered_models:
                 st.caption(f"模型列表：{', '.join(discovered_models)}")
-
-
-def coerce_apiyi_image_base_url(base_url: str, image_model_name: str) -> str:
-    return APIYI_BASE_URL if should_force_apiyi_url(image_model_name) else str(base_url or "").strip()
 
 
 def coerce_apiyi_image_options(options: dict[str, Any], image_model_name: str) -> dict[str, Any]:
@@ -7765,10 +7750,7 @@ def render_generation_sidebar_controls() -> dict:
     )
     image_api_key = str(image_connection["api_key"] if image_connection is not None else "")
     image_model_name = str(image_connection["model_name"] if image_connection is not None else "")
-    image_base_url = coerce_apiyi_image_base_url(
-        str(image_connection["base_url"] if image_connection is not None else text_connection["base_url"]),
-        image_model_name,
-    )
+    image_base_url = str(image_connection["base_url"] if image_connection is not None else text_connection["base_url"]).strip()
     image_generation_options = coerce_apiyi_image_options(image_generation_options, image_model_name)
     connection_pending_save = bool(text_connection.get("connection_pending_save")) or bool(
         image_connection.get("connection_pending_save") if image_connection else False
@@ -8289,7 +8271,6 @@ def _render_generation_sidebar_controls_legacy() -> dict:
                 key=image_state_keys["base_url"],
                 help="官方直连可留空；使用中转站时填写对应 URL。",
             ).strip()
-            image_base_url = coerce_apiyi_image_base_url(image_base_url, image_model_name)
             image_extra_headers_json = ""
             image_provider_type = str(image_provider_defaults.get("provider_type", image_provider) or image_provider)
             if is_openai_image_provider(image_provider_type):
@@ -8512,7 +8493,6 @@ def _render_refine_sidebar_controls_legacy() -> dict:
             key=image_state_keys["base_url"],
             help="官方直连可留空；使用中转站时填写对应 URL。",
         ).strip()
-        refine_image_base_url = coerce_apiyi_image_base_url(refine_image_base_url, refine_image_model_name)
         refine_image_extra_headers_json = ""
         refine_image_provider_type = str(refine_image_provider_defaults.get("provider_type", DEFAULT_PROVIDER) or DEFAULT_PROVIDER)
         if is_openai_image_provider(refine_image_provider_type):
