@@ -117,6 +117,7 @@ def resolve_runtime_settings(
     model_config_data: dict[str, Any] | None = None,
 ) -> RuntimeSettings:
     repo_root = Path(base_dir) if base_dir is not None else Path(__file__).resolve().parent.parent
+    config_data = model_config_data if model_config_data is not None else load_model_config(repo_root)
     resolved_connection = resolve_connection(
         connection_id or provider,
         api_key=api_key,
@@ -125,7 +126,7 @@ def resolve_runtime_settings(
         base_url=base_url,
         extra_headers=extra_headers,
         base_dir=repo_root,
-        model_config_data=model_config_data,
+        model_config_data=config_data,
     )
     resolved_image_connection = resolved_connection
     if image_connection_id:
@@ -136,8 +137,21 @@ def resolve_runtime_settings(
             base_url=image_base_url,
             extra_headers=image_extra_headers,
             base_dir=repo_root,
-            model_config_data=model_config_data,
+            model_config_data=config_data,
         )
+
+    resolved_base_url = str(resolved_connection.base_url or "").strip()
+    resolved_image_base_url = str(resolved_image_connection.base_url or "").strip()
+    if not str(base_url or "").strip() and resolved_connection.connection_id in BUILTIN_CONNECTION_IDS:
+        defaults = load_provider_defaults(resolved_connection.connection_id, config_data, base_dir=repo_root)
+        resolved_base_url = str(defaults.get("vlm_base_url") or resolved_base_url or "").strip()
+    if not str(image_base_url or "").strip() and resolved_image_connection.connection_id in BUILTIN_CONNECTION_IDS:
+        image_defaults = load_provider_defaults(resolved_image_connection.connection_id, config_data, base_dir=repo_root)
+        resolved_image_base_url = str(
+            image_defaults.get("image_base_url")
+            or resolved_image_base_url
+            or ""
+        ).strip()
 
     resolved_concurrency_mode = str(concurrency_mode or "auto").strip().lower() or "auto"
     if resolved_concurrency_mode not in {"auto", "manual"}:
@@ -155,7 +169,7 @@ def resolve_runtime_settings(
         ).strip(),
         model_name=str(resolved_connection.text_model or "").strip(),
         image_model_name=str(resolved_image_connection.image_model or "").strip(),
-        base_url=str(resolved_connection.base_url or "").strip(),
+        base_url=resolved_base_url,
         connection_id=resolved_connection.connection_id,
         provider_display_name=resolved_connection.display_name,
         provider_connection=resolved_connection,
@@ -163,7 +177,7 @@ def resolve_runtime_settings(
         image_provider=resolved_image_connection.provider_type,
         image_connection_id=resolved_image_connection.connection_id,
         image_provider_display_name=resolved_image_connection.display_name,
-        image_base_url=str(resolved_image_connection.base_url or "").strip(),
+        image_base_url=resolved_image_base_url,
         image_extra_headers=dict(resolved_image_connection.extra_headers),
         image_provider_connection=resolved_image_connection,
         concurrency_mode=resolved_concurrency_mode,

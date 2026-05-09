@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from unittest.mock import patch
 
 from utils import generation_utils
 
@@ -142,6 +143,46 @@ class GenerationUtilsRuntimeContextTest(unittest.TestCase):
         asyncio.run(generation_utils.close_runtime_context(context))
 
         self.assertEqual(provider.close_calls, 0)
+
+    def test_apiyi_image_url_normalizes_to_http_long_connection_endpoint(self):
+        self.assertEqual(
+            generation_utils._normalize_apiyi_image_base_url("https://api.apiyi.com/v1"),
+            "http://api.apiyi.com:16888/v1",
+        )
+        self.assertEqual(
+            generation_utils._normalize_apiyi_image_base_url("https://api.apiyi.com"),
+            "http://api.apiyi.com:16888/v1",
+        )
+
+    def test_apiyi_image_client_uses_custom_httpx_without_affecting_text_client(self):
+        calls = []
+
+        class _FakeAsyncOpenAI:
+            def __init__(self, **kwargs):
+                calls.append(kwargs)
+
+        class _FakeHttpClient:
+            pass
+
+        with patch("openai.AsyncOpenAI", _FakeAsyncOpenAI):
+            with patch(
+                "utils.generation_utils._create_openai_http_client_for_apiyi_image",
+                return_value=_FakeHttpClient(),
+            ):
+                generation_utils.create_runtime_context(
+                    provider="openai",
+                    api_key="text-key",
+                    image_api_key="image-key",
+                    base_url="https://api.openai.com/v1",
+                    image_base_url="https://api.apiyi.com/v1",
+                )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["base_url"], "https://api.openai.com/v1")
+        self.assertNotIn("http_client", calls[0])
+        self.assertEqual(calls[1]["base_url"], "http://api.apiyi.com:16888/v1")
+        self.assertIn("http_client", calls[1])
+        self.assertEqual(calls[1]["timeout"], generation_utils.DEFAULT_APIYI_IMAGE_TIMEOUT_SECONDS)
 
 
 if __name__ == "__main__":

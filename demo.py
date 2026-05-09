@@ -311,6 +311,17 @@ def supports_streamlit_fragment() -> bool:
     return callable(getattr(st, "fragment", None))
 
 
+def streamlit_cache_data(**cache_kwargs):
+    cache_factory = getattr(st, "cache_data", None)
+    if callable(cache_factory):
+        return cache_factory(**cache_kwargs)
+
+    def decorator(func):
+        return func
+
+    return decorator
+
+
 def request_streamlit_rerun(*, scope: str = "app") -> None:
     rerun = getattr(st, "rerun", None)
     if not callable(rerun):
@@ -333,14 +344,24 @@ def clean_text(text):
         return text.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
     return text
 
+
+@streamlit_cache_data(show_spinner=False, max_entries=256)
+def cached_base64_image_bytes(b64_str: str) -> bytes:
+    """Decode a generated image once and reuse the bytes across Streamlit reruns."""
+    if not b64_str:
+        return b""
+    encoded = str(b64_str or "")
+    if "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    return base64.b64decode(encoded)
+
+
 def base64_to_image(b64_str):
     """将 base64 字符串转换为 PIL 图像。"""
     if not b64_str:
         return None
     try:
-        if "," in b64_str:
-            b64_str = b64_str.split(",")[1]
-        image_data = base64.b64decode(b64_str)
+        image_data = cached_base64_image_bytes(str(b64_str))
         return Image.open(BytesIO(image_data))
     except Exception:
         return None
@@ -372,6 +393,61 @@ def image_to_jpeg_thumbnail(img, max_size=THUMBNAIL_MAX_SIZE, quality=THUMBNAIL_
     buf = BytesIO()
     thumb.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
+
+
+@streamlit_cache_data(show_spinner=False, max_entries=128)
+def build_candidate_image_render_assets(
+    image_b64: str,
+    max_size: tuple[int, int] = THUMBNAIL_MAX_SIZE,
+    quality: int = THUMBNAIL_JPEG_QUALITY,
+) -> dict[str, bytes]:
+    try:
+        raw_bytes = cached_base64_image_bytes(str(image_b64 or ""))
+        if not raw_bytes:
+            return {}
+        with Image.open(BytesIO(raw_bytes)) as img:
+            img.load()
+            thumbnail_bytes = image_to_jpeg_thumbnail(img, max_size=max_size, quality=quality)
+            png_buffer = BytesIO()
+            img.save(png_buffer, format="PNG")
+        return {
+            "raw_bytes": raw_bytes,
+            "thumbnail_bytes": thumbnail_bytes,
+            "png_bytes": png_buffer.getvalue(),
+        }
+    except Exception:
+        return {}
+
+
+def render_download_button(
+    *,
+    label: str,
+    data,
+    file_name: str | None = None,
+    mime: str | None = None,
+    key: str | None = None,
+    width="stretch",
+    disabled: bool = False,
+    help: str | None = None,
+    type: str = "secondary",
+) -> bool:
+    kwargs = {
+        "label": label,
+        "data": data,
+        "file_name": file_name,
+        "mime": mime,
+        "key": key,
+        "width": width,
+        "disabled": disabled,
+        "help": help,
+        "type": type,
+        "on_click": "ignore",
+    }
+    try:
+        return bool(st.download_button(**kwargs))
+    except TypeError:
+        kwargs.pop("on_click", None)
+        return bool(st.download_button(**kwargs))
 
 
 def get_generation_live_preview_width(candidate_count: int):
@@ -902,6 +978,7 @@ ASPECT_RATIO_DISPLAY_LABELS = {
     "21:9": "21:9 超宽屏",
 }
 APIYI_BASE_URL = "https://api.apiyi.com/v1"
+APIYI_IMAGE_HTTP_URL = "http://api.apiyi.com:16888/v1"
 OPENAI_IMAGE_QUALITY_OPTIONS = ["auto", "low", "medium", "high"]
 OPENAI_IMAGE_BACKGROUND_OPTIONS = ["opaque", "transparent", "auto"]
 OPENAI_IMAGE_OUTPUT_FORMAT_OPTIONS = ["png", "jpeg", "webp"]
@@ -1101,6 +1178,11 @@ def display_image_model_name(model_name: str) -> str:
 
 def should_force_apiyi_url(model_name: str) -> bool:
     return normalize_display_model_name(model_name) == "gpt-image-2-vip"
+
+
+def is_apiyi_url(base_url: str) -> bool:
+    normalized = str(base_url or "").strip().lower()
+    return normalized.startswith("https://api.apiyi.com") or normalized.startswith("http://api.apiyi.com")
 
 
 def provider_choice_to_connection(choice: str) -> str:
@@ -1591,7 +1673,7 @@ def sync_role_connection_runtime_input_state(
 
 def sync_apiyi_url_for_image_model(*, model_name: str, base_url_key: str) -> None:
     if should_force_apiyi_url(model_name):
-        st.session_state[base_url_key] = APIYI_BASE_URL
+        st.session_state[base_url_key] = APIYI_IMAGE_HTTP_URL
 
 
 def sync_role_base_url_from_provider_defaults(
@@ -3208,22 +3290,14 @@ def _restore_active_background_job(
 
 
 def normalize_restored_openai_image_url_state() -> None:
-    openai_defaults = get_connection_ui_defaults("openai")
-    default_openai_base_url = str(
-        openai_defaults.get("image_base_url", "")
-        or openai_defaults.get("base_url", "")
-        or ""
-    ).strip()
-    if not default_openai_base_url:
-        return
     for model_key, base_url_key in (
         ("tab1_image_model_name", "tab1_image_base_url"),
         ("refine_image_model_name", "refine_image_base_url"),
     ):
         model_name = str(st.session_state.get(model_key, "") or "").strip()
         base_url = str(st.session_state.get(base_url_key, "") or "").strip()
-        if base_url == APIYI_BASE_URL and model_name and not should_force_apiyi_url(model_name):
-            st.session_state[base_url_key] = default_openai_base_url
+        if base_url == APIYI_BASE_URL and should_force_apiyi_url(model_name):
+            st.session_state[base_url_key] = APIYI_IMAGE_HTTP_URL
 
 
 def restore_persisted_demo_ui_state() -> None:
@@ -4603,6 +4677,66 @@ def build_full_process_zip(
     return zip_buffer.getvalue(), exported_count, export_failures
 
 
+def _file_cache_signature(path: Path | None) -> dict[str, Any] | None:
+    if not path:
+        return None
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return {
+        "path": str(path.resolve(strict=False)),
+        "mtime_ns": stat.st_mtime_ns,
+        "size": stat.st_size,
+    }
+
+
+def _results_cache_payload(results: list[dict]) -> str:
+    return json.dumps(results, ensure_ascii=False, sort_keys=True, default=str)
+
+
+@streamlit_cache_data(show_spinner=False, max_entries=24)
+def cached_final_results_zip(
+    results_payload: str,
+    *,
+    task_name: str,
+    exp_mode: str,
+) -> tuple[bytes, int, list[str]]:
+    results = json.loads(results_payload)
+    return build_final_results_zip(
+        results,
+        task_name=task_name,
+        exp_mode=exp_mode,
+    )
+
+
+@streamlit_cache_data(show_spinner=False, max_entries=24)
+def cached_full_process_zip(
+    results_payload: str,
+    *,
+    task_name: str,
+    exp_mode: str,
+    dataset_name: str,
+    timestamp: str,
+    source_label: str,
+    json_file_signature: dict[str, Any] | None = None,
+    bundle_file_signature: dict[str, Any] | None = None,
+) -> tuple[bytes, int, list[str]]:
+    json_file_path = Path(json_file_signature["path"]) if json_file_signature else None
+    bundle_file_path = Path(bundle_file_signature["path"]) if bundle_file_signature else None
+    results = json.loads(results_payload)
+    return build_full_process_zip(
+        results,
+        task_name=task_name,
+        exp_mode=exp_mode,
+        dataset_name=dataset_name,
+        timestamp=timestamp,
+        source_label=source_label,
+        json_file_path=json_file_path,
+        bundle_file_path=bundle_file_path,
+    )
+
+
 def _store_refine_job(job: RefineJobState) -> None:
     with REFINE_JOBS_LOCK:
         REFINE_JOBS[job.job_id] = job
@@ -5964,26 +6098,23 @@ def display_candidate_result(
 
     # 展示最终图像（缩略图 + 点击查看原图）
     if final_image_key and final_image_key in result:
-        img = base64_to_image(result[final_image_key])
-        if img:
+        image_assets = build_candidate_image_render_assets(result[final_image_key])
+        if image_assets:
             # 网格预览使用 JPEG 缩略图，减少前端传输量
-            thumb_bytes = image_to_jpeg_thumbnail(img)
             st.image(
-                thumb_bytes,
+                image_assets["thumbnail_bytes"],
                 width="stretch",
                 caption=f"{candidate_label}（{task_config['final_caption']}）",
             )
 
             # 点击展开查看原图
             with st.expander("🔍 查看原图", expanded=False):
-                st.image(img, width="stretch")
+                st.image(image_assets["raw_bytes"], width="stretch")
 
             # 添加下载按钮（下载原始 PNG）
-            buffered = BytesIO()
-            img.save(buffered, format="PNG")
-            st.download_button(
+            render_download_button(
                 label="📥 下载图片",
-                data=buffered.getvalue(),
+                data=image_assets["png_bytes"],
                 file_name=f"candidate_{candidate_id}.png",
                 mime="image/png",
                 key=f"download_candidate_{candidate_id}",
@@ -6005,7 +6136,7 @@ def display_candidate_result(
         code_text = clean_text(result[final_code_key])
         with st.expander("🧪 查看最终 Matplotlib 代码", expanded=False):
             st.code(code_text, language="python")
-            st.download_button(
+            render_download_button(
                 label="📥 下载代码",
                 data=code_text.encode("utf-8"),
                 file_name=f"candidate_{candidate_id}.py",
@@ -6206,7 +6337,7 @@ def render_plot_rerender_workspace() -> None:
         preview_image = base64_to_image(preview.get("base64_jpg"))
         if preview_image is not None:
             st.image(preview_image, width="stretch", caption="重渲染预览")
-            st.download_button(
+            render_download_button(
                 label="📥 下载预览 JPEG",
                 data=base64.b64decode(preview["base64_jpg"]),
                 file_name=f"plot_rerender_preview_{candidate_id}.jpg",
@@ -6859,7 +6990,7 @@ def render_refine_results_section(
                             st.rerun()
 
                 file_name = f"refined_{final_resolution}_{idx}.png"
-                st.download_button(
+                render_download_button(
                     label=f"📥 下载结果 {idx}",
                     data=img_bytes,
                     file_name=file_name,
@@ -6869,7 +7000,7 @@ def render_refine_results_section(
                 )
 
     zip_buffer.seek(0)
-    st.download_button(
+    render_download_button(
         label="📥 一键下载全部结果（ZIP）",
         data=zip_buffer.getvalue(),
         file_name=zip_name,
@@ -8678,7 +8809,7 @@ def render_generation_results_panel(default_task_name: str) -> None:
             st.info(file_label)
         if json_file_path and json_file_path.exists():
             with columns[1]:
-                st.download_button(
+                render_download_button(
                     label="📥 下载结果 JSON",
                     data=json_file_path.read_text(encoding="utf-8"),
                     file_name=json_file_path.name,
@@ -8688,7 +8819,7 @@ def render_generation_results_panel(default_task_name: str) -> None:
         if bundle_file_path and bundle_file_path.exists():
             target_col = columns[2] if len(columns) > 2 else columns[1]
             with target_col:
-                st.download_button(
+                render_download_button(
                     label="📥 下载结果 Bundle",
                     data=bundle_file_path.read_text(encoding="utf-8"),
                     file_name=bundle_file_path.name,
@@ -8724,26 +8855,27 @@ def render_generation_results_panel(default_task_name: str) -> None:
         st.info("当前导出范围下没有候选可打包。")
         return
     try:
-        final_zip_bytes, final_exported_count, final_zip_failures = build_final_results_zip(
-            export_results,
+        export_results_payload = _results_cache_payload(export_results)
+        final_zip_bytes, final_exported_count, final_zip_failures = cached_final_results_zip(
+            export_results_payload,
             task_name=current_task_name,
             exp_mode=current_mode,
         )
-        full_zip_bytes, full_exported_count, full_zip_failures = build_full_process_zip(
-            export_results,
+        full_zip_bytes, full_exported_count, full_zip_failures = cached_full_process_zip(
+            export_results_payload,
             task_name=current_task_name,
             exp_mode=current_mode,
             dataset_name=current_dataset_name,
             timestamp=timestamp,
             source_label=f"{result_source_label} | 导出范围={export_scope}",
-            json_file_path=json_file_path,
-            bundle_file_path=bundle_file_path,
+            json_file_signature=_file_cache_signature(json_file_path),
+            bundle_file_signature=_file_cache_signature(bundle_file_path),
         )
 
         download_cols = st.columns(2)
         with download_cols[0]:
             if final_exported_count > 0:
-                st.download_button(
+                render_download_button(
                     label="📥 下载最终候选（ZIP）",
                     data=final_zip_bytes,
                     file_name=f"paperbanana_{current_task_name}_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
@@ -8755,7 +8887,7 @@ def render_generation_results_panel(default_task_name: str) -> None:
 
         with download_cols[1]:
             if full_exported_count > 0:
-                st.download_button(
+                render_download_button(
                     label="📥 下载全流程总览（ZIP）",
                     data=full_zip_bytes,
                     file_name=f"PaperBanana_全流程总览_{current_task_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",

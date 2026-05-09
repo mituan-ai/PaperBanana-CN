@@ -29,6 +29,7 @@ from io import BytesIO
 from functools import partial
 from ast import literal_eval
 from typing import List, Dict, Any, Callable, Optional, Tuple
+from urllib.parse import urlparse
 
 from PIL import Image
 
@@ -71,20 +72,48 @@ DEFAULT_GEMINI_TEXT_FALLBACK_MODELS = (
 
 
 DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS = 360.0
+DEFAULT_APIYI_IMAGE_TIMEOUT_SECONDS = 900.0
 DEFAULT_OPENAI_IMAGE_MAX_ATTEMPTS = 3
+APIYI_IMAGE_HTTP_ROOT = "http://api.apiyi.com:16888"
 
 
-def _get_openai_image_request_timeout_seconds() -> float:
-    """获取 OpenAI-compatible 图像请求超时；中转站 2K/4K 高画质需至少 360 秒。"""
-    for env_name in ("PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC", "OPENAI_IMAGE_TIMEOUT_SEC"):
+def _parse_float_env(env_names: tuple[str, ...], default: float, minimum: float | None = None) -> float:
+    for env_name in env_names:
         env_val = os.getenv(env_name, "").strip()
         if not env_val:
             continue
         try:
-            return max(float(env_val), DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS)
+            value = float(env_val)
         except ValueError:
             logger.warning("忽略无效的 %s=%r", env_name, env_val)
-    return DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS
+            continue
+        if minimum is not None:
+            return max(value, minimum)
+        return value
+    return default
+
+
+def _get_openai_image_request_timeout_seconds() -> float:
+    """获取 OpenAI-compatible 图像请求超时；中转站 2K/4K 高画质需至少 360 秒。"""
+    return _parse_float_env(
+        ("PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC", "OPENAI_IMAGE_TIMEOUT_SEC"),
+        DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS,
+        minimum=DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS,
+    )
+
+
+def _get_apiyi_image_request_timeout_seconds() -> float:
+    """APIYI GPT-Image-2 长任务默认给更长读取窗口。"""
+    return _parse_float_env(
+        (
+            "PAPERBANANA_APIYI_IMAGE_TIMEOUT_SEC",
+            "APIYI_IMAGE_TIMEOUT_SEC",
+            "PAPERBANANA_OPENAI_IMAGE_TIMEOUT_SEC",
+            "OPENAI_IMAGE_TIMEOUT_SEC",
+        ),
+        DEFAULT_APIYI_IMAGE_TIMEOUT_SECONDS,
+        minimum=DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS,
+    )
 
 
 def _get_openai_image_max_attempts(requested_attempts: int) -> int:
@@ -199,14 +228,67 @@ def _create_anthropic_client(api_key: str):
         return None
 
 
-def _create_openai_client(api_key: str, base_url: str = "", extra_headers: Optional[dict[str, str]] = None):
+def _is_apiyi_base_url(base_url: str) -> bool:
+    try:
+        parsed = urlparse(str(base_url or "").strip())
+    except Exception:
+        return False
+    return parsed.hostname in {"api.apiyi.com", "apiyi.com"}
+
+
+def _normalize_apiyi_image_base_url(base_url: str) -> str:
+    """按 APIYI GPT-Image-2 长连接建议，把 HTTPS 根域名切到 HTTP 专用端口。"""
+    normalized = str(base_url or "").strip()
+    if not normalized or not _is_apiyi_base_url(normalized):
+        return normalized
+    parsed = urlparse(normalized)
+    path = parsed.path.rstrip("/")
+    if not path or path == "/":
+        path = "/v1"
+    return f"{APIYI_IMAGE_HTTP_ROOT}{path}"
+
+
+def _create_openai_http_client_for_apiyi_image():
+    try:
+        import httpx
+    except ImportError:
+        logger.warning("⚠️  未安装 httpx，无法为 APIYI 图像通道创建专用 HTTP Client")
+        return None
+
+    timeout_seconds = _get_apiyi_image_request_timeout_seconds()
+    return httpx.AsyncClient(
+        http1=True,
+        http2=False,
+        timeout=httpx.Timeout(
+            connect=60.0,
+            read=timeout_seconds,
+            write=timeout_seconds,
+            pool=60.0,
+        ),
+    )
+
+
+def _create_openai_client(
+    api_key: str,
+    base_url: str = "",
+    extra_headers: Optional[dict[str, str]] = None,
+    *,
+    image_client: bool = False,
+):
     if not api_key:
         return None
     try:
         from openai import AsyncOpenAI
         kwargs = {"api_key": api_key}
-        if str(base_url or "").strip():
-            kwargs["base_url"] = str(base_url).strip()
+        resolved_base_url = str(base_url or "").strip()
+        if image_client and _is_apiyi_base_url(resolved_base_url):
+            resolved_base_url = _normalize_apiyi_image_base_url(resolved_base_url)
+            http_client = _create_openai_http_client_for_apiyi_image()
+            if http_client is not None:
+                kwargs["http_client"] = http_client
+            kwargs["timeout"] = _get_apiyi_image_request_timeout_seconds()
+        if resolved_base_url:
+            kwargs["base_url"] = resolved_base_url
         if extra_headers:
             kwargs["default_headers"] = extra_headers
         return AsyncOpenAI(**kwargs)
@@ -349,11 +431,6 @@ def create_runtime_context(
             base_url=context.base_url,
             extra_headers=context.extra_headers,
         )
-        context.openai_image_client = _create_openai_client(
-            context.image_api_key,
-            base_url=context.base_url,
-            extra_headers=context.extra_headers,
-        )
     elif normalized_provider in {"openrouter", "openai_compatible"} and context.api_key:
         context.openai_client = _create_openrouter_client(
             context.api_key,
@@ -371,6 +448,7 @@ def create_runtime_context(
             context.image_api_key,
             base_url=resolved_image_base_url,
             extra_headers=context.image_extra_headers,
+            image_client=True,
         )
     elif normalized_image_provider in {"openrouter", "openai_compatible"} and context.image_api_key:
         context.openai_image_client = _create_openrouter_client(
@@ -411,6 +489,30 @@ async def close_runtime_context(context: RuntimeContext | None) -> None:
             await image_provider.close()
         except Exception as err:
             _safe_log(f"[DEBUG] [WARN] close_runtime_context image 失败: {err}")
+    client_close_ids: set[int] = set()
+    openai_client_obj = context.openai_client
+    openai_image_client_obj = context.openai_image_client
+    for label, client_obj in (
+        ("openai", openai_client_obj),
+        ("openai_image", openai_image_client_obj),
+    ):
+        if client_obj is None:
+            continue
+        if label == "openai_image" and client_obj is openai_client_obj:
+            continue
+        obj_id = id(client_obj)
+        if obj_id in client_close_ids:
+            continue
+        client_close_ids.add(obj_id)
+        close_method = getattr(client_obj, "close", None)
+        if close_method is None:
+            continue
+        try:
+            result = close_method()
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as err:
+            _safe_log(f"[DEBUG] [WARN] close_runtime_context {label} 失败: {err}")
 
 
 def reinitialize_runtime_context(context: RuntimeContext | None) -> RuntimeContext | None:
@@ -631,7 +733,11 @@ set_default_runtime_context(
         gemini_image_client=_create_gemini_client(gemini_image_api_key, get_config_val(model_config, "gemini", "base_url", "PAPERBANANA_GEMINI_BASE_URL", "", base_dir=REPO_ROOT)),
         anthropic_client=_create_anthropic_client(anthropic_api_key),
         openai_client=_create_openai_client(openai_api_key, get_config_val(model_config, "openai", "base_url", "PAPERBANANA_OPENAI_BASE_URL", "", base_dir=REPO_ROOT)),
-        openai_image_client=_create_openai_client(openai_image_api_key, get_config_val(model_config, "openai", "base_url", "PAPERBANANA_OPENAI_BASE_URL", "", base_dir=REPO_ROOT)),
+        openai_image_client=_create_openai_client(
+            openai_image_api_key,
+            get_config_val(model_config, "openai", "base_url", "PAPERBANANA_OPENAI_BASE_URL", "", base_dir=REPO_ROOT),
+            image_client=True,
+        ),
         evolink_provider=_create_evolink_provider(evolink_api_key, evolink_base_url),
         owns_evolink_provider=bool(evolink_api_key),
     )
@@ -2252,7 +2358,13 @@ async def call_openai_image_generation_with_retry_async(
     if client is None:
         raise RuntimeError("OpenAI 图像 Client 未初始化，请检查 OpenAI 图像 API Key。")
 
-    request_timeout_seconds = _get_openai_image_request_timeout_seconds()
+    context = get_active_runtime_context()
+    active_image_base_url = getattr(context, "image_base_url", "") if context is not None else ""
+    request_timeout_seconds = (
+        _get_apiyi_image_request_timeout_seconds()
+        if _is_apiyi_base_url(active_image_base_url)
+        else _get_openai_image_request_timeout_seconds()
+    )
     effective_max_attempts = _get_openai_image_max_attempts(max_attempts)
     options = normalize_image_generation_options(
         provider_type=provider_type,

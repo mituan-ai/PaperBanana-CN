@@ -190,6 +190,25 @@ class RuntimeSettingsTest(unittest.TestCase):
             self.assertEqual(defaults["api_key_default"], "yaml-openai-text-key")
             self.assertEqual(defaults["image_api_key_default"], "yaml-openai-image-key")
 
+    def test_resolve_runtime_settings_uses_builtin_role_specific_base_urls(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_dir = root / "configs"
+            local_dir = config_dir / "local"
+            local_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "model_config.yaml").write_text(CONFIG_YAML, encoding="utf-8")
+            (local_dir / "provider_settings.yaml").write_text(
+                "openai:\n"
+                "  vlm_base_url: https://text.example/v1\n"
+                "  image_base_url: https://image.example/v1\n",
+                encoding="utf-8",
+            )
+
+            settings = resolve_runtime_settings("openai", base_dir=root)
+
+            self.assertEqual(settings.base_url, "https://text.example/v1")
+            self.assertEqual(settings.image_base_url, "https://image.example/v1")
+
     def test_resolve_runtime_settings_keeps_text_and_image_connections_independent(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

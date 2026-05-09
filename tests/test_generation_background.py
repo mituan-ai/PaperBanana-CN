@@ -1044,6 +1044,46 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertTrue(any("候选01_统计图/02_演化过程/01_规划器/03_阶段代码.py" in name for name in names))
         self.assertTrue(any("候选01_统计图/02_演化过程/02_评审第01轮/03_阶段代码.py" in name for name in names))
 
+    def test_candidate_image_render_assets_include_thumbnail_and_download_png(self):
+        assets = demo.build_candidate_image_render_assets(_build_png_base64())
+
+        self.assertIn("raw_bytes", assets)
+        self.assertIn("thumbnail_bytes", assets)
+        self.assertIn("png_bytes", assets)
+        with Image.open(BytesIO(assets["thumbnail_bytes"])) as thumbnail:
+            self.assertEqual(thumbnail.format, "JPEG")
+        with Image.open(BytesIO(assets["png_bytes"])) as download_image:
+            self.assertEqual(download_image.format, "PNG")
+
+    def test_cached_zip_wrappers_preserve_export_semantics(self):
+        result = {
+            "candidate_id": 0,
+            "task_name": "diagram",
+            "exp_mode": "demo_planner_critic",
+            "target_diagram_desc0": "planner desc",
+            "target_diagram_desc0_base64_jpg": _build_png_base64(),
+        }
+        payload = demo._results_cache_payload([result])
+
+        direct_zip, direct_count, direct_failures = demo.build_final_results_zip(
+            [result],
+            task_name="diagram",
+            exp_mode="demo_planner_critic",
+        )
+        cached_zip, cached_count, cached_failures = demo.cached_final_results_zip(
+            payload,
+            task_name="diagram",
+            exp_mode="demo_planner_critic",
+        )
+
+        self.assertEqual(cached_count, direct_count)
+        self.assertEqual(cached_failures, direct_failures)
+        with zipfile.ZipFile(BytesIO(direct_zip), "r") as direct_archive:
+            direct_names = sorted(direct_archive.namelist())
+        with zipfile.ZipFile(BytesIO(cached_zip), "r") as cached_archive:
+            cached_names = sorted(cached_archive.namelist())
+        self.assertEqual(cached_names, direct_names)
+
     def test_load_generation_history_snapshot_reads_bundle_metadata(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             bundle_path = Path(tmp_dir) / "history.bundle.json"

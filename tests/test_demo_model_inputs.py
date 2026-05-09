@@ -198,7 +198,7 @@ class DemoModelInputTest(unittest.TestCase):
         self.assertEqual(refreshed["openai"]["model_name"], "gpt-new")
         self.assertEqual(len(calls), 2)
 
-    def test_restored_non_vip_image_url_does_not_keep_apiyi_residue(self):
+    def test_restored_standard_gpt_image_2_can_keep_apiyi_url(self):
         self.fake_streamlit.session_state.update(
             {
                 "tab1_image_model_name": "gpt-image-2",
@@ -217,11 +217,11 @@ class DemoModelInputTest(unittest.TestCase):
 
         self.assertEqual(
             self.fake_streamlit.session_state["tab1_image_base_url"],
-            "https://api.ikuncode.cc/v1",
+            demo.APIYI_BASE_URL,
         )
         self.assertEqual(
             self.fake_streamlit.session_state["refine_image_base_url"],
-            demo.APIYI_BASE_URL,
+            demo.APIYI_IMAGE_HTTP_URL,
         )
 
     def test_connection_defaults_do_not_surface_stale_probe_results(self):
@@ -283,7 +283,7 @@ class DemoModelInputTest(unittest.TestCase):
             model_name="gpt-image-2-vip",
             base_url_key="image_base_url",
         )
-        self.assertEqual(self.fake_streamlit.session_state["image_base_url"], demo.APIYI_BASE_URL)
+        self.assertEqual(self.fake_streamlit.session_state["image_base_url"], demo.APIYI_IMAGE_HTTP_URL)
 
     def test_openai_image_model_options_default_to_standard_gpt_image_2(self):
         self.assertEqual(demo.OPENAI_IMAGE_MODELS[0], "gpt-image-2")

@@ -176,6 +176,9 @@ API: sk-...
 > [!IMPORTANT]
 > 不同兼容服务对 URL 的要求可能不同。OpenAI-compatible 接口通常包含 `/v1`，Gemini-compatible 接口是否包含版本路径应以服务方文档为准。
 
+> [!TIP]
+> 作者实测：在当前科研绘图场景下，`nanobanana2` 的整体出图效果优于 `gpt-image-2`。如果你的中转站同时提供这两类模型，建议优先试用 `nanobanana2`；`gpt-image-2` 仍可作为兼容 OpenAI Images 接口时的备选方案。
+
 ## 初始运行建议
 
 为了确认环境和模型链路可用，建议先使用较小配置运行一次：
