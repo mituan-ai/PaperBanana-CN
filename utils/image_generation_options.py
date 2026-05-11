@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from utils.image_utils import IMAGE_SIZE_PRESET_MAP, openai_image_size_from_controls
-
 
 @dataclass(frozen=True)
 class ImageModelCapabilities:
@@ -50,14 +48,18 @@ class ImageGenerationOptions:
         return asdict(self)
 
 
-GPT_IMAGE_RESOLUTION_OPTIONS = ("1K", "2K", "4K")
-GPT_IMAGE_RATIO_OPTIONS = tuple(IMAGE_SIZE_PRESET_MAP.keys())
-GPT_IMAGE_2_SIZES = tuple(
-    dict.fromkeys(
-        size
-        for ratio_map in IMAGE_SIZE_PRESET_MAP.values()
-        for size in (ratio_map["1K"], ratio_map["2K"], ratio_map["4K"])
-    )
+GPT_IMAGE_2_SIZES = (
+    "auto",
+    "1024x1024",
+    "1536x1024",
+    "1024x1536",
+    "2048x2048",
+    "2048x1152",
+    "1152x2048",
+    "2560x1440",
+    "1440x2560",
+    "3840x2160",
+    "2160x3840",
 )
 GPT_IMAGE_1_SIZES = ("auto", "1024x1024", "1536x1024", "1024x1536")
 DALLE3_SIZES = ("1024x1024", "1792x1024", "1024x1792")
@@ -115,7 +117,7 @@ CAPABILITY_PRESETS: dict[str, ImageModelCapabilities] = {
         supports_edit=True,
         supports_custom_size=True,
         transparent_supported=False,
-        legacy_resolution_options=GPT_IMAGE_RESOLUTION_OPTIONS,
+        legacy_resolution_options=("auto", "1K", "2K", "4K"),
     ),
     "gpt-image-2-vip": ImageModelCapabilities(
         provider_type="openai",
@@ -125,12 +127,12 @@ CAPABILITY_PRESETS: dict[str, ImageModelCapabilities] = {
         background_options=("auto", "opaque"),
         output_format_options=("png", "jpeg", "webp"),
         supports_edit=True,
-        supports_custom_size=False,
+        supports_custom_size=True,
         transparent_supported=False,
         sends_n=False,
         sends_quality=False,
         sends_gpt_image_extras=False,
-        legacy_resolution_options=GPT_IMAGE_RESOLUTION_OPTIONS,
+        legacy_resolution_options=("auto", "1K", "2K", "4K"),
     ),
     "gpt-image-1": ImageModelCapabilities(
         provider_type="openai",
@@ -170,7 +172,19 @@ CAPABILITY_PRESETS: dict[str, ImageModelCapabilities] = {
 }
 
 
-ASPECT_RATIO_SIZE_MAP = IMAGE_SIZE_PRESET_MAP
+ASPECT_RATIO_SIZE_MAP = {
+    "1:1": {"1K": "1024x1024", "2K": "2048x2048", "4K": "2880x2880"},
+    "16:9": {"1K": "1536x1024", "2K": "2048x1152", "4K": "3840x2160"},
+    "21:9": {"1K": "1536x736", "2K": "2304x1024", "4K": "3072x1344"},
+    "3:2": {"1K": "1536x1024", "2K": "1920x1280", "4K": "3072x2048"},
+    "4:3": {"1K": "1536x1152", "2K": "1792x1344", "4K": "3072x2304"},
+    "2:3": {"1K": "1024x1536", "2K": "1280x1920", "4K": "2048x3072"},
+    "3:4": {"1K": "1152x1536", "2K": "1344x1792", "4K": "2304x3072"},
+    "9:16": {"1K": "1024x1536", "2K": "1152x2048", "4K": "2160x3840"},
+    "4:5": {"1K": "1024x1280", "2K": "1280x1600", "4K": "2304x2880"},
+    "5:4": {"1K": "1280x1024", "2K": "1600x1280", "4K": "2880x2304"},
+}
+GPT_IMAGE_RATIO_OPTIONS = tuple(ASPECT_RATIO_SIZE_MAP.keys())
 
 
 def _first_supported(preferred: str, options: tuple[str, ...], fallback: str = "") -> str:
@@ -183,7 +197,7 @@ def _first_supported(preferred: str, options: tuple[str, ...], fallback: str = "
 
 def normalize_image_model_name(model_name: str) -> str:
     normalized = str(model_name or "").strip()
-    if normalized == "gpt-image-2-vip(apiyi)":
+    if normalized in {"gpt-image-2-vip(apiyi)", "apiyi-vip"}:
         return "gpt-image-2-vip"
     return normalized
 
@@ -253,14 +267,6 @@ def resolve_legacy_size(aspect_ratio: str, image_resolution: str, capabilities: 
     if resolution in capabilities.size_options:
         return resolution
     if resolution.upper() in {"1K", "2K", "4K"}:
-        if capabilities.supports_custom_size:
-            custom_size = openai_image_size_from_controls(
-                aspect_ratio,
-                resolution.upper(),
-                default_size="",
-            )
-            if custom_size and _is_valid_gpt_image_2_size(custom_size):
-                return custom_size
         mapped = ASPECT_RATIO_SIZE_MAP.get(
             str(aspect_ratio or "").strip(),
             ASPECT_RATIO_SIZE_MAP["1:1"],

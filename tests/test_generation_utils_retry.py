@@ -83,7 +83,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(options.size, "2880x2880")
 
-    def test_gpt_image_2_vip_uses_apiyi_size_grid(self):
+    def test_gpt_image_2_vip_uses_pro_size_grid(self):
         options = normalize_image_generation_options(
             provider_type="openai",
             model_name="gpt-image-2-vip",
@@ -91,7 +91,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
             image_resolution="2K",
         )
 
-        self.assertEqual(options.size, "1632x2048")
+        self.assertEqual(options.size, "1280x1600")
 
     def test_gpt_image_2_accepts_custom_size_for_ui(self):
         capabilities = get_image_model_capabilities("openai", "gpt-image-2")
@@ -157,7 +157,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ["fake-image-b64"])
         sent = fake_client.images.generate.call_args.kwargs
         self.assertEqual(sent["model"], "gpt-image-2-vip")
-        self.assertEqual(sent["size"], "1280x720")
+        self.assertEqual(sent["size"], "1536x1024")
         self.assertNotIn("n", sent)
         self.assertNotIn("quality", sent)
         self.assertNotIn("background", sent)
@@ -519,7 +519,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
                     "size": "1024x1024",
                     "quality": "low",
                     "output_format": "png",
-                    "responses_model": "gpt-5.4-mini",
+                    "responses_model": "gpt-5.5",
                 },
                 max_attempts=1,
                 retry_delay=0,
@@ -527,7 +527,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, ["responses-image-b64"])
         sent = fake_client.responses.create.call_args.kwargs
-        self.assertEqual(sent["model"], "gpt-5.4-mini")
+        self.assertEqual(sent["model"], "gpt-5.5")
         self.assertEqual(sent["tools"][0]["type"], "image_generation")
         self.assertEqual(sent["tools"][0]["model"], "gpt-image-2")
         self.assertEqual(sent["tool_choice"], {"type": "image_generation"})
@@ -580,7 +580,7 @@ class OpenAIRetryFailureTest(unittest.IsolatedAsyncioTestCase):
                         "output_format": "png",
                         "stream": True,
                         "partial_images": 1,
-                        "responses_model": "gpt-5.4-mini",
+                        "responses_model": "gpt-5.5",
                     },
                     max_attempts=1,
                     retry_delay=0,

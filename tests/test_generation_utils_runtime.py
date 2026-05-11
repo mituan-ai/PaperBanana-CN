@@ -173,8 +173,9 @@ class GenerationUtilsRuntimeContextTest(unittest.TestCase):
                     provider="openai",
                     api_key="text-key",
                     image_api_key="image-key",
+                    image_model_name="gpt-image-2-vip",
                     base_url="https://api.openai.com/v1",
-                    image_base_url="https://api.apiyi.com/v1",
+                    image_base_url="",
                 )
 
         self.assertEqual(len(calls), 2)
@@ -183,6 +184,105 @@ class GenerationUtilsRuntimeContextTest(unittest.TestCase):
         self.assertEqual(calls[1]["base_url"], "http://api.apiyi.com:16888/v1")
         self.assertIn("http_client", calls[1])
         self.assertEqual(calls[1]["timeout"], generation_utils.DEFAULT_APIYI_IMAGE_TIMEOUT_SECONDS)
+
+    def test_explicit_image_base_url_is_preserved_even_for_apiyi_label(self):
+        calls = []
+
+        class _FakeAsyncOpenAI:
+            def __init__(self, **kwargs):
+                calls.append(kwargs)
+
+        with patch("openai.AsyncOpenAI", _FakeAsyncOpenAI):
+            generation_utils.create_runtime_context(
+                provider="openai",
+                api_key="text-key",
+                image_api_key="image-key",
+                image_model_name="gpt-image-2-vip(apiyi)",
+                base_url="https://api.openai.com/v1",
+                image_base_url="https://image.example/v1",
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1]["base_url"], "https://image.example/v1")
+        self.assertNotIn("http_client", calls[1])
+        self.assertEqual(calls[1].get("timeout"), None)
+
+    def test_reinitialize_runtime_context_keeps_text_and_image_urls_separate(self):
+        calls = []
+
+        def fake_create_openai_client(api_key, base_url="", extra_headers=None, *, image_client=False):
+            calls.append(
+                {
+                    "api_key": api_key,
+                    "base_url": base_url,
+                    "extra_headers": extra_headers,
+                    "image_client": image_client,
+                }
+            )
+            return f"client-{len(calls)}"
+
+        context = generation_utils.RuntimeContext(
+            provider="openai",
+            api_key="text-key",
+            base_url="https://text.example/v1",
+            image_provider="openai",
+            image_api_key="image-key",
+            image_base_url="https://image.example/v1",
+            extra_headers={"X-Text": "1"},
+            image_extra_headers={"X-Image": "1"},
+        )
+
+        with patch("utils.generation_utils._create_openai_client", side_effect=fake_create_openai_client):
+            generation_utils.reinitialize_runtime_context(context)
+
+        self.assertEqual(calls[0]["api_key"], "text-key")
+        self.assertEqual(calls[0]["base_url"], "https://text.example/v1")
+        self.assertEqual(calls[0]["extra_headers"], {"X-Text": "1"})
+        self.assertFalse(calls[0]["image_client"])
+        self.assertEqual(calls[1]["api_key"], "image-key")
+        self.assertEqual(calls[1]["base_url"], "https://image.example/v1")
+        self.assertEqual(calls[1]["extra_headers"], {"X-Image": "1"})
+        self.assertTrue(calls[1]["image_client"])
+        self.assertEqual(context.openai_client, "client-1")
+        self.assertEqual(context.openai_image_client, "client-2")
+
+    def test_create_runtime_context_does_not_build_gemini_image_client_for_non_gemini_image_provider(self):
+        gemini_calls = []
+        openai_calls = []
+
+        def fake_create_gemini_client(api_key, base_url=""):
+            gemini_calls.append({"api_key": api_key, "base_url": base_url})
+            return f"gemini-{len(gemini_calls)}"
+
+        def fake_create_openai_client(api_key, base_url="", extra_headers=None, *, image_client=False):
+            openai_calls.append(
+                {
+                    "api_key": api_key,
+                    "base_url": base_url,
+                    "extra_headers": extra_headers,
+                    "image_client": image_client,
+                }
+            )
+            return f"openai-{len(openai_calls)}"
+
+        with patch("utils.generation_utils._create_gemini_client", side_effect=fake_create_gemini_client):
+            with patch("utils.generation_utils._create_openai_client", side_effect=fake_create_openai_client):
+                context = generation_utils.create_runtime_context(
+                    provider="gemini",
+                    api_key="text-key",
+                    base_url="https://text.example/v1",
+                    image_provider="openai",
+                    image_api_key="image-key",
+                    image_base_url="https://image.example/v1",
+                )
+
+        self.assertEqual(gemini_calls, [{"api_key": "text-key", "base_url": "https://text.example/v1"}])
+        self.assertEqual(openai_calls[0]["api_key"], "image-key")
+        self.assertEqual(openai_calls[0]["base_url"], "https://image.example/v1")
+        self.assertTrue(openai_calls[0]["image_client"])
+        self.assertEqual(context.gemini_client, "gemini-1")
+        self.assertIsNone(context.gemini_image_client)
+        self.assertEqual(context.openai_image_client, "openai-1")
 
 
 if __name__ == "__main__":

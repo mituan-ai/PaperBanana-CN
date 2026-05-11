@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,53 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Model and Gateway Configuration for PaperBanana-CN
-#
-# GUI 配置优先写入 configs/local/，新用户默认没有 API Key。
-# 常用文件：
-# - configs/model_config.yaml: 本机基础默认值（已被 .gitignore 忽略）。
-# - configs/local/provider_settings.yaml: GUI 自动保存的 URL 和模型选择。
-# - configs/local/*.txt: GUI 自动保存的 API Key。
-# 环境变量只保留给脚本/高级运行场景；GUI 默认不会用环境变量覆盖这些项目内配置。
+# Model and API Configuration for PaperBanana
 
-# Shared defaults for Gemini provider
-defaults:
-  model_name: "" # e.g., "gemini-3.1-flash-lite-preview"
-  image_model_name: "" # e.g., "gemini-3.1-flash-image-preview"
-
-# Provider channel settings. GUI changes should normally be made in the sidebar;
-# they are persisted to configs/local/provider_settings.yaml.
 gemini:
   base_url: ""
-  vlm_model: ""
-  image_model: ""
+  vlm_model: "gemini-3.1-flash-lite-preview"
+  image_model: "gemini-3.1-flash-image-preview"
   vlm_api_key: ""
   image_api_key: ""
 
 openai:
   base_url: "https://api.openai.com/v1"
-  vlm_model: "gpt-5.4-mini"
+  vlm_model: "gpt-5.5"
   image_model: "gpt-image-2"
   vlm_api_key: ""
   image_api_key: ""
-  
-# API Keys. Recommended for GUI use: leave these blank and fill the sidebar.
-# Keys are written to configs/local/*.txt and are not tracked by git.
-api_keys:
-  google_api_key: ""
-  openai_api_key: ""
-  anthropic_api_key: ""
 
-# Evolink Provider configuration
 evolink:
-  api_key: "" # optional if using configs/local/evolink_api_key.txt
   base_url: "https://api.evolink.ai"
-  model_name: "gemini-2.5-flash"
-  image_model_name: "nano-banana-2-lite"
+  vlm_model: "gemini-2.5-flash"
+  image_model: "nano-banana-2-lite"
+  vlm_api_key: ""
+  image_api_key: ""
 
-# OpenRouter Provider configuration
 openrouter:
-  api_key: "" # optional if using configs/local/openrouter_api_key.txt
   base_url: "https://openrouter.ai/api/v1"
-  model_name: "google/gemini-3.1-flash-lite-preview"  # format: provider/model-name
-  image_model_name: "google/gemini-3.1-flash-image-preview"
+  vlm_model: "google/gemini-3.1-flash-lite-preview"
+  image_model: "google/gemini-3.1-flash-image-preview"
+  vlm_api_key: ""
+  image_api_key: ""

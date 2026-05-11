@@ -125,12 +125,9 @@ try:
     from agents.polish_agent import PolishAgent
     from utils import config, generation_utils
     from utils.config_loader import (
-        delete_provider_image_api_key,
         delete_provider_api_key,
         load_model_config,
-        write_provider_image_api_key,
         write_provider_api_key,
-        write_provider_runtime_defaults,
     )
     from utils.dataset_paths import DEFAULT_DATASET_NAME, get_reference_file_path
     from utils.demo_job_store import (
@@ -177,9 +174,11 @@ try:
     )
     from utils.run_report import build_failure_manifest, build_result_summary
     from utils.image_generation_options import (
+        ASPECT_RATIO_SIZE_MAP,
         GPT_IMAGE_RATIO_OPTIONS,
         get_image_model_capabilities,
         normalize_image_generation_options,
+        normalize_image_model_name,
     )
     from utils.runtime_settings import (
         DEFAULT_PROVIDER,
@@ -964,21 +963,18 @@ def get_next_refine_generated_label(history: list[dict] | None = None) -> str:
     return f"第{generated_count + 1}版"
 
 
-COMMON_ASPECT_RATIOS = list(GPT_IMAGE_RATIO_OPTIONS)
-ASPECT_RATIO_DISPLAY_LABELS = {
-    "1:1": "1:1 方图",
-    "2:3": "2:3 竖版",
-    "3:2": "3:2 横版",
-    "3:4": "3:4 竖版",
-    "4:3": "4:3 横版",
-    "4:5": "4:5 竖版",
-    "5:4": "5:4 横版",
-    "9:16": "9:16 手机竖版",
-    "16:9": "16:9 宽屏",
-    "21:9": "21:9 超宽屏",
-}
-APIYI_BASE_URL = "https://api.apiyi.com/v1"
-APIYI_IMAGE_HTTP_URL = "http://api.apiyi.com:16888/v1"
+COMMON_ASPECT_RATIOS = [
+    "1:1",
+    "4:3",
+    "3:2",
+    "5:4",
+    "16:9",
+    "21:9",
+    "4:5",
+    "3:4",
+    "2:3",
+    "9:16",
+]
 OPENAI_IMAGE_QUALITY_OPTIONS = ["auto", "low", "medium", "high"]
 OPENAI_IMAGE_BACKGROUND_OPTIONS = ["opaque", "transparent", "auto"]
 OPENAI_IMAGE_OUTPUT_FORMAT_OPTIONS = ["png", "jpeg", "webp"]
@@ -1163,26 +1159,14 @@ def get_connection_model_options(connection_defaults: dict[str, Any], *, image: 
 
 
 def normalize_display_model_name(model_name: str) -> str:
-    normalized = str(model_name or "").strip()
-    if normalized == "gpt-image-2-vip(apiyi)":
-        return "gpt-image-2-vip"
-    return normalized
+    return normalize_image_model_name(model_name)
 
 
 def display_image_model_name(model_name: str) -> str:
-    normalized = normalize_display_model_name(model_name)
+    normalized = normalize_image_model_name(model_name)
     if normalized == "gpt-image-2-vip":
         return "gpt-image-2-vip(apiyi)"
     return normalized
-
-
-def should_force_apiyi_url(model_name: str) -> bool:
-    return normalize_display_model_name(model_name) == "gpt-image-2-vip"
-
-
-def is_apiyi_url(base_url: str) -> bool:
-    normalized = str(base_url or "").strip().lower()
-    return normalized.startswith("https://api.apiyi.com") or normalized.startswith("http://api.apiyi.com")
 
 
 def provider_choice_to_connection(choice: str) -> str:
@@ -1211,14 +1195,11 @@ def build_image_canvas_preview(
         aspect_ratio=aspect_ratio,
         image_resolution=image_resolution,
     )
-    preview_pixels = options.size
-    if not preview_pixels or preview_pixels == "auto":
-        preview_pixels = image_utils.openai_image_size_from_controls(
-            aspect_ratio,
-            image_resolution,
-            default_size="",
-        )
-    return options.to_dict(), preview_pixels or options.size or "自动", ""
+    pixel_size = ASPECT_RATIO_SIZE_MAP.get(str(aspect_ratio or "").strip(), {}).get(
+        str(image_resolution or "").strip().upper(),
+        options.size or "自动",
+    )
+    return options.to_dict(), pixel_size, ""
 
 
 def render_aspect_ratio_grid(
@@ -1228,41 +1209,32 @@ def render_aspect_ratio_grid(
     default_value: str,
     columns: int = 5,
 ) -> str:
-    selected = ensure_session_choice_state(
+    selected = str(st.session_state.get(
         key,
-        options,
         default_value if default_value in options else options[0],
-    )
-    pills = getattr(st, "pills", None)
-    if callable(pills):
+    ) or (default_value if default_value in options else options[0]))
+    segmented_control = getattr(st, "segmented_control", None)
+    if callable(segmented_control):
+        kwargs = {
+            "key": key,
+            "format_func": lambda ratio: str(ratio),
+            "width": "stretch",
+            "help": "选择输出画布比例。",
+        }
+        if key not in st.session_state:
+            kwargs["default"] = selected
         try:
-            selected = pills(
-                "宽高比",
-                options,
-                key=key,
-                format_func=lambda ratio: ASPECT_RATIO_DISPLAY_LABELS.get(ratio, ratio),
-                help="选择输出画布比例。",
-                width="stretch",
-            )
+            selected = segmented_control("宽高比", options, **kwargs)
         except TypeError:
-            selected = pills(
-                "宽高比",
-                options,
-                key=key,
-                default=selected,
-                format_func=lambda ratio: ASPECT_RATIO_DISPLAY_LABELS.get(ratio, ratio),
-                help="选择输出画布比例。",
-                width="stretch",
-            )
-        if selected is None:
-            selected = default_value if default_value in options else options[0]
-        return str(selected)
+            kwargs.pop("default", None)
+            selected = segmented_control("宽高比", options, **kwargs)
+        return str(st.session_state.get(key, selected) or selected)
     selected = st.radio(
         "宽高比",
         options,
         key=key,
         horizontal=True,
-        format_func=lambda ratio: ASPECT_RATIO_DISPLAY_LABELS.get(ratio, ratio),
+        format_func=lambda ratio: str(ratio),
         help="选择输出画布比例。",
     )
     return str(st.session_state.get(key, selected) or selected)
@@ -1279,42 +1251,45 @@ def render_image_canvas_controls(
     title: str = "输出画布",
 ) -> tuple[str, str, dict[str, Any]]:
     st.markdown(f'<p class="sb-section">{title}</p>', unsafe_allow_html=True)
-    ensure_session_choice_state(
-        aspect_ratio_key,
-        COMMON_ASPECT_RATIOS,
-        default_aspect_ratio if default_aspect_ratio in COMMON_ASPECT_RATIOS else COMMON_ASPECT_RATIOS[0],
-    )
     aspect_ratio = render_aspect_ratio_grid(
         key=aspect_ratio_key,
         options=COMMON_ASPECT_RATIOS,
         default_value=default_aspect_ratio if default_aspect_ratio in COMMON_ASPECT_RATIOS else COMMON_ASPECT_RATIOS[0],
     )
-    ensure_session_choice_state(
-        image_resolution_key,
-        ["1K", "2K", "4K"],
-        default_image_resolution if default_image_resolution in {"1K", "2K", "4K"} else "2K",
-    )
-    resolution_control = getattr(st, "segmented_control", st.selectbox)
-    resolution_kwargs = {
-        "key": image_resolution_key,
-        "help": "选择输出的像素档位，后端会根据模型自动换算为实际请求参数。",
-    }
-    if resolution_control is not st.selectbox:
-        resolution_kwargs["width"] = "stretch"
+    default_resolution = default_image_resolution if default_image_resolution in {"1K", "2K", "4K"} else "2K"
+    image_resolution = str(st.session_state.get(image_resolution_key, default_resolution) or default_resolution)
+    resolution_control = getattr(st, "segmented_control", None)
+    if callable(resolution_control):
+        kwargs = {
+            "key": image_resolution_key,
+            "width": "stretch",
+            "help": "选择输出的分辨率。",
+        }
+        if image_resolution_key not in st.session_state:
+            kwargs["default"] = image_resolution
         try:
-            image_resolution = resolution_control("像素档", ["1K", "2K", "4K"], **resolution_kwargs)
+            image_resolution = resolution_control("分辨率", ["1K", "2K", "4K"], **kwargs)
         except TypeError:
-            resolution_kwargs["default"] = st.session_state.get(image_resolution_key, "2K")
-            image_resolution = resolution_control("像素档", ["1K", "2K", "4K"], **resolution_kwargs)
+            kwargs.pop("default", None)
+            image_resolution = resolution_control("分辨率", ["1K", "2K", "4K"], **kwargs)
     else:
-        image_resolution = resolution_control("像素档", ["1K", "2K", "4K"], **resolution_kwargs)
+        image_resolution = st.radio(
+            "分辨率",
+            ["1K", "2K", "4K"],
+            key=image_resolution_key,
+            horizontal=True,
+            help="选择输出的分辨率。",
+        )
     canvas_options, preview_pixels, _ = build_image_canvas_preview(
         provider_type=provider_type,
         image_model_name=image_model_name,
         aspect_ratio=aspect_ratio,
         image_resolution=image_resolution,
     )
-    st.markdown(f'<div class="pb-pixel-preview">{html.escape(preview_pixels)}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="pb-pixel-preview"><span>尺寸</span><strong>{html.escape(preview_pixels)}</strong></div>',
+        unsafe_allow_html=True,
+    )
     return aspect_ratio, image_resolution, canvas_options
 
 
@@ -1578,30 +1553,47 @@ def sync_connection_runtime_input_state(
     """连接切换时同步 API Key 和模型输入，避免沿用上一条连接的残留状态。"""
     tracked_connection_key = f"{prefix}_runtime_input_connection_id"
     normalized_selected = str(selected_connection_id or "").strip()
-    if str(st.session_state.get(tracked_connection_key, "") or "").strip() == normalized_selected:
-        return
-
-    api_key_session_key = f"{prefix}_api_key"
+    state_keys = _build_connection_state_keys(prefix)
     api_key_default_key = (
         "image_api_key_default"
         if sync_image_model and not sync_text_model
         else "api_key_default"
     )
-    api_key_value = str(provider_defaults.get(api_key_default_key, "") or "").strip()
-    st.session_state[api_key_session_key] = api_key_value
-    st.session_state[get_api_key_widget_key(api_key_session_key)] = api_key_value
-    state_keys = _build_connection_state_keys(prefix)
     if sync_image_model and not sync_text_model:
         base_url_default_key = "image_base_url"
     elif sync_text_model and not sync_image_model:
         base_url_default_key = "vlm_base_url"
     else:
         base_url_default_key = "base_url"
-    st.session_state[state_keys["base_url"]] = str(
+    base_url_default = str(
         provider_defaults.get(base_url_default_key, "")
         or provider_defaults.get("base_url", "")
         or ""
     ).strip()
+    api_key_default = str(provider_defaults.get(api_key_default_key, "") or "").strip()
+    current_connection = str(st.session_state.get(tracked_connection_key, "") or "").strip()
+    current_base_url = str(st.session_state.get(state_keys["base_url"], "") or "").strip()
+    current_api_key = str(st.session_state.get(f"{prefix}_api_key", "") or "").strip()
+    current_text_model = str(st.session_state.get(f"{prefix}_model_name", "") or "").strip()
+    current_image_model = str(st.session_state.get(f"{prefix}_image_model_name", "") or "").strip()
+
+    already_synced = current_connection == normalized_selected
+    if already_synced:
+        if (
+            (not current_base_url and base_url_default)
+            or (not current_api_key and api_key_default)
+            or (sync_text_model and not current_text_model and str(provider_defaults.get("model_name", "") or "").strip())
+            or (sync_image_model and not current_image_model and str(provider_defaults.get("image_model_name", "") or "").strip())
+        ):
+            already_synced = False
+    if already_synced:
+        return
+
+    api_key_session_key = f"{prefix}_api_key"
+    api_key_value = api_key_default
+    st.session_state[api_key_session_key] = api_key_value
+    st.session_state[get_api_key_widget_key(api_key_session_key)] = api_key_value
+    st.session_state[state_keys["base_url"]] = base_url_default
 
     if sync_text_model:
         st.session_state[f"{prefix}_model_name"] = str(provider_defaults.get("model_name", "") or "").strip()
@@ -1631,129 +1623,13 @@ def sync_model_selector_to_connection(
     st.session_state[tracked_connection_key] = normalized_selected
 
 
-def sync_role_connection_runtime_input_state(
-    *,
-    prefix: str,
-    selected_connection_id: str,
-    provider_defaults: dict[str, Any],
-    model_value_key: str,
-    model_selector_key: str,
-    model_custom_value_key: str,
-    image: bool,
-) -> None:
-    """同步某个侧栏连接块的 API Key、模型和 Base URL。"""
-    tracked_connection_key = f"{prefix}_{'image' if image else 'text'}_runtime_input_connection_id"
-    normalized_selected = str(selected_connection_id or "").strip()
-    if str(st.session_state.get(tracked_connection_key, "") or "").strip() == normalized_selected:
-        return
-
-    api_key_session_key = f"{prefix}_api_key"
-    api_key_value = str(
-        provider_defaults.get("image_api_key_default" if image else "api_key_default", "")
-        or provider_defaults.get("api_key_default", "")
-        or ""
-    ).strip()
-    st.session_state[api_key_session_key] = api_key_value
-    st.session_state[get_api_key_widget_key(api_key_session_key)] = api_key_value
-
-    state_keys = _build_connection_state_keys(prefix)
-    base_url_default_key = "image_base_url" if image else "vlm_base_url"
-    st.session_state[state_keys["base_url"]] = str(
-        provider_defaults.get(base_url_default_key, "")
-        or provider_defaults.get("base_url", "")
-        or ""
-    ).strip()
-
-    default_model_key = "image_model_name" if image else "model_name"
-    st.session_state[model_value_key] = str(provider_defaults.get(default_model_key, "") or "").strip()
-    st.session_state.pop(model_selector_key, None)
-    st.session_state.pop(model_custom_value_key, None)
-    st.session_state[tracked_connection_key] = normalized_selected
-
-
-def sync_apiyi_url_for_image_model(*, model_name: str, base_url_key: str) -> None:
-    if should_force_apiyi_url(model_name):
-        st.session_state[base_url_key] = APIYI_IMAGE_HTTP_URL
-
-
-def sync_role_base_url_from_provider_defaults(
-    *,
-    prefix: str,
-    selected_connection_id: str,
-    provider_defaults: dict[str, Any],
-    image: bool,
-) -> None:
-    state_keys = _build_connection_state_keys(prefix)
-    tracked_key = f"{prefix}_{'image' if image else 'text'}_base_url_connection_id"
-    normalized_selected = str(selected_connection_id or "").strip()
-    base_url_default_key = "image_base_url" if image else "vlm_base_url"
-    desired_base_url = str(
-        provider_defaults.get(base_url_default_key, "")
-        or provider_defaults.get("base_url", "")
-        or ""
-    ).strip()
-    current_base_url = str(st.session_state.get(state_keys["base_url"], "") or "").strip()
-    if st.session_state.get(tracked_key) != normalized_selected or not current_base_url:
-        st.session_state[state_keys["base_url"]] = desired_base_url
-        st.session_state[tracked_key] = normalized_selected
-
-
-def persist_builtin_provider_runtime_input(
-    *,
-    provider: str,
-    base_url: str,
-    model_name: str,
-    image: bool,
-) -> None:
-    normalized_provider = normalize_connection_id(provider, default=str(provider or ""))
-    if normalized_provider not in BUILTIN_CONNECTION_IDS:
-        return
-
-    normalized_model = normalize_display_model_name(model_name) if image else str(model_name or "").strip()
-    normalized_base_url = str(base_url or "").strip()
-    current_defaults = get_provider_ui_defaults(normalized_provider)
-    if image and should_force_apiyi_url(normalized_model):
-        if str(current_defaults.get("image_model_name", "") or "").strip() == normalized_model:
-            return
-        write_provider_runtime_defaults(
-            normalized_provider,
-            model_name=None,
-            image_model_name=normalized_model,
-            base_dir=REPO_ROOT,
-        )
-        invalidate_provider_connection_caches()
-        return
-
-    model_key = "image_model_name" if image else "model_name"
-    base_url_key = "image_base_url" if image else "vlm_base_url"
-    current_model = str(current_defaults.get(model_key, "") or "").strip()
-    current_base_url = str(
-        current_defaults.get(base_url_key, "")
-        or current_defaults.get("base_url", "")
-        or ""
-    ).strip()
-    if current_model == normalized_model and current_base_url == normalized_base_url:
-        return
-
-    write_provider_runtime_defaults(
-        normalized_provider,
-        base_url=normalized_base_url,
-        base_url_role="image" if image else "vlm",
-        model_name=None if image else normalized_model,
-        image_model_name=normalized_model if image else None,
-        base_dir=REPO_ROOT,
-    )
-    invalidate_provider_connection_caches()
-
-
-def persist_provider_api_key_input(provider: str, api_key: str, *, image: bool = False) -> None:
+def persist_provider_api_key_input(provider: str, api_key: str) -> None:
     normalized_value = str(api_key or "").strip()
     if not normalized_value:
         return
     normalized_provider = normalize_connection_id(provider, default=str(provider or ""))
     if normalized_provider in BUILTIN_CONNECTION_IDS:
-        writer = write_provider_image_api_key if image else write_provider_api_key
-        writer(normalized_provider, normalized_value, base_dir=REPO_ROOT)
+        write_provider_api_key(normalized_provider, normalized_value, base_dir=REPO_ROOT)
     else:
         write_custom_provider_api_key(normalized_provider, normalized_value, base_dir=REPO_ROOT)
     invalidate_provider_connection_caches()
@@ -1764,12 +1640,10 @@ def request_clear_provider_api_key(
     provider: str,
     session_key: str,
     clear_request_key: str,
-    image: bool = False,
 ) -> None:
     normalized_provider = normalize_connection_id(provider, default=str(provider or ""))
     if normalized_provider in BUILTIN_CONNECTION_IDS:
-        deleter = delete_provider_image_api_key if image else delete_provider_api_key
-        deleter(normalized_provider, base_dir=REPO_ROOT)
+        delete_provider_api_key(normalized_provider, base_dir=REPO_ROOT)
     else:
         delete_custom_provider_api_key(normalized_provider, base_dir=REPO_ROOT)
     invalidate_provider_connection_caches()
@@ -2018,32 +1892,12 @@ def render_connection_control_section(
         image=image,
     )
 
-    sync_role_connection_runtime_input_state(
-        prefix=prefix,
-        selected_connection_id=selected_runtime_id,
-        provider_defaults=provider_defaults,
-        model_value_key=model_value_key,
-        model_selector_key=model_selector_key,
-        model_custom_value_key=model_custom_value_key,
-        image=image,
-    )
-    sync_role_base_url_from_provider_defaults(
-        prefix=prefix,
-        selected_connection_id=selected_runtime_id,
-        provider_defaults=provider_defaults,
-        image=image,
-    )
-
-    allow_local_persist = selected_connection_id != CUSTOM_CONNECTION_CREATE_OPTION
     api_key = render_provider_api_key_controls(
         provider=selected_runtime_id,
         provider_defaults=provider_defaults,
         session_key=f"{prefix}_api_key",
         clear_request_key=f"{prefix}_api_key_clear_requested",
         clear_button_key=f"{prefix}_clear_provider_api_key",
-        persist_secret=True,
-        allow_local_persist=allow_local_persist,
-        image=image,
     )
 
     model_options = get_connection_model_options(provider_defaults, image=image)
@@ -2057,28 +1911,15 @@ def render_connection_control_section(
         select_help=f"用于{role_label}的模型名称。",
         custom_help=f"请输入当前{role_label}支持的模型名称。",
     )
-    if image:
-        sync_apiyi_url_for_image_model(model_name=model_name, base_url_key=state_keys["base_url"])
+    runtime_model_name = normalize_display_model_name(model_name) if image else model_name
 
     base_url = st.text_input(
         "URL",
         key=state_keys["base_url"],
-        disabled=image and should_force_apiyi_url(model_name),
-        help=(
-            "gpt-image-2-vip(apiyi) 固定使用 APIYI URL。"
-            if image and should_force_apiyi_url(model_name)
-            else "官方直连可留空；使用中转站时填写对应 URL。"
-        ),
+        help="官方直连可留空；使用中转站时填写对应 URL。",
     ).strip()
 
     connection_pending_save = selected_connection_id == CUSTOM_CONNECTION_CREATE_OPTION
-    if selected_runtime_id in BUILTIN_CONNECTION_IDS:
-        persist_builtin_provider_runtime_input(
-            provider=selected_runtime_id,
-            base_url=base_url,
-            model_name=model_name,
-            image=image,
-        )
     probe_status_placeholder = st.empty()
     probe_label = "测试图像" if image else "测试模型"
     probe_help = (
@@ -2096,8 +1937,8 @@ def render_connection_control_section(
             prefix=prefix,
             connection_id=selected_connection_id,
             api_key=api_key,
-            model_name=(str(provider_defaults.get("model_name", "") or "") if image else model_name),
-            image_model_name=(normalize_display_model_name(model_name) if image else str(provider_defaults.get("image_model_name", "") or "")),
+            model_name="" if image else runtime_model_name,
+            image_model_name=runtime_model_name if image else "",
             image_only=image,
             status_placeholder=probe_status_placeholder,
         )
@@ -2152,8 +1993,8 @@ def render_connection_control_section(
                     prefix=prefix,
                     selected_connection_id=selected_connection_id,
                     api_key=api_key,
-                    model_name=save_text_model,
-                    image_model_name=save_image_model,
+                    model_name="" if image else runtime_model_name,
+                    image_model_name=runtime_model_name if image else "",
                 )
                 if ok:
                     st.success(message)
@@ -2172,7 +2013,7 @@ def render_connection_control_section(
         "api_key": api_key,
         "base_url": base_url,
         "extra_headers_json": str(st.session_state.get(state_keys["extra_headers_json"], "") or ""),
-        "model_name": normalize_display_model_name(model_name) if image else model_name,
+        "model_name": runtime_model_name,
         "provider_defaults": provider_defaults,
     }
 
@@ -2313,9 +2154,6 @@ def render_provider_api_key_controls(
     session_key: str,
     clear_request_key: str,
     clear_button_key: str,
-    persist_secret: bool = True,
-    allow_local_persist: bool = True,
-    image: bool = False,
 ) -> str:
     widget_key = get_api_key_widget_key(session_key)
     prepare_api_key_widget_state(
@@ -2332,14 +2170,18 @@ def render_provider_api_key_controls(
     normalized_api_key = str(api_key or "").strip()
     if str(st.session_state.get(session_key, "") or "").strip() != normalized_api_key:
         st.session_state[session_key] = normalized_api_key
-
-    if should_auto_persist_api_key(
-        persist_secret=persist_secret,
-        allow_local_persist=allow_local_persist,
-        normalized_api_key=normalized_api_key,
-        provider_defaults=provider_defaults,
+    st.caption("当前输入仅保留在本次会话；如需长期保存，请使用自定义连接。")
+    if st.button(
+        "清除",
+        key=clear_button_key,
+        width="stretch",
+        help="清空输入框。",
     ):
-        persist_provider_api_key_input(provider, normalized_api_key, image=image)
+        request_clear_provider_api_key(
+            provider=provider,
+            session_key=session_key,
+            clear_request_key=clear_request_key,
+        )
     return normalized_api_key
 
 
@@ -2406,13 +2248,6 @@ def render_connection_probe_results(prefix: str) -> None:
                 st.code(raw_excerpt, language="text")
             if discovered_models:
                 st.caption(f"模型列表：{', '.join(discovered_models)}")
-
-
-def coerce_apiyi_image_options(options: dict[str, Any], image_model_name: str) -> dict[str, Any]:
-    normalized = dict(options or {})
-    if should_force_apiyi_url(image_model_name):
-        normalized["model_note"] = "apiyi"
-    return normalized
 
 
 def _set_connection_probe_notice(prefix: str, message: str) -> None:
@@ -3289,17 +3124,6 @@ def _restore_active_background_job(
     return snapshot
 
 
-def normalize_restored_openai_image_url_state() -> None:
-    for model_key, base_url_key in (
-        ("tab1_image_model_name", "tab1_image_base_url"),
-        ("refine_image_model_name", "refine_image_base_url"),
-    ):
-        model_name = str(st.session_state.get(model_key, "") or "").strip()
-        base_url = str(st.session_state.get(base_url_key, "") or "").strip()
-        if base_url == APIYI_BASE_URL and should_force_apiyi_url(model_name):
-            st.session_state[base_url_key] = APIYI_IMAGE_HTTP_URL
-
-
 def restore_persisted_demo_ui_state() -> None:
     # NOTE: Do not auto-restore completed generation results (contains large
     # base64 images) to avoid significant slowdown on page refresh.
@@ -3326,7 +3150,6 @@ def restore_persisted_demo_ui_state() -> None:
         if key in st.session_state or key in _skip_restore_keys:
             continue
         st.session_state[key] = _deserialize_ui_state_value(key, raw_value)
-    normalize_restored_openai_image_url_state()
 
     generation_snapshot = _restore_active_background_job(
         session_key="active_generation_job_id",
@@ -7218,20 +7041,6 @@ def render_sidebar_section_styles() -> None:
             border-radius: 14px;
             font-weight: 600;
         }
-        .pb-sidebar-page-title {
-            font-size: 1.42rem;
-            line-height: 1.24;
-            color: var(--text-color);
-            font-weight: 850;
-            margin: 0.15rem 0 0.48rem 0;
-        }
-        .pb-sidebar-page-subtitle {
-            font-size: 0.84rem;
-            line-height: 1.48;
-            color: var(--text-color);
-            opacity: 0.72;
-            margin: 0 0 1rem 0;
-        }
         .sb-section {
             font-size: 0.75rem; font-weight: 800;
             color: var(--primary-color);
@@ -7240,31 +7049,13 @@ def render_sidebar_section_styles() -> None:
             border-bottom: 1px solid rgba(128,128,128,0.24);
         }
         .sb-section:first-of-type { margin-top: 6px; }
-        .pb-sidebar-card-title {
-            font-size: 0.94rem;
-            line-height: 1.25;
-            color: var(--text-color);
-            font-weight: 800;
-            margin: 0 0 0.18rem 0;
-        }
-        .pb-sidebar-card-subtitle {
-            font-size: 0.78rem;
-            color: var(--text-color);
-            opacity: 0.72;
-            line-height: 1.35;
-            margin: 0 0 0.5rem 0;
-        }
-        .pb-sidebar-card-header {
-            margin: -0.22rem -0.22rem 0.62rem -0.22rem;
-            padding: 0.72rem 0.82rem;
-            border-radius: 8px;
-            border: 1px solid rgba(128,128,128,0.18);
-            background: var(--secondary-background-color);
-        }
         .pb-pixel-preview {
-            display: inline-flex;
+            display: flex;
             align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
             min-height: 1.8rem;
+            width: 100%;
             margin: 0.1rem 0 0.25rem 0;
             padding: 0.28rem 0.58rem;
             border-radius: 8px;
@@ -7274,6 +7065,16 @@ def render_sidebar_section_styles() -> None:
             font-size: 0.86rem;
             font-weight: 800;
             line-height: 1.2;
+        }
+        .pb-pixel-preview span {
+            flex: 1 1 auto;
+            min-width: 0;
+            text-align: left;
+        }
+        .pb-pixel-preview strong {
+            flex: 0 0 auto;
+            text-align: right;
+            white-space: nowrap;
         }
         .pb-inline-status {
             margin: 0.32rem 0 0.72rem 0;
@@ -7405,102 +7206,6 @@ def render_sidebar_section_styles() -> None:
     )
 
 
-def inject_sidebar_scroll_restoration_hook() -> None:
-    if not hasattr(st, "html"):
-        return
-    st.html(
-        """
-<script>
-(() => {
-  const cleanupKey = "__paperbananaSidebarScrollRestore";
-  const storageKey = "__paperbananaSidebarScrollTop";
-  try {
-    window[cleanupKey]?.cleanup?.();
-  } catch (error) {
-    console.warn("cleanup previous sidebar scroll observer failed", error);
-  }
-
-  const findSidebar = () =>
-    document.querySelector("section.stSidebar") ||
-    document.querySelector('section[data-testid="stSidebar"]');
-
-  const findScroller = () => {
-    const sidebar = findSidebar();
-    if (!sidebar) {
-      return null;
-    }
-    const candidates = [
-      sidebar,
-      ...Array.from(sidebar.querySelectorAll("div, section, aside")),
-    ];
-    return candidates.find((element) => {
-      const style = window.getComputedStyle(element);
-      return (
-        element.scrollHeight > element.clientHeight + 8 &&
-        /(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`)
-      );
-    }) || sidebar;
-  };
-
-  let scroller = null;
-  let frameHandle = null;
-  const readStoredTop = () => Number(sessionStorage.getItem(storageKey) || "0") || 0;
-  const saveScroll = () => {
-    if (scroller) {
-      sessionStorage.setItem(storageKey, String(scroller.scrollTop || 0));
-    }
-  };
-  const restoreScroll = () => {
-    if (frameHandle !== null) {
-      cancelAnimationFrame(frameHandle);
-    }
-    frameHandle = requestAnimationFrame(() => {
-      frameHandle = null;
-      const nextScroller = findScroller();
-      if (!nextScroller) {
-        return;
-      }
-      if (scroller !== nextScroller) {
-        scroller?.removeEventListener("scroll", saveScroll);
-        scroller = nextScroller;
-        scroller.addEventListener("scroll", saveScroll, { passive: true });
-      }
-      const storedTop = readStoredTop();
-      if (storedTop > 0 && Math.abs((scroller.scrollTop || 0) - storedTop) > 2) {
-        scroller.scrollTop = Math.min(storedTop, scroller.scrollHeight);
-      }
-    });
-  };
-
-  const observer = new MutationObserver(restoreScroll);
-  const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(restoreScroll);
-  observer.observe(document.body, { childList: true, subtree: true });
-  const sidebar = findSidebar();
-  if (sidebar && resizeObserver) {
-    resizeObserver.observe(sidebar);
-  }
-  window.addEventListener("resize", restoreScroll, { passive: true });
-  restoreScroll();
-
-  window[cleanupKey] = {
-    cleanup() {
-      observer.disconnect();
-      resizeObserver?.disconnect?.();
-      window.removeEventListener("resize", restoreScroll);
-      scroller?.removeEventListener("scroll", saveScroll);
-      if (frameHandle !== null) {
-        cancelAnimationFrame(frameHandle);
-      }
-    },
-  };
-})();
-</script>
-        """,
-        unsafe_allow_javascript=True,
-        width="content",
-    )
-
-
 def render_sidebar_request_note(title: str, detail: str) -> None:
     st.markdown(
         f'<div class="pb-inline-status"><strong>{html.escape(title)}</strong><span>{html.escape(detail)}</span></div>',
@@ -7509,25 +7214,13 @@ def render_sidebar_request_note(title: str, detail: str) -> None:
 
 
 def render_sidebar_workspace_header(title: str, subtitle: str) -> None:
-    st.markdown(
-        f"""
-        <div class="pb-sidebar-page-title">{html.escape(title)}</div>
-        <div class="pb-sidebar-page-subtitle">{html.escape(subtitle)}</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"### {title}")
+    st.caption(subtitle)
 
 
 def render_connection_card_header(title: str, subtitle: str) -> None:
-    st.markdown(
-        f"""
-        <div class="pb-sidebar-card-header">
-          <div class="pb-sidebar-card-title">{html.escape(title)}</div>
-          <div class="pb-sidebar-card-subtitle">{html.escape(subtitle)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"**{title}**")
+    st.caption(subtitle)
 
 
 def _parse_sidebar_headers(*raw_values: str) -> tuple[list[dict[str, str]], str]:
@@ -7748,7 +7441,6 @@ def _render_generation_pipeline_controls(
 def render_generation_sidebar_controls() -> dict:
     with st.sidebar:
         render_sidebar_section_styles()
-        inject_sidebar_scroll_restoration_hook()
         render_sidebar_workspace_header(
             "生成候选方案",
             "从上到下依次确认任务、连接、画布和运行资源。",
@@ -7844,13 +7536,6 @@ def render_generation_sidebar_controls() -> dict:
             else:
                 image_generation_options = canvas_options
             image_provider_type_label = str(image_connection["provider_type"]).strip().lower()
-            if image_provider_type_label == "gemini":
-                mapping_detail = f"{aspect_ratio} · {image_resolution}"
-            elif is_openai_image_provider(image_provider_type_label):
-                mapping_detail = str(image_generation_options.get("size", "auto") or "auto")
-            else:
-                mapping_detail = f"{aspect_ratio} · {image_resolution}"
-            render_sidebar_request_note("最终尺寸", mapping_detail)
         else:
             aspect_ratio = "16:9"
             image_resolution = "2K"
@@ -7882,7 +7567,6 @@ def render_generation_sidebar_controls() -> dict:
     image_api_key = str(image_connection["api_key"] if image_connection is not None else "")
     image_model_name = str(image_connection["model_name"] if image_connection is not None else "")
     image_base_url = str(image_connection["base_url"] if image_connection is not None else text_connection["base_url"]).strip()
-    image_generation_options = coerce_apiyi_image_options(image_generation_options, image_model_name)
     connection_pending_save = bool(text_connection.get("connection_pending_save")) or bool(
         image_connection.get("connection_pending_save") if image_connection else False
     )
@@ -7926,7 +7610,6 @@ def render_refine_sidebar_controls() -> dict:
     """渲染精修页侧边栏设置。"""
     with st.sidebar:
         render_sidebar_section_styles()
-        inject_sidebar_scroll_restoration_hook()
         render_sidebar_workspace_header(
             "精修图像",
             "先选图像生成模型，再设定输出画布和生成数量。",
@@ -7971,14 +7654,6 @@ def render_refine_sidebar_controls() -> dict:
             refine_image_generation_options = canvas_options
 
         image_provider_type_label = str(image_connection["provider_type"]).strip().lower()
-        if image_provider_type_label == "gemini":
-            mapping_detail = f"{refine_aspect_ratio} · {refine_resolution}"
-        elif is_openai_image_provider(image_provider_type_label):
-            mapping_detail = str(refine_image_generation_options.get("size", "auto") or "auto")
-        else:
-            mapping_detail = f"{refine_aspect_ratio} · {refine_resolution}"
-        render_sidebar_request_note("最终尺寸", mapping_detail)
-
         ensure_session_int_state(
             "refine_num_images",
             3,
@@ -8030,6 +7705,8 @@ def render_refine_sidebar_controls() -> dict:
     )
     extra_headers = parsed_headers[0] if parsed_headers else {}
     image_extra_headers = parsed_headers[1] if len(parsed_headers) > 1 else {}
+    image_base_url = str(image_connection["base_url"]).strip()
+    image_model_name = str(image_connection["model_name"]).strip()
     connection_pending_save = bool(text_connection.get("connection_pending_save")) or bool(
         image_connection.get("connection_pending_save")
     )
@@ -8396,7 +8073,6 @@ def _render_generation_sidebar_controls_legacy() -> dict:
                 select_help="用于图像生成的模型名称。切换服务时会自动重置。",
                 custom_help="请输入当前服务支持的图像模型名称。",
             )
-            sync_apiyi_url_for_image_model(model_name=image_model_name, base_url_key=image_state_keys["base_url"])
             image_base_url = st.text_input(
                 f"{image_provider_choice} URL",
                 key=image_state_keys["base_url"],
@@ -8618,7 +8294,6 @@ def _render_refine_sidebar_controls_legacy() -> dict:
             select_help="用于图像生成和精修的模型名称。切换服务时会自动重置。",
             custom_help="请输入当前服务支持的图像模型名称。",
         )
-        sync_apiyi_url_for_image_model(model_name=refine_image_model_name, base_url_key=image_state_keys["base_url"])
         refine_image_base_url = st.text_input(
             f"{refine_image_provider_choice} URL",
             key=image_state_keys["base_url"],

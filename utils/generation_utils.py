@@ -41,6 +41,7 @@ from utils.image_generation_options import (
     build_openai_image_request_params,
     get_image_model_capabilities,
     normalize_image_generation_options,
+    normalize_image_model_name,
 )
 from utils.log_config import get_logger
 from utils.runtime_events import create_runtime_event
@@ -74,6 +75,7 @@ DEFAULT_GEMINI_TEXT_FALLBACK_MODELS = (
 DEFAULT_OPENAI_IMAGE_TIMEOUT_SECONDS = 360.0
 DEFAULT_APIYI_IMAGE_TIMEOUT_SECONDS = 900.0
 DEFAULT_OPENAI_IMAGE_MAX_ATTEMPTS = 3
+APIYI_IMAGE_BASE_URL = "https://api.apiyi.com/v1"
 APIYI_IMAGE_HTTP_ROOT = "http://api.apiyi.com:16888"
 
 
@@ -155,6 +157,7 @@ class RuntimeContext:
     provider: str = ""
     api_key: str = ""
     image_api_key: str = ""
+    image_model_name: str = ""
     base_url: str = ""
     extra_headers: dict[str, str] = field(default_factory=dict)
     image_connection_id: str = ""
@@ -383,6 +386,7 @@ def create_runtime_context(
     provider: str = "",
     api_key: str = "",
     image_api_key: str = "",
+    image_model_name: str = "",
     image_provider: str = "",
     image_connection_id: str = "",
     image_base_url: str = "",
@@ -396,16 +400,32 @@ def create_runtime_context(
     normalized_provider = str(provider or "").strip().lower()
     normalized_image_provider = str(image_provider or normalized_provider).strip().lower()
     resolved_base_url = str(base_url or "").strip()
-    resolved_image_base_url = str(image_base_url or resolved_base_url).strip()
+    explicit_image_base_url = str(image_base_url or "").strip()
+    requested_image_model_name = str(image_model_name or "").strip()
+    resolved_image_model_name = normalize_image_model_name(requested_image_model_name)
+    is_apiyi_image_model = requested_image_model_name.lower() in {
+        "gpt-image-2-vip(apiyi)",
+        "apiyi-vip",
+    } or resolved_image_model_name.lower().startswith("gpt-image-2-vip")
+    resolved_image_base_url = str(explicit_image_base_url or "").strip()
     if normalized_provider == "evolink" and not resolved_base_url:
         resolved_base_url = evolink_base_url
     if normalized_image_provider == "evolink" and not resolved_image_base_url:
         resolved_image_base_url = evolink_base_url
+    if (
+        normalized_image_provider in {"openai", "openai_compatible"}
+        and not resolved_image_base_url
+        and is_apiyi_image_model
+    ):
+        resolved_image_base_url = APIYI_IMAGE_BASE_URL
+    if not resolved_image_base_url:
+        resolved_image_base_url = resolved_base_url
     context = RuntimeContext(
         connection_id=str(connection_id or "").strip(),
         provider=normalized_provider,
         api_key=str(api_key or "").strip(),
         image_api_key=str(image_api_key or api_key or "").strip(),
+        image_model_name=resolved_image_model_name,
         base_url=resolved_base_url,
         extra_headers=dict(extra_headers or {}),
         image_connection_id=str(image_connection_id or connection_id or "").strip(),
@@ -422,7 +442,6 @@ def create_runtime_context(
         context.owns_evolink_provider = context.evolink_provider is not None
     elif normalized_provider == "gemini" and context.api_key:
         context.gemini_client = _create_gemini_client(context.api_key, context.base_url)
-        context.gemini_image_client = _create_gemini_client(context.image_api_key, context.base_url)
     elif normalized_provider == "anthropic" and context.api_key:
         context.anthropic_client = _create_anthropic_client(context.api_key)
     elif normalized_provider == "openai" and context.api_key:
@@ -518,25 +537,41 @@ async def close_runtime_context(context: RuntimeContext | None) -> None:
 def reinitialize_runtime_context(context: RuntimeContext | None) -> RuntimeContext | None:
     if context is None:
         return None
-    if context.provider == "evolink" and context.api_key:
-        context.evolink_provider = _create_evolink_provider(context.api_key, context.base_url)
-        context.owns_evolink_provider = context.evolink_provider is not None
-    elif context.provider == "gemini" and context.api_key:
-        context.gemini_client = _create_gemini_client(context.api_key)
-    elif context.provider == "anthropic" and context.api_key:
-        context.anthropic_client = _create_anthropic_client(context.api_key)
-    elif context.provider == "openai" and context.api_key:
-        context.openai_client = _create_openai_client(
-            context.api_key,
-            base_url=context.base_url,
-            extra_headers=context.extra_headers,
-        )
-    elif context.provider in {"openrouter", "openai_compatible"} and context.api_key:
-        context.openai_client = _create_openrouter_client(
-            context.api_key,
-            context.base_url,
-            context.extra_headers,
-        )
+    refreshed_context = create_runtime_context(
+        connection_id=context.connection_id,
+        provider=context.provider,
+        api_key=context.api_key,
+        image_api_key=context.image_api_key,
+        image_model_name=context.image_model_name,
+        image_provider=context.image_provider or context.provider,
+        image_connection_id=context.image_connection_id or context.connection_id,
+        image_base_url=context.image_base_url,
+        image_extra_headers=context.image_extra_headers,
+        event_hook=context.event_hook,
+        status_hook=context.status_hook,
+        cancel_check=context.cancel_check,
+        base_url=context.base_url,
+        extra_headers=context.extra_headers,
+    )
+    context.connection_id = refreshed_context.connection_id
+    context.provider = refreshed_context.provider
+    context.api_key = refreshed_context.api_key
+    context.image_api_key = refreshed_context.image_api_key
+    context.base_url = refreshed_context.base_url
+    context.extra_headers = dict(refreshed_context.extra_headers)
+    context.image_connection_id = refreshed_context.image_connection_id
+    context.image_provider = refreshed_context.image_provider
+    context.image_base_url = refreshed_context.image_base_url
+    context.image_extra_headers = dict(refreshed_context.image_extra_headers)
+    context.evolink_provider = refreshed_context.evolink_provider
+    context.image_evolink_provider = refreshed_context.image_evolink_provider
+    context.gemini_client = refreshed_context.gemini_client
+    context.gemini_image_client = refreshed_context.gemini_image_client
+    context.anthropic_client = refreshed_context.anthropic_client
+    context.openai_client = refreshed_context.openai_client
+    context.openai_image_client = refreshed_context.openai_image_client
+    context.owns_evolink_provider = refreshed_context.owns_evolink_provider
+    context.owns_image_evolink_provider = refreshed_context.owns_image_evolink_provider
     return context
 
 
@@ -682,18 +717,10 @@ evolink_api_key = get_config_val(
 )
 gemini_api_key = get_config_val(
     model_config,
-    "gemini",
-    "vlm_api_key",
-    "PAPERBANANA_GEMINI_VLM_API_KEY",
-    get_config_val(model_config, "api_keys", "google_api_key", "GOOGLE_API_KEY", "", base_dir=REPO_ROOT),
-    base_dir=REPO_ROOT,
-)
-gemini_image_api_key = get_config_val(
-    model_config,
-    "gemini",
-    "image_api_key",
-    "PAPERBANANA_GEMINI_IMAGE_API_KEY",
-    gemini_api_key,
+    "api_keys",
+    "google_api_key",
+    "GOOGLE_API_KEY",
+    "",
     base_dir=REPO_ROOT,
 )
 anthropic_api_key = get_config_val(
@@ -706,21 +733,12 @@ anthropic_api_key = get_config_val(
 )
 openai_api_key = get_config_val(
     model_config,
-    "openai",
-    "vlm_api_key",
-    "PAPERBANANA_OPENAI_VLM_API_KEY",
-    get_config_val(model_config, "api_keys", "openai_api_key", "OPENAI_API_KEY", "", base_dir=REPO_ROOT),
+    "api_keys",
+    "openai_api_key",
+    "OPENAI_API_KEY",
+    "",
     base_dir=REPO_ROOT,
 )
-openai_image_api_key = get_config_val(
-    model_config,
-    "openai",
-    "image_api_key",
-    "PAPERBANANA_OPENAI_IMAGE_API_KEY",
-    openai_api_key,
-    base_dir=REPO_ROOT,
-)
-
 set_default_runtime_context(
     RuntimeContext(
         provider="",
@@ -729,15 +747,11 @@ set_default_runtime_context(
         base_url=evolink_base_url,
         event_hook=runtime_event_hook,
         status_hook=runtime_status_hook,
-        gemini_client=_create_gemini_client(gemini_api_key, get_config_val(model_config, "gemini", "base_url", "PAPERBANANA_GEMINI_BASE_URL", "", base_dir=REPO_ROOT)),
-        gemini_image_client=_create_gemini_client(gemini_image_api_key, get_config_val(model_config, "gemini", "base_url", "PAPERBANANA_GEMINI_BASE_URL", "", base_dir=REPO_ROOT)),
+        gemini_client=_create_gemini_client(gemini_api_key),
+        gemini_image_client=_create_gemini_client(gemini_api_key),
         anthropic_client=_create_anthropic_client(anthropic_api_key),
-        openai_client=_create_openai_client(openai_api_key, get_config_val(model_config, "openai", "base_url", "PAPERBANANA_OPENAI_BASE_URL", "", base_dir=REPO_ROOT)),
-        openai_image_client=_create_openai_client(
-            openai_image_api_key,
-            get_config_val(model_config, "openai", "base_url", "PAPERBANANA_OPENAI_BASE_URL", "", base_dir=REPO_ROOT),
-            image_client=True,
-        ),
+        openai_client=_create_openai_client(openai_api_key),
+        openai_image_client=_create_openai_client(openai_api_key, image_client=True),
         evolink_provider=_create_evolink_provider(evolink_api_key, evolink_base_url),
         owns_evolink_provider=bool(evolink_api_key),
     )
@@ -2358,6 +2372,7 @@ async def call_openai_image_generation_with_retry_async(
     if client is None:
         raise RuntimeError("OpenAI 图像 Client 未初始化，请检查 OpenAI 图像 API Key。")
 
+    normalized_model_name = normalize_image_model_name(model_name)
     context = get_active_runtime_context()
     active_image_base_url = getattr(context, "image_base_url", "") if context is not None else ""
     request_timeout_seconds = (
@@ -2368,17 +2383,17 @@ async def call_openai_image_generation_with_retry_async(
     effective_max_attempts = _get_openai_image_max_attempts(max_attempts)
     options = normalize_image_generation_options(
         provider_type=provider_type,
-        model_name=model_name,
+        model_name=normalized_model_name,
         aspect_ratio=str(config.get("aspect_ratio", "1:1") or "1:1"),
         image_resolution=str(config.get("image_resolution", "2K") or "2K"),
         raw_options=config,
     )
-    capabilities = get_image_model_capabilities(provider_type, model_name)
+    capabilities = get_image_model_capabilities(provider_type, normalized_model_name)
     input_images = _extract_openai_input_images(contents)
     is_edit_request = bool(input_images)
     request_params = build_openai_image_request_params(options, capabilities, edit=is_edit_request)
     base_gen_params: Dict[str, Any] = {
-        "model": model_name,
+        "model": normalized_model_name,
         "prompt": prompt,
         **request_params,
     }

@@ -122,36 +122,27 @@ def resolve_runtime_settings(
         connection_id or provider,
         api_key=api_key,
         text_model=model_name,
-        image_model=image_model_name,
         base_url=base_url,
         extra_headers=extra_headers,
         base_dir=repo_root,
         model_config_data=config_data,
     )
-    resolved_image_connection = resolved_connection
-    if image_connection_id:
-        resolved_image_connection = resolve_connection(
-            image_connection_id,
-            api_key=image_api_key,
-            image_model=image_model_name,
-            base_url=image_base_url,
-            extra_headers=image_extra_headers,
+    role_defaults: dict[str, Any] = {}
+    if resolved_connection.connection_id in BUILTIN_CONNECTION_IDS:
+        role_defaults = load_provider_defaults(
+            resolved_connection.connection_id,
+            config_data,
             base_dir=repo_root,
-            model_config_data=config_data,
         )
-
-    resolved_base_url = str(resolved_connection.base_url or "").strip()
-    resolved_image_base_url = str(resolved_image_connection.base_url or "").strip()
-    if not str(base_url or "").strip() and resolved_connection.connection_id in BUILTIN_CONNECTION_IDS:
-        defaults = load_provider_defaults(resolved_connection.connection_id, config_data, base_dir=repo_root)
-        resolved_base_url = str(defaults.get("vlm_base_url") or resolved_base_url or "").strip()
-    if not str(image_base_url or "").strip() and resolved_image_connection.connection_id in BUILTIN_CONNECTION_IDS:
-        image_defaults = load_provider_defaults(resolved_image_connection.connection_id, config_data, base_dir=repo_root)
-        resolved_image_base_url = str(
-            image_defaults.get("image_base_url")
-            or resolved_image_base_url
-            or ""
-        ).strip()
+    resolved_image_connection = resolve_connection(
+        image_connection_id or connection_id or provider,
+        api_key=image_api_key or str(role_defaults.get("image_api_key", "") or "") or api_key,
+        image_model=image_model_name,
+        base_url=image_base_url or str(role_defaults.get("image_base_url", "") or ""),
+        extra_headers=image_extra_headers,
+        base_dir=repo_root,
+        model_config_data=config_data,
+    )
 
     resolved_concurrency_mode = str(concurrency_mode or "auto").strip().lower() or "auto"
     if resolved_concurrency_mode not in {"auto", "manual"}:
@@ -161,15 +152,14 @@ def resolve_runtime_settings(
         provider=resolved_connection.provider_type,
         api_key=str(resolved_connection.api_key or "").strip(),
         image_api_key=str(
-            resolved_image_connection.image_api_key
-            or resolved_image_connection.api_key
-            or resolved_connection.image_api_key
+            resolved_image_connection.api_key
+            or role_defaults.get("image_api_key", "")
             or resolved_connection.api_key
             or ""
         ).strip(),
         model_name=str(resolved_connection.text_model or "").strip(),
         image_model_name=str(resolved_image_connection.image_model or "").strip(),
-        base_url=resolved_base_url,
+        base_url=str(resolved_connection.base_url or "").strip(),
         connection_id=resolved_connection.connection_id,
         provider_display_name=resolved_connection.display_name,
         provider_connection=resolved_connection,
@@ -177,7 +167,7 @@ def resolve_runtime_settings(
         image_provider=resolved_image_connection.provider_type,
         image_connection_id=resolved_image_connection.connection_id,
         image_provider_display_name=resolved_image_connection.display_name,
-        image_base_url=resolved_image_base_url,
+        image_base_url=str(resolved_image_connection.base_url or "").strip(),
         image_extra_headers=dict(resolved_image_connection.extra_headers),
         image_provider_connection=resolved_image_connection,
         concurrency_mode=resolved_concurrency_mode,
@@ -217,8 +207,8 @@ def build_provider_ui_defaults(
         "provider_type": connection.provider_type,
         "api_key_label": ui_meta["api_key_label"],
         "api_key_help": ui_meta["api_key_help"],
-        "api_key_default": settings.api_key,
-        "image_api_key_default": settings.image_api_key,
+        "api_key_default": str(role_base_defaults.get("vlm_api_key", settings.api_key) or "").strip(),
+        "image_api_key_default": str(role_base_defaults.get("image_api_key", settings.image_api_key) or "").strip(),
         "model_name": settings.model_name,
         "image_model_name": settings.image_model_name,
         "base_url": settings.base_url,
@@ -289,9 +279,10 @@ def build_runtime_context(
         provider=settings.provider,
         api_key=settings.api_key,
         image_api_key=settings.image_api_key,
+        image_model_name=settings.image_model_name,
         image_provider=settings.image_provider or settings.provider,
         image_connection_id=settings.image_connection_id or settings.connection_id,
-        image_base_url=settings.image_base_url or settings.base_url,
+        image_base_url=settings.image_base_url,
         image_extra_headers=settings.image_extra_headers or settings.extra_headers,
         base_url=settings.base_url,
         extra_headers=settings.extra_headers,

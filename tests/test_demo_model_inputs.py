@@ -198,32 +198,6 @@ class DemoModelInputTest(unittest.TestCase):
         self.assertEqual(refreshed["openai"]["model_name"], "gpt-new")
         self.assertEqual(len(calls), 2)
 
-    def test_restored_standard_gpt_image_2_can_keep_apiyi_url(self):
-        self.fake_streamlit.session_state.update(
-            {
-                "tab1_image_model_name": "gpt-image-2",
-                "tab1_image_base_url": demo.APIYI_BASE_URL,
-                "refine_image_model_name": "gpt-image-2-vip(apiyi)",
-                "refine_image_base_url": demo.APIYI_BASE_URL,
-            }
-        )
-
-        with patch.object(
-            demo,
-            "get_connection_ui_defaults",
-            return_value={"base_url": "https://api.ikuncode.cc/v1"},
-        ):
-            demo.normalize_restored_openai_image_url_state()
-
-        self.assertEqual(
-            self.fake_streamlit.session_state["tab1_image_base_url"],
-            demo.APIYI_BASE_URL,
-        )
-        self.assertEqual(
-            self.fake_streamlit.session_state["refine_image_base_url"],
-            demo.APIYI_IMAGE_HTTP_URL,
-        )
-
     def test_connection_defaults_do_not_surface_stale_probe_results(self):
         with patch.object(
             demo,
@@ -267,9 +241,9 @@ class DemoModelInputTest(unittest.TestCase):
             edit=True,
         )
 
-        self.assertEqual(options["size"], "1280x1280")
+        self.assertEqual(options["size"], "1024x1024")
 
-    def test_apiyi_image_model_forces_apiyi_url_and_wire_model_name(self):
+    def test_apiyi_image_model_label_maps_to_wire_model_name(self):
         self.assertEqual(
             demo.normalize_display_model_name("gpt-image-2-vip(apiyi)"),
             "gpt-image-2-vip",
@@ -278,12 +252,6 @@ class DemoModelInputTest(unittest.TestCase):
             demo.display_image_model_name("gpt-image-2-vip"),
             "gpt-image-2-vip(apiyi)",
         )
-        self.fake_streamlit.session_state["image_base_url"] = "https://other.example/v1"
-        demo.sync_apiyi_url_for_image_model(
-            model_name="gpt-image-2-vip",
-            base_url_key="image_base_url",
-        )
-        self.assertEqual(self.fake_streamlit.session_state["image_base_url"], demo.APIYI_IMAGE_HTTP_URL)
 
     def test_openai_image_model_options_default_to_standard_gpt_image_2(self):
         self.assertEqual(demo.OPENAI_IMAGE_MODELS[0], "gpt-image-2")
@@ -488,24 +456,17 @@ class DemoModelInputTest(unittest.TestCase):
 
     def test_render_provider_api_key_controls_uses_separate_widget_key(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "saved-google-key"
-        original_persist = demo.persist_provider_api_key_input
-        captured_calls = []
-        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
-
-        try:
-            restored = demo.render_provider_api_key_controls(
-                provider="gemini",
-                provider_defaults={
-                    "api_key_label": "API",
-                    "api_key_help": "Google AI Studio API 密钥",
-                    "api_key_default": "saved-google-key",
-                },
-                session_key="tab1_api_key",
-                clear_request_key="tab1_api_key_clear_requested",
-                clear_button_key="tab1_clear_provider_api_key",
-            )
-        finally:
-            demo.persist_provider_api_key_input = original_persist
+        restored = demo.render_provider_api_key_controls(
+            provider="gemini",
+            provider_defaults={
+                "api_key_label": "API",
+                "api_key_help": "Google AI Studio API 密钥",
+                "api_key_default": "saved-google-key",
+            },
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            clear_button_key="tab1_clear_provider_api_key",
+        )
 
         self.assertEqual(restored, "saved-google-key")
         self.assertEqual(
@@ -514,8 +475,8 @@ class DemoModelInputTest(unittest.TestCase):
         )
         self.assertEqual(len(self.fake_streamlit.text_input_calls), 1)
         self.assertFalse(self.fake_streamlit.text_input_calls[0]["value_provided"])
-        self.assertEqual(captured_calls, [])
-        self.assertEqual(self.fake_streamlit.button_calls, [])
+        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "saved-google-key")
+        self.assertEqual(len(self.fake_streamlit.button_calls), 1)
 
     def test_build_api_key_storage_notice_reflects_local_secret_state(self):
         self.assertEqual(
@@ -542,79 +503,55 @@ class DemoModelInputTest(unittest.TestCase):
     def test_render_provider_api_key_controls_persists_changed_key_without_status_expander(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "new-google-key"
         self.fake_streamlit.session_state[demo.get_api_key_widget_key("tab1_api_key")] = "new-google-key"
-        original_persist = demo.persist_provider_api_key_input
-        captured_calls = []
-        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
-
-        try:
-            restored = demo.render_provider_api_key_controls(
-                provider="gemini",
-                provider_defaults={
-                    "api_key_label": "API",
-                    "api_key_help": "Google AI Studio API 密钥",
-                    "api_key_default": "old-google-key",
-                },
-                session_key="tab1_api_key",
-                clear_request_key="tab1_api_key_clear_requested",
-                clear_button_key="tab1_clear_provider_api_key",
-            )
-        finally:
-            demo.persist_provider_api_key_input = original_persist
+        restored = demo.render_provider_api_key_controls(
+            provider="gemini",
+            provider_defaults={
+                "api_key_label": "API",
+                "api_key_help": "Google AI Studio API 密钥",
+                "api_key_default": "old-google-key",
+            },
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            clear_button_key="tab1_clear_provider_api_key",
+        )
 
         self.assertEqual(restored, "new-google-key")
-        self.assertEqual(captured_calls, [("gemini", "new-google-key", False)])
-        self.assertEqual(self.fake_streamlit.button_calls, [])
+        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "new-google-key")
+        self.assertEqual(len(self.fake_streamlit.button_calls), 1)
 
     def test_render_provider_api_key_controls_skips_persist_when_session_only(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "session-only-key"
-        original_persist = demo.persist_provider_api_key_input
-        captured_calls = []
-        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
-
-        try:
-            restored = demo.render_provider_api_key_controls(
-                provider="gemini",
-                provider_defaults={
-                    "api_key_label": "API",
-                    "api_key_help": "Google AI Studio API 密钥",
-                    "api_key_default": "session-only-key",
-                },
-                session_key="tab1_api_key",
-                clear_request_key="tab1_api_key_clear_requested",
-                clear_button_key="tab1_clear_provider_api_key",
-                persist_secret=False,
-            )
-        finally:
-            demo.persist_provider_api_key_input = original_persist
+        restored = demo.render_provider_api_key_controls(
+            provider="gemini",
+            provider_defaults={
+                "api_key_label": "API",
+                "api_key_help": "Google AI Studio API 密钥",
+                "api_key_default": "session-only-key",
+            },
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            clear_button_key="tab1_clear_provider_api_key",
+        )
 
         self.assertEqual(restored, "session-only-key")
-        self.assertEqual(captured_calls, [])
+        self.assertEqual(len(self.fake_streamlit.button_calls), 1)
 
     def test_render_provider_api_key_controls_skips_persist_for_unsaved_custom_draft(self):
         self.fake_streamlit.session_state["tab1_api_key"] = "draft-key"
-        original_persist = demo.persist_provider_api_key_input
-        captured_calls = []
-        demo.persist_provider_api_key_input = lambda provider, api_key, image=False: captured_calls.append((provider, api_key, image))
-
-        try:
-            restored = demo.render_provider_api_key_controls(
-                provider="custom-openai",
-                provider_defaults={
-                    "api_key_label": "API",
-                    "api_key_help": "OpenAI 兼容接口密钥",
-                    "api_key_default": "draft-key",
-                },
-                session_key="tab1_api_key",
-                clear_request_key="tab1_api_key_clear_requested",
-                clear_button_key="tab1_clear_provider_api_key",
-                persist_secret=True,
-                allow_local_persist=False,
-            )
-        finally:
-            demo.persist_provider_api_key_input = original_persist
+        restored = demo.render_provider_api_key_controls(
+            provider="custom-openai",
+            provider_defaults={
+                "api_key_label": "API",
+                "api_key_help": "OpenAI 兼容接口密钥",
+                "api_key_default": "draft-key",
+            },
+            session_key="tab1_api_key",
+            clear_request_key="tab1_api_key_clear_requested",
+            clear_button_key="tab1_clear_provider_api_key",
+        )
 
         self.assertEqual(restored, "draft-key")
-        self.assertEqual(captured_calls, [])
+        self.assertEqual(len(self.fake_streamlit.button_calls), 1)
 
     def test_sync_connection_runtime_input_state_resets_requested_inputs_when_selection_changes(self):
         self.fake_streamlit.session_state.update(
@@ -660,85 +597,6 @@ class DemoModelInputTest(unittest.TestCase):
             "custom-openai",
         )
         self.assertEqual(self.fake_streamlit.session_state["tab1_base_url"], "https://shared.example/v1")
-
-    def test_role_connection_sync_uses_role_specific_base_url(self):
-        demo.sync_role_connection_runtime_input_state(
-            prefix="tab1",
-            selected_connection_id="openai",
-            provider_defaults={
-                "api_key_default": "text-key",
-                "image_api_key_default": "image-key",
-                "model_name": "gpt-text",
-                "image_model_name": "gpt-image-2",
-                "base_url": "https://shared.example/v1",
-                "vlm_base_url": "https://text.example/v1",
-                "image_base_url": "https://image.example/v1",
-            },
-            model_value_key="tab1_model_name",
-            model_selector_key="tab1_model_name_selector",
-            model_custom_value_key="tab1_model_name_custom",
-            image=False,
-        )
-        demo.sync_role_connection_runtime_input_state(
-            prefix="tab1_image",
-            selected_connection_id="openai",
-            provider_defaults={
-                "api_key_default": "text-key",
-                "image_api_key_default": "image-key",
-                "model_name": "gpt-text",
-                "image_model_name": "gpt-image-2",
-                "base_url": "https://shared.example/v1",
-                "vlm_base_url": "https://text.example/v1",
-                "image_base_url": "https://image.example/v1",
-            },
-            model_value_key="tab1_image_model_name",
-            model_selector_key="tab1_image_model_name_selector",
-            model_custom_value_key="tab1_image_model_name_custom",
-            image=True,
-        )
-
-        self.assertEqual(self.fake_streamlit.session_state["tab1_base_url"], "https://text.example/v1")
-        self.assertEqual(self.fake_streamlit.session_state["tab1_image_base_url"], "https://image.example/v1")
-        self.assertEqual(self.fake_streamlit.session_state["tab1_api_key"], "text-key")
-        self.assertEqual(self.fake_streamlit.session_state["tab1_image_api_key"], "image-key")
-
-    def test_builtin_runtime_persist_keeps_apiyi_vip_url_ephemeral(self):
-        calls = []
-        defaults = {
-            "image_model_name": "gpt-image-2",
-            "image_base_url": "https://api.example/v1",
-            "base_url": "https://api.example/v1",
-        }
-        with patch.object(demo, "write_provider_runtime_defaults", side_effect=lambda provider, **kwargs: calls.append((provider, kwargs))):
-            with patch.object(demo, "get_provider_ui_defaults", return_value=defaults):
-                demo.persist_builtin_provider_runtime_input(
-                    provider="openai",
-                    base_url=demo.APIYI_BASE_URL,
-                    model_name="gpt-image-2-vip(apiyi)",
-                    image=True,
-                )
-
-        self.assertEqual(calls[0][0], "openai")
-        self.assertNotIn("base_url", calls[0][1])
-        self.assertEqual(calls[0][1]["image_model_name"], "gpt-image-2-vip")
-
-    def test_builtin_runtime_persist_skips_unchanged_values(self):
-        calls = []
-        defaults = {
-            "model_name": "gpt-5.5",
-            "vlm_base_url": "https://api.example/v1",
-            "base_url": "https://api.example/v1",
-        }
-        with patch.object(demo, "write_provider_runtime_defaults", side_effect=lambda provider, **kwargs: calls.append((provider, kwargs))):
-            with patch.object(demo, "get_provider_ui_defaults", return_value=defaults):
-                demo.persist_builtin_provider_runtime_input(
-                    provider="openai",
-                    base_url="https://api.example/v1",
-                    model_name="gpt-5.5",
-                    image=False,
-                )
-
-        self.assertEqual(calls, [])
 
     def test_vlm_sync_does_not_reset_image_model_state(self):
         self.fake_streamlit.session_state.update(

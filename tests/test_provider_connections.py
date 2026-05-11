@@ -23,14 +23,11 @@ from utils.provider_connections import (
     write_connection_probe_result,
 )
 
-
-CONFIG_YAML = """defaults:
-  model_name: gemini-default-text
-  image_model_name: gemini-default-image
-openai:
-  model_name: openai-text
-  image_model_name: gpt-image-2
+CONFIG_YAML = """openai:
   base_url: https://api.openai.com/v1
+  vlm_model: openai-text
+  image_model: gpt-image-2
+  vlm_api_key: openai-key
 """
 
 
@@ -78,8 +75,8 @@ class ProviderConnectionsTest(unittest.TestCase):
 
         self.assertEqual(connection.connection_id, "my-custom-api")
         self.assertEqual(registry["connections"][0]["connection_id"], "my-custom-api")
-        self.assertFalse((root / "configs" / "provider_registry.yaml").exists())
-        self.assertTrue((root / "configs" / "local" / "provider_registry.yaml").exists())
+        self.assertTrue((root / "configs" / "provider_registry.yaml").exists())
+        self.assertFalse((root / "configs" / "local" / "provider_registry.yaml").exists())
         self.assertTrue(secret_path.exists())
         self.assertEqual(secret_path.read_text(encoding="utf-8").strip(), "secret-key")
         self.assertTrue(any(item.connection_id == "my-custom-api" for item in connections))
@@ -388,6 +385,28 @@ class ProviderConnectionsTest(unittest.TestCase):
         self.assertEqual(openai_connection.protocol_family, "openai")
         self.assertEqual(openai_connection.image_model, "gpt-image-2")
         self.assertTrue(openai_connection.supports_image)
+
+    def test_builtin_openai_connection_uses_official_yaml_and_local_secret(self):
+        root = self._prepare_root()
+        (root / "configs" / "model_config.yaml").write_text(
+            "openai:\n"
+            "  base_url: https://shared.example/v1\n"
+            "  vlm_model: gpt-text\n"
+            "  image_model: gpt-image\n"
+            "  vlm_api_key: yaml-text-key\n",
+            encoding="utf-8",
+        )
+        local_dir = root / "configs" / "local"
+        local_dir.mkdir(parents=True, exist_ok=True)
+        (local_dir / "openai_vlm_api_key.txt").write_text("text-key\n", encoding="utf-8")
+
+        connections = list_provider_connections(base_dir=root)
+        openai_connection = next(item for item in connections if item.connection_id == "openai")
+
+        self.assertEqual(openai_connection.base_url, "https://shared.example/v1")
+        self.assertEqual(openai_connection.api_key, "text-key")
+        self.assertEqual(openai_connection.text_model, "gpt-text")
+        self.assertEqual(openai_connection.image_model, "gpt-image")
 
     def test_probe_image_routes_openai_with_gpt_image_2_safe_options(self):
         connection = ProviderConnection(
