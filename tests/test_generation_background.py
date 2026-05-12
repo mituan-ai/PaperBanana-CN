@@ -89,6 +89,83 @@ class _FakeLiveStreamlit:
         self.error_calls.append(text)
 
 
+class _FakeResultsPanelStreamlit:
+    def __init__(self):
+        self.session_state = {}
+        self.image_calls = []
+        self.info_calls = []
+        self.warning_calls = []
+        self.error_calls = []
+        self.markdown_calls = []
+        self.caption_calls = []
+        self.download_button_calls = []
+        self.metric_calls = []
+        self.selectbox_values = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def divider(self):
+        pass
+
+    def markdown(self, text, **kwargs):
+        self.markdown_calls.append(text)
+
+    def caption(self, text, **kwargs):
+        self.caption_calls.append(text)
+
+    def container(self, **kwargs):
+        return _DummyContextManager()
+
+    def columns(self, spec, **kwargs):
+        count = spec if isinstance(spec, int) else len(spec)
+        return [self for _ in range(count)]
+
+    def metric(self, label, value, *args, **kwargs):
+        self.metric_calls.append((label, value))
+
+    def selectbox(self, label, options, **kwargs):
+        value = self.selectbox_values.get(label, options[0])
+        key = kwargs.get("key")
+        if key:
+            self.session_state[key] = value
+        return value
+
+    def button(self, *args, **kwargs):
+        return False
+
+    def download_button(self, *args, **kwargs):
+        self.download_button_calls.append({"args": args, "kwargs": kwargs})
+        return False
+
+    def image(self, image, **kwargs):
+        self.image_calls.append({"image": image, "kwargs": dict(kwargs)})
+
+    def expander(self, *args, **kwargs):
+        return _DummyContextManager()
+
+    def info(self, text, **kwargs):
+        self.info_calls.append(text)
+
+    def warning(self, text, **kwargs):
+        self.warning_calls.append(text)
+
+    def error(self, text, **kwargs):
+        self.error_calls.append(text)
+
+    def write(self, *args, **kwargs):
+        pass
+
+    def code(self, *args, **kwargs):
+        pass
+
+    def success(self, *args, **kwargs):
+        pass
+
+
 class GenerationBackgroundJobTest(unittest.TestCase):
     def setUp(self):
         self._drain_background_jobs()
@@ -206,6 +283,20 @@ class GenerationBackgroundJobTest(unittest.TestCase):
         self.assertNotIn("tab1_api_key", demo.st.session_state)
         self.assertNotIn("tab1_extra_headers_json", demo.st.session_state)
         self.assertNotIn("active_generation_job_id", demo.st.session_state)
+
+    def test_demo_ui_state_round_trip_preserves_generation_result_file_paths(self):
+        demo.st.session_state["json_file"] = "D:/tmp/demo_generation.json"
+        demo.st.session_state["bundle_file"] = "D:/tmp/demo_generation.bundle.json"
+
+        demo.persist_demo_ui_state()
+        with demo.DEMO_UI_STATE_LOCK:
+            demo.DEMO_UI_STATE.clear()
+        demo.st.session_state.clear()
+
+        demo.restore_persisted_demo_ui_state()
+
+        self.assertEqual(demo.st.session_state["json_file"], "D:/tmp/demo_generation.json")
+        self.assertEqual(demo.st.session_state["bundle_file"], "D:/tmp/demo_generation.bundle.json")
 
     def test_restore_persisted_demo_ui_state_keeps_running_generation_job_id_when_snapshot_exists(self):
         job_id = "generate_restore_running"
@@ -1124,6 +1215,66 @@ class GenerationBackgroundJobTest(unittest.TestCase):
             self.assertEqual(snapshot["requested_candidates"], 4)
             self.assertEqual(snapshot["effective_concurrent"], 2)
             self.assertEqual(snapshot["bundle_file"], str(bundle_path))
+
+    def test_generation_results_panel_restores_results_from_active_bundle_path(self):
+        original_st = demo.st
+        fake_st = _FakeResultsPanelStreamlit()
+        result = {
+            "candidate_id": 0,
+            "dataset_name": "PaperBananaBench",
+            "task_name": "diagram",
+            "exp_mode": "demo_planner_critic",
+            "target_diagram_desc0": "planner desc",
+            "target_diagram_critic_desc0": "critic desc",
+            "eval_image_field": "target_diagram_critic_desc0_base64_jpg",
+            "target_diagram_desc0_base64_jpg": _build_png_base64(),
+            "target_diagram_critic_desc0_base64_jpg": _build_png_base64(),
+        }
+
+        bundle_path = demo.REPO_ROOT / "results" / "demo" / "diagram" / "recover.bundle.json"
+        bundle_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest = build_run_manifest(
+            producer="demo",
+            dataset_name="PaperBananaBench",
+            task_name="diagram",
+            exp_mode="demo_planner_critic",
+            result_count=1,
+            extra={"requested_candidates": 1, "run_status": "completed"},
+        )
+        write_result_bundle(bundle_path, [result], manifest=manifest)
+
+        fake_st.session_state.update(
+            {
+                "task_name": "diagram",
+                "dataset_name": "PaperBananaBench",
+                "exp_mode": "demo_planner_critic",
+                "bundle_file": str(bundle_path),
+                "requested_candidates": 1,
+                "concurrency_mode": "auto",
+                "max_concurrent": 1,
+                "effective_concurrent": 1,
+                "timestamp": "2026-05-12 12:00:00",
+            }
+        )
+
+        def render_without_fragment(result, candidate_id, exp_mode, *, task_name="diagram", candidate_index=0):
+            demo.display_candidate_result(
+                result,
+                candidate_id,
+                exp_mode,
+                task_name=task_name,
+                candidate_index=candidate_index,
+            )
+
+        try:
+            demo.st = fake_st
+            demo.render_generation_results_panel("diagram")
+        finally:
+            demo.st = original_st
+
+        self.assertTrue(fake_st.image_calls)
+        self.assertEqual(fake_st.session_state["results"][0]["target_diagram_critic_desc0_base64_jpg"], result["target_diagram_critic_desc0_base64_jpg"])
+        self.assertIn("历史回放", fake_st.session_state["result_source_label"])
 
     def test_list_demo_bundle_files_without_limit_reads_all_history_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

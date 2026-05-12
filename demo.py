@@ -3125,19 +3125,11 @@ def _restore_active_background_job(
 
 
 def restore_persisted_demo_ui_state() -> None:
-    # NOTE: Do not auto-restore completed generation results (contains large
-    # base64 images) to avoid significant slowdown on page refresh.
-    # Users can manually reload history via the history replay panel.
-    st.session_state.pop("bundle_file", None)
-    st.session_state.pop("json_file", None)
-
     payload = _load_persisted_demo_ui_state_payload()
     if not payload:
         return
 
     _skip_restore_keys = {
-        "bundle_file",
-        "json_file",
         "results",
         "tab1_image_size",
         "tab1_image_custom_size",
@@ -3676,6 +3668,43 @@ def persist_generation_job_results(
     if reset_candidate_workspace:
         st.session_state["generation_candidate_decisions"] = {}
         st.session_state["generation_final_candidate_id"] = ""
+
+
+def restore_generation_results_from_last_bundle() -> bool:
+    """Restore the last active saved result bundle for the current session."""
+    if st.session_state.get("results"):
+        return False
+
+    completed_job_id = str(st.session_state.get("last_generation_completed_job_id", "") or "").strip()
+    if completed_job_id:
+        completed_job = get_generation_job(completed_job_id)
+        snapshot = completed_job.snapshot() if completed_job is not None else None
+        if snapshot and snapshot.get("status") in BACKGROUND_TERMINAL_STATUSES and snapshot.get("results"):
+            persist_generation_job_results(
+                snapshot,
+                source_label="后台生成任务",
+                reset_candidate_workspace=False,
+            )
+            return True
+
+    bundle_path = str(st.session_state.get("bundle_file", "") or "").strip()
+    if not bundle_path:
+        return False
+
+    path = Path(bundle_path)
+    if not path.exists():
+        return False
+    try:
+        snapshot = load_generation_history_snapshot(path)
+    except Exception:
+        logger.warning("自动恢复历史生成结果失败: %s", path, exc_info=True)
+        return False
+    persist_generation_job_results(
+        snapshot,
+        source_label=f"历史回放：{path.name}",
+        reset_candidate_workspace=False,
+    )
+    return True
 
 
 def list_demo_bundle_files(
@@ -8362,6 +8391,8 @@ def _render_refine_sidebar_controls_legacy() -> dict:
 
 
 def render_generation_results_panel(default_task_name: str) -> None:
+    if "results" not in st.session_state or not st.session_state["results"]:
+        restore_generation_results_from_last_bundle()
     if "results" not in st.session_state or not st.session_state["results"]:
         return
 
