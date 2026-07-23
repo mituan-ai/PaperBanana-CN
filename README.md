@@ -2,7 +2,13 @@
   <img src="assets/ui_cover.png" alt="PaperBanana-CN cover" width="920">
 </p>
 
-<h1 align="center">PaperBanana-CN · 纸香蕉</h1>
+<h1 align="center">PaperBanana-CN V1 · 纸香蕉</h1>
+
+> [!IMPORTANT]
+> **V1 已冻结，仅用于归档和复现，不再继续开发。**
+> 当前维护版本为 [PaperBanana-CN V2](https://github.com/mituan-ai/PaperBanana-CN)，
+> V1 的完整源码和提交历史永久保留在
+> [`v1`](https://github.com/mituan-ai/PaperBanana-CN/tree/v1) 分支。
 
 <p align="center">
   <strong>面向中文科研场景的 PaperBanana 增强版：支持第三方兼容服务、自建网关，以及多模态大模型与图像生成模型分离配置。</strong><br>
@@ -11,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/mituan-ai/PaperBanana-CN/stargazers"><img src="https://img.shields.io/github/stars/mituan-ai/PaperBanana-CN?style=flat-square&logo=github&color=FACC15" alt="GitHub stars"></a>
-  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/main/LICENSE"><img src="https://img.shields.io/github/license/mituan-ai/PaperBanana-CN?style=flat-square&color=2563EB" alt="License"></a>
+  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/v1/LICENSE"><img src="https://img.shields.io/github/license/mituan-ai/PaperBanana-CN?style=flat-square&color=2563EB" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/GUI-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white" alt="Streamlit GUI">
   <img src="https://img.shields.io/badge/API-OpenAI--compatible-111827?style=flat-square" alt="OpenAI compatible API">
@@ -68,22 +74,23 @@ PaperBanana-CN 是一个中文友好的科研绘图工作台。它保留 PaperBa
 如果只熟悉 GitHub 的基础操作，可以使用下载压缩包的方式。
 
 1. 打开仓库页面：<https://github.com/mituan-ai/PaperBanana-CN>
-2. 点击绿色 `Code` 按钮。
-3. 选择 `Download ZIP`。
-4. 解压后进入项目目录，目录名通常类似 `PaperBanana-CN-main`。
+2. 在分支选择器中切换到 `v1`。
+3. 点击绿色 `Code` 按钮并选择 `Download ZIP`。
+4. 解压后进入项目目录，目录名通常类似 `PaperBanana-CN-v1`。
 
 解压后的目录名可能与后续示例不同。只要终端当前目录位于包含 `README.md`、`pyproject.toml`、`demo.py` 的项目根目录，即可继续执行启动命令。
 
 如果已经安装 Git，推荐使用克隆方式，后续更新更方便：
 
 ```bash
-git clone https://github.com/mituan-ai/PaperBanana-CN.git
-cd PaperBanana-CN
+git clone --branch v1 https://github.com/mituan-ai/PaperBanana-CN.git PaperBanana-CN-v1
+cd PaperBanana-CN-v1
 ```
 
 > [!TIP]
 > Windows 用户可以在资源管理器中进入解压后的目录，在地址栏输入 `powershell` 后回车，即可在当前目录打开 PowerShell。
-> 若使用 GitHub 下载 ZIP，目录通常为 `PaperBanana-CN-main`；若使用 `git clone`，目录通常为 `PaperBanana-CN`。
+> 若下载 `v1` 分支压缩包，目录通常为 `PaperBanana-CN-v1`；
+> 若使用上述 `git clone` 命令，目录为 `PaperBanana-CN-v1`。
 
 ## 启动流程
 
