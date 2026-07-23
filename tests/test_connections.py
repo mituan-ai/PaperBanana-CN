@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import threading
 from base64 import b64encode
@@ -71,7 +72,8 @@ def test_profiles_and_secrets_persist_separately(manager):
     assert stored.credential_ref in config_text
     assert "secret-vlm-key" in secret_text
     assert manager.secret_store.get(stored.credential_ref) == "secret-vlm-key"
-    assert stat.S_IMODE(manager.secret_store.path.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(manager.secret_store.path.stat().st_mode) == 0o600
 
 
 def test_saved_profiles_survive_new_manager_instance(manager):
