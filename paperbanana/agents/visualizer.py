@@ -13,7 +13,7 @@ import structlog
 from PIL import Image
 
 from paperbanana.agents.base import BaseAgent
-from paperbanana.core.types import DiagramType
+from paperbanana.core.types import SUPPORTED_ASPECT_RATIOS, DiagramType
 from paperbanana.core.utils import save_image
 from paperbanana.providers.base import ImageGenProvider, VLMProvider
 
@@ -127,6 +127,9 @@ class VisualizerAgent(BaseAgent):
             aspect_ratio or "16:9",
             output_resolution=self.output_resolution,
         )
+        validator = getattr(self.image_gen, "validate_output_options", None)
+        if validator is not None:
+            validator(aspect_ratio or "16:9", self.output_resolution)
 
         image = await self.image_gen.generate(
             prompt=prompt,
@@ -147,21 +150,15 @@ class VisualizerAgent(BaseAgent):
     @staticmethod
     def _ratio_to_dimensions(ratio: str, output_resolution: str = "2k") -> tuple[int, int]:
         """Convert aspect ratio string to pixel dimensions."""
-        ratios = {
-            "21:9": (21, 9),
-            "16:9": (16, 9),
-            "4:3": (4, 3),
-            "3:2": (3, 2),
-            "1:1": (1, 1),
-            "2:3": (2, 3),
-            "3:4": (3, 4),
-            "9:16": (9, 16),
-        }
-        rw, rh = ratios.get(ratio, (16, 9))
+        if ratio not in SUPPORTED_ASPECT_RATIOS:
+            supported = ", ".join(sorted(SUPPORTED_ASPECT_RATIOS))
+            raise ValueError(f"Unsupported aspect ratio '{ratio}'. Supported: {supported}")
+        rw, rh = (int(part) for part in ratio.split(":"))
         resolution = str(output_resolution).lower()
-        long_edge = {"1k": 1536, "2k": 2048, "4k": 3840}.get(resolution, 2048)
-        if ratio == "1:1" and resolution == "1k":
-            long_edge = 1024
+        long_edges = {"1k": 1024, "2k": 2048, "4k": 3840}
+        if resolution not in long_edges:
+            raise ValueError("Output resolution must be one of: 1k, 2k, 4k")
+        long_edge = long_edges[resolution]
 
         if rw >= rh:
             width = long_edge
@@ -172,17 +169,6 @@ class VisualizerAgent(BaseAgent):
 
         width = max(16, round(width / 16) * 16)
         height = max(16, round(height / 16) * 16)
-
-        max_pixels = 8_294_400
-        if width * height > max_pixels:
-            scale = (max_pixels / (width * height)) ** 0.5
-            width = max(16, round((width * scale) / 16) * 16)
-            height = max(16, round((height * scale) / 16) * 16)
-            while width * height > max_pixels:
-                if width >= height:
-                    width -= 16
-                else:
-                    height -= 16
 
         return width, height
 

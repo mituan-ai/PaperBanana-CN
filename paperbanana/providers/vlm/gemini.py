@@ -7,10 +7,10 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from paperbanana.core.utils import image_to_base64
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -39,10 +39,12 @@ class GeminiVLM(VLMProvider):
         api_key: Optional[str] = None,
         model: str = "gemini-2.5-flash",
         base_url: Optional[str] = None,
+        timeout_seconds: float = 180.0,
     ):
         self._api_key = api_key
         self._model = model
         self._base_url = base_url
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -58,9 +60,13 @@ class GeminiVLM(VLMProvider):
             try:
                 from google import genai
 
-                client_kwargs = {"api_key": self._api_key}
-                if self._base_url:
-                    client_kwargs["http_options"] = {"base_url": self._base_url}
+                client_kwargs = {
+                    "api_key": self._api_key,
+                    "http_options": {
+                        "timeout": int(self._timeout_seconds * 1000),
+                        **({"base_url": self._base_url} if self._base_url else {}),
+                    },
+                }
                 self._client = genai.Client(**client_kwargs)
             except ImportError:
                 raise ImportError(
@@ -79,7 +85,7 @@ class GeminiVLM(VLMProvider):
     @retry(
         stop=stop_after_attempt(8),
         wait=wait_exponential(min=2, max=120),
-        retry=retry_if_not_exception_type(GeminiEmptyResponseError),
+        retry=retry_if_exception(is_retryable_provider_error),
     )
     async def generate(
         self,

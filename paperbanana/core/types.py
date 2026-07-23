@@ -9,17 +9,20 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 VectorExportMode = Literal["none", "svg", "pdf", "both"]
 
-# Supported aspect ratios for diagram/plot generation.
-SUPPORTED_ASPECT_RATIOS = {
+# Ordered aspect ratios shared by the core, Studio, and providers.
+ASPECT_RATIO_VALUES = (
     "1:1",
-    "2:3",
-    "3:2",
-    "3:4",
     "4:3",
-    "9:16",
+    "3:2",
+    "5:4",
     "16:9",
     "21:9",
-}
+    "4:5",
+    "3:4",
+    "2:3",
+    "9:16",
+)
+SUPPORTED_ASPECT_RATIOS = frozenset(ASPECT_RATIO_VALUES)
 
 
 class PipelineProgressStage(str, Enum):
@@ -75,7 +78,7 @@ class GenerationInput(BaseModel):
         default=None,
         description=(
             "Target aspect ratio. "
-            "Supported: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9. "
+            f"Supported: {', '.join(ASPECT_RATIO_VALUES)}. "
             "If None, uses provider default."
         ),
     )

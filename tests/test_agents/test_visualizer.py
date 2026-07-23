@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from paperbanana.agents.visualizer import VisualizerAgent
+from paperbanana.core.config import OUTPUT_RESOLUTION_VALUES
+from paperbanana.core.types import ASPECT_RATIO_VALUES
 
 
 class _DummyImageGen:
@@ -135,6 +139,39 @@ def test_ratio_to_dimensions_supports_high_resolution_landscape():
 
 def test_ratio_to_dimensions_supports_2k_landscape():
     assert VisualizerAgent._ratio_to_dimensions("16:9", output_resolution="2k") == (2048, 1152)
+
+
+@pytest.mark.parametrize(
+    ("ratio", "resolution", "expected"),
+    [
+        ("5:4", "1k", (1024, 816)),
+        ("4:5", "1k", (816, 1024)),
+        ("5:4", "2k", (2048, 1632)),
+        ("4:5", "4k", (3072, 3840)),
+    ],
+)
+def test_ratio_to_dimensions_supports_cn_ratios(ratio, resolution, expected):
+    assert VisualizerAgent._ratio_to_dimensions(ratio, resolution) == expected
+
+
+@pytest.mark.parametrize("ratio", ASPECT_RATIO_VALUES)
+@pytest.mark.parametrize("resolution", OUTPUT_RESOLUTION_VALUES)
+def test_ratio_resolution_matrix_uses_single_dimension_converter(ratio, resolution):
+    width, height = VisualizerAgent._ratio_to_dimensions(ratio, resolution)
+    expected_long_edge = {"1k": 1024, "2k": 2048, "4k": 3840}[resolution]
+    ratio_width, ratio_height = (int(part) for part in ratio.split(":"))
+
+    assert max(width, height) == expected_long_edge
+    assert width % 16 == 0
+    assert height % 16 == 0
+    actual_ratio = width / height
+    target_ratio = ratio_width / ratio_height
+    assert abs((actual_ratio / target_ratio) - 1) < 0.02
+
+
+def test_ratio_to_dimensions_rejects_unknown_ratio():
+    with pytest.raises(ValueError, match="Unsupported aspect ratio"):
+        VisualizerAgent._ratio_to_dimensions("16:10")
 
 
 # ── Sketch-guided prompt note ─────────────────────────────────────────────────

@@ -1209,16 +1209,7 @@ class PaperBananaPipeline:
             image_model=getattr(self._image_gen, "model_name", "custom"),
             refinement_iterations=len(iterations),
             seed=self.settings.seed,
-            config_snapshot=self.settings.model_dump(
-                exclude={
-                    "google_api_key",
-                    "openai_api_key",
-                    "openrouter_api_key",
-                    "anthropic_api_key",
-                    "atlascloud_api_key",
-                    "litellm_api_key",
-                }
-            ),
+            config_snapshot=self.settings.non_secret_dump(),
         )
         metadata_dict = metadata.model_dump()
         metadata_dict["timing"] = {
@@ -1776,16 +1767,7 @@ class PaperBananaPipeline:
             image_model=getattr(self._image_gen, "model_name", "custom"),
             refinement_iterations=len(iterations),
             seed=self.settings.seed,
-            config_snapshot=self.settings.model_dump(
-                exclude={
-                    "google_api_key",
-                    "openai_api_key",
-                    "openrouter_api_key",
-                    "anthropic_api_key",
-                    "atlascloud_api_key",
-                    "litellm_api_key",
-                }
-            ),
+            config_snapshot=self.settings.non_secret_dump(),
         )
 
         metadata_dict = metadata.model_dump()
@@ -2206,16 +2188,7 @@ class PaperBananaPipeline:
             image_model=getattr(self._image_gen, "model_name", "custom"),
             refinement_iterations=start_iter + len(iterations),
             seed=self.settings.seed,
-            config_snapshot=self.settings.model_dump(
-                exclude={
-                    "google_api_key",
-                    "openai_api_key",
-                    "openrouter_api_key",
-                    "anthropic_api_key",
-                    "atlascloud_api_key",
-                    "litellm_api_key",
-                }
-            ),
+            config_snapshot=self.settings.non_secret_dump(),
         )
 
         metadata_dict = metadata.model_dump()

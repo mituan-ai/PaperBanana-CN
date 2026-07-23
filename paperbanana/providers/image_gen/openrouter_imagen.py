@@ -9,9 +9,10 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from paperbanana.providers.base import ImageGenProvider
+from paperbanana.core.types import ASPECT_RATIO_VALUES
+from paperbanana.providers.base import ImageGenProvider, ImageSizeMode, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -30,9 +31,13 @@ class OpenRouterImageGen(ImageGenProvider):
         self,
         api_key: Optional[str] = None,
         model: str = "google/gemini-3-pro-image-preview",
+        base_url: str = "https://openrouter.ai/api/v1",
+        timeout_seconds: float = 180.0,
     ):
         self._api_key = api_key
         self._model = model
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -49,14 +54,14 @@ class OpenRouterImageGen(ImageGenProvider):
             import httpx
 
             self._client = httpx.AsyncClient(
-                base_url="https://openrouter.ai/api/v1",
+                base_url=self._base_url,
                 headers={
                     "Authorization": f"Bearer {self._api_key}",
                     "HTTP-Referer": "https://github.com/llmsresearch/paperbanana",
                     "X-Title": "PaperBanana",
                 },
                 # Image generation can take a while
-                timeout=180.0,
+                timeout=self._timeout_seconds,
             )
         return self._client
 
@@ -66,7 +71,15 @@ class OpenRouterImageGen(ImageGenProvider):
     @property
     def supported_ratios(self) -> list[str]:
         # Prompt-based hints — any ratio is conceptually supported
-        return ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
+        return list(ASPECT_RATIO_VALUES)
+
+    @property
+    def supported_resolutions(self) -> list[str]:
+        return ["1k"]
+
+    @property
+    def size_mode(self) -> ImageSizeMode:
+        return ImageSizeMode.PROMPT_HINT
 
     def _aspect_ratio_hint(self, width: int, height: int) -> str:
         """Turn pixel dimensions into a human-readable aspect ratio hint for the prompt."""
@@ -81,7 +94,11 @@ class OpenRouterImageGen(ImageGenProvider):
             return "portrait format (2:3)"
         return "square format (1:1)"
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

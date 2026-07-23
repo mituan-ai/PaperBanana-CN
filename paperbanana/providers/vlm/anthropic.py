@@ -6,10 +6,10 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from paperbanana.core.utils import image_to_base64
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -24,9 +24,13 @@ class AnthropicVLM(VLMProvider):
         self,
         api_key: Optional[str] = None,
         model: str = "claude-3-5-sonnet-20251023",
+        base_url: Optional[str] = None,
+        timeout_seconds: float = 180.0,
     ):
         self._api_key = api_key
         self._model = model
+        self._base_url = base_url
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -43,7 +47,10 @@ class AnthropicVLM(VLMProvider):
             try:
                 from anthropic import AsyncAnthropic
 
-                self._client = AsyncAnthropic(api_key=self._api_key)
+                kwargs = {"api_key": self._api_key, "timeout": self._timeout_seconds}
+                if self._base_url:
+                    kwargs["base_url"] = self._base_url
+                self._client = AsyncAnthropic(**kwargs)
             except ImportError:
                 raise ImportError(
                     "anthropic is required for the Anthropic provider. "
@@ -54,7 +61,11 @@ class AnthropicVLM(VLMProvider):
     def is_available(self) -> bool:
         return self._api_key is not None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

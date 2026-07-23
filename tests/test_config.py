@@ -124,6 +124,32 @@ def test_seed_accepts_integer():
     assert settings.seed == 1234
 
 
+def test_profile_connection_secrets_are_masked():
+    settings = Settings(
+        connection_source="profiles",
+        vlm_api_key="vlm-secret",
+        image_api_key="image-secret",
+    )
+    assert "vlm-secret" not in repr(settings)
+    assert "image-secret" not in repr(settings)
+    assert str(settings.vlm_api_key) == "**********"
+
+
+def test_non_secret_dump_excludes_legacy_and_profile_credentials():
+    settings = Settings(
+        connection_source="profiles",
+        vlm_api_key="vlm-secret",
+        image_api_key="image-secret",
+        google_api_key="google-secret",
+        openai_api_key="openai-secret",
+        litellm_api_key="litellm-secret",
+    )
+    snapshot = settings.non_secret_dump()
+    assert not any("api_key" in key for key in snapshot)
+    assert "vlm_base_url" in snapshot
+    assert "image_base_url" in snapshot
+
+
 def test_effective_vlm_model_gemini_override():
     """Gemini VLM model override is used when provider is gemini."""
     settings = Settings(

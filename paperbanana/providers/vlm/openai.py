@@ -6,10 +6,10 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from paperbanana.core.utils import image_to_base64
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -33,12 +33,14 @@ class OpenAIVLM(VLMProvider):
         base_url: str = "https://api.openai.com/v1",
         json_mode: bool = True,
         provider_name: str = "openai",
+        timeout_seconds: float = 180.0,
     ):
         self._api_key = api_key
         self._model = model
         self._base_url = base_url
         self._json_mode = json_mode
         self._provider_name = provider_name
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -57,6 +59,7 @@ class OpenAIVLM(VLMProvider):
                 self._client = AsyncOpenAI(
                     api_key=self._api_key,
                     base_url=self._base_url,
+                    timeout=self._timeout_seconds,
                 )
             except ImportError:
                 raise ImportError(
@@ -72,7 +75,11 @@ class OpenAIVLM(VLMProvider):
     def is_available(self) -> bool:
         return self._api_key is not None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

@@ -35,6 +35,8 @@ from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
 from PIL import Image as PILImage
 
+from paperbanana.connections.models import ConnectionRole
+from paperbanana.connections.resolver import load_runtime_settings
 from paperbanana.core.config import Settings
 from paperbanana.core.pipeline import PaperBananaPipeline
 from paperbanana.core.resume import load_resume_state
@@ -194,6 +196,43 @@ def _validate_input_images(input_images: list[str] | None) -> list[str]:
     return validated
 
 
+def _mcp_runtime_settings(
+    *,
+    overrides: dict[str, Any],
+    config: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
+    required_roles: tuple[ConnectionRole, ...] = (
+        ConnectionRole.VLM,
+        ConnectionRole.IMAGE,
+    ),
+) -> Settings:
+    return load_runtime_settings(
+        config_path=(config or "").strip() or None,
+        overrides=overrides,
+        vlm_profile_id=vlm_connection,
+        image_profile_id=image_connection,
+        legacy=legacy_connections,
+        required_roles=required_roles,
+    )
+
+
+def _reject_mcp_connection_mix(
+    *,
+    vlm_connection: str | None,
+    image_connection: str | None,
+    legacy_connections: bool,
+    legacy_provider_options: bool,
+) -> None:
+    if legacy_provider_options and not legacy_connections:
+        raise ValueError(
+            "vlm_provider/vlm_model/image_provider/image_model require legacy_connections=true"
+        )
+    if (vlm_connection or image_connection) and legacy_connections:
+        raise ValueError("Connection profile IDs cannot be combined with legacy_connections")
+
+
 @mcp.tool
 async def generate_diagram(
     source_context: str,
@@ -204,6 +243,11 @@ async def generate_diagram(
     auto_refine: bool = False,
     generate_caption: bool = False,
     input_images: list[str] | None = None,
+    output_resolution: str = "2k",
+    config: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
 ) -> Image:
     """Generate a publication-quality methodology diagram from text.
 
@@ -212,7 +256,7 @@ async def generate_diagram(
         caption: Figure caption describing what the diagram should communicate.
         iterations: Number of refinement iterations (default 3, used when auto_refine=False).
         aspect_ratio: Target aspect ratio. Supported:
-            1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9. Default: landscape.
+            1:1, 4:3, 3:2, 5:4, 16:9, 21:9, 4:5, 3:4, 2:3, 9:16.
         optimize: Enrich context and sharpen caption before generation (default True).
             Set False to skip preprocessing for faster results.
         auto_refine: Let critic loop until satisfied (default True, max 30 iterations).
@@ -229,11 +273,18 @@ async def generate_diagram(
     """
     validated_images = _validate_input_images(input_images)
 
-    settings = Settings(
-        refinement_iterations=iterations,
-        optimize_inputs=optimize,
-        auto_refine=auto_refine,
-        generate_caption=generate_caption,
+    settings = _mcp_runtime_settings(
+        config=config,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        overrides={
+            "refinement_iterations": iterations,
+            "optimize_inputs": optimize,
+            "auto_refine": auto_refine,
+            "generate_caption": generate_caption,
+            "output_resolution": output_resolution,
+        },
     )
 
     def _on_progress(event: str, payload: dict) -> None:
@@ -276,6 +327,11 @@ async def continue_run(
     optimize: bool = False,
     auto_refine: bool = False,
     generate_caption: bool = False,
+    output_dir: str = "outputs",
+    config: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
 ) -> Image:
     """Continue refinement for a previous diagram or plot run (CLI: ``generate --continue-run``).
 
@@ -300,11 +356,18 @@ async def continue_run(
         FileNotFoundError: If the run directory or ``run_input.json`` is missing.
         ValueError: If saved run state cannot be resumed.
     """
-    settings = Settings(
-        refinement_iterations=iterations,
-        optimize_inputs=optimize,
-        auto_refine=auto_refine,
-        generate_caption=generate_caption,
+    settings = _mcp_runtime_settings(
+        config=config,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        overrides={
+            "output_dir": output_dir,
+            "refinement_iterations": iterations,
+            "optimize_inputs": optimize,
+            "auto_refine": auto_refine,
+            "generate_caption": generate_caption,
+        },
     )
 
     def _on_progress(event: str, payload: dict) -> None:
@@ -345,6 +408,9 @@ async def generate_plot(
     optimize: bool = False,
     auto_refine: bool = False,
     generate_caption: bool = False,
+    config: str | None = None,
+    vlm_connection: str | None = None,
+    legacy_connections: bool = False,
 ) -> Image:
     """Generate a publication-quality statistical plot from JSON data.
 
@@ -354,7 +420,7 @@ async def generate_plot(
         intent: Description of the desired plot (e.g. "Bar chart comparing model accuracy").
         iterations: Number of refinement iterations (default 3, used when auto_refine=False).
         aspect_ratio: Target aspect ratio. Supported:
-            1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9. Default: landscape.
+            1:1, 4:3, 3:2, 5:4, 16:9, 21:9, 4:5, 3:4, 2:3, 9:16.
         optimize: Enrich context and sharpen caption before generation (default True).
             Set False to skip preprocessing for faster results.
         auto_refine: Let critic loop until satisfied (default True, max 30 iterations).
@@ -368,11 +434,18 @@ async def generate_plot(
     """
     raw_data = json.loads(data_json)
 
-    settings = Settings(
-        refinement_iterations=iterations,
-        optimize_inputs=optimize,
-        auto_refine=auto_refine,
-        generate_caption=generate_caption,
+    settings = _mcp_runtime_settings(
+        config=config,
+        vlm_connection=vlm_connection,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+        overrides={
+            "image_provider": "none",
+            "refinement_iterations": iterations,
+            "optimize_inputs": optimize,
+            "auto_refine": auto_refine,
+            "generate_caption": generate_caption,
+        },
     )
 
     def _on_progress(event: str, payload: dict) -> None:
@@ -420,6 +493,9 @@ async def continue_diagram(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
     output_format: str = "png",
     optimize: bool = False,
     save_prompts: bool | None = None,
@@ -465,6 +541,9 @@ async def continue_diagram(
         vlm_model=vlm_model,
         image_provider=image_provider,
         image_model=image_model,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
         output_format=output_format,
         optimize=optimize,
         save_prompts=save_prompts,
@@ -486,6 +565,8 @@ async def continue_plot(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_connection: str | None = None,
+    legacy_connections: bool = False,
     output_format: str = "png",
     optimize: bool = False,
     save_prompts: bool | None = None,
@@ -509,6 +590,9 @@ async def continue_plot(
         vlm_model=vlm_model,
         image_provider=image_provider,
         image_model=image_model,
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
         output_format=output_format,
         optimize=optimize,
         save_prompts=save_prompts,
@@ -523,6 +607,9 @@ async def evaluate_diagram(
     reference_path: str,
     context: str,
     caption: str,
+    config: str | None = None,
+    vlm_connection: str | None = None,
+    legacy_connections: bool = False,
 ) -> str:
     """Evaluate a generated diagram against a human reference on 4 dimensions.
 
@@ -539,7 +626,13 @@ async def evaluate_diagram(
     Returns:
         Formatted evaluation scores with per-dimension results and overall winner.
     """
-    settings = Settings()
+    settings = _mcp_runtime_settings(
+        config=config,
+        vlm_connection=vlm_connection,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+        overrides={},
+    )
     vlm = ProviderRegistry.create_vlm(settings)
     judge = VLMJudge(vlm_provider=vlm, prompt_dir=find_prompt_dir())
 
@@ -570,6 +663,9 @@ async def evaluate_plot(
     reference_path: str,
     data_json: str,
     intent: str,
+    config: str | None = None,
+    vlm_connection: str | None = None,
+    legacy_connections: bool = False,
 ) -> str:
     """Evaluate a generated statistical plot against a human reference on 4 dimensions.
 
@@ -582,7 +678,13 @@ async def evaluate_plot(
     Returns:
         Formatted evaluation scores with per-dimension results and overall winner.
     """
-    settings = Settings()
+    settings = _mcp_runtime_settings(
+        config=config,
+        vlm_connection=vlm_connection,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+        overrides={},
+    )
     vlm = ProviderRegistry.create_vlm(settings)
     judge = VLMJudge(vlm_provider=vlm, prompt_dir=find_prompt_dir())
     source_context = f"Data for plotting:\n{data_json}"
@@ -657,15 +759,6 @@ def _json_result(payload: dict) -> str:
     return json.dumps(payload, indent=2)
 
 
-def _load_dotenv_best_effort() -> None:
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-    except ImportError:
-        pass
-
-
 def _mcp_settings_for_continue(
     output_dir: str,
     config: str | None,
@@ -679,6 +772,13 @@ def _mcp_settings_for_continue(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
+    required_roles: tuple[ConnectionRole, ...] = (
+        ConnectionRole.VLM,
+        ConnectionRole.IMAGE,
+    ),
     save_prompts: bool | None = None,
     venue: str | None = None,
     generate_caption: bool = False,
@@ -708,11 +808,20 @@ def _mcp_settings_for_continue(
     if venue:
         overrides["venue"] = venue.strip()
 
-    cfg = (config or "").strip()
-    if cfg:
-        return Settings.from_yaml(Path(cfg).expanduser(), **overrides)
-    _load_dotenv_best_effort()
-    return Settings(**overrides)
+    _reject_mcp_connection_mix(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
+    return _mcp_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        required_roles=required_roles,
+    )
 
 
 async def _continue_run_mcp(
@@ -729,6 +838,9 @@ async def _continue_run_mcp(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
     output_format: str = "png",
     optimize: bool = False,
     save_prompts: bool | None = None,
@@ -737,22 +849,33 @@ async def _continue_run_mcp(
 ) -> str:
     """Shared implementation for ``continue_diagram`` / ``continue_plot``."""
     tool_name = "continue_diagram" if expected == DiagramType.METHODOLOGY else "continue_plot"
-    settings = _mcp_settings_for_continue(
-        output_dir,
-        config,
-        output_format=output_format,
-        iterations=iterations,
-        auto_refine=auto_refine,
-        max_iterations=max_iterations,
-        optimize=optimize,
-        vlm_provider=vlm_provider,
-        vlm_model=vlm_model,
-        image_provider=image_provider,
-        image_model=image_model,
-        save_prompts=save_prompts,
-        venue=venue,
-        generate_caption=generate_caption,
-    )
+    try:
+        settings = _mcp_settings_for_continue(
+            output_dir,
+            config,
+            output_format=output_format,
+            iterations=iterations,
+            auto_refine=auto_refine,
+            max_iterations=max_iterations,
+            optimize=optimize,
+            vlm_provider=vlm_provider,
+            vlm_model=vlm_model,
+            image_provider=image_provider,
+            image_model=image_model,
+            vlm_connection=vlm_connection,
+            image_connection=image_connection,
+            legacy_connections=legacy_connections,
+            required_roles=(
+                (ConnectionRole.VLM, ConnectionRole.IMAGE)
+                if expected == DiagramType.METHODOLOGY
+                else (ConnectionRole.VLM,)
+            ),
+            save_prompts=save_prompts,
+            venue=venue,
+            generate_caption=generate_caption,
+        )
+    except (OSError, ValueError) as e:
+        return _json_result({"error": str(e), "strict_success": False})
     try:
         resume_state = load_resume_state(settings.output_dir, run_id.strip())
     except (FileNotFoundError, ValueError) as e:
@@ -823,6 +946,9 @@ async def orchestrate_figures(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -845,6 +971,12 @@ async def orchestrate_figures(
         ``figures.tex``, ``captions.md``, ``orchestration_plan.json``, counts,
         ``strict_success``, and ``failures`` when applicable.
     """
+    _reject_mcp_connection_mix(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
 
     def _run() -> dict:
         return run_orchestration_package(
@@ -861,6 +993,9 @@ async def orchestrate_figures(
             vlm_model=vlm_model,
             image_provider=image_provider,
             image_model=image_model,
+            vlm_profile_id=vlm_connection,
+            image_profile_id=image_connection,
+            legacy_connections=legacy_connections,
             iterations=iterations,
             auto=auto,
             max_iterations=max_iterations,
@@ -890,6 +1025,9 @@ async def batch_diagrams(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_connection: str | None = None,
+    image_connection: str | None = None,
+    legacy_connections: bool = False,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -910,6 +1048,12 @@ async def batch_diagrams(
     Returns JSON with ``batch_dir``, ``batch_report_path``, per-item summary,
     ``composite_path`` when configured, and ``strict_success`` (false if any item failed).
     """
+    _reject_mcp_connection_mix(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
 
     def _run() -> dict:
         return run_methodology_batch(
@@ -920,6 +1064,9 @@ async def batch_diagrams(
             vlm_model=vlm_model,
             image_provider=image_provider,
             image_model=image_model,
+            vlm_profile_id=vlm_connection,
+            image_profile_id=image_connection,
+            legacy_connections=legacy_connections,
             iterations=iterations,
             auto=auto,
             max_iterations=max_iterations,
@@ -951,6 +1098,8 @@ async def batch_plots(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_connection: str | None = None,
+    legacy_connections: bool = False,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -971,6 +1120,12 @@ async def batch_plots(
     Returns JSON with ``batch_dir``, ``batch_report_path``, item summary, and
     ``strict_success``.
     """
+    _reject_mcp_connection_mix(
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
 
     def _run() -> dict:
         return run_plot_batch(
@@ -981,6 +1136,8 @@ async def batch_plots(
             vlm_model=vlm_model,
             image_provider=image_provider,
             image_model=image_model,
+            vlm_profile_id=vlm_connection,
+            legacy_connections=legacy_connections,
             iterations=iterations,
             auto=auto,
             max_iterations=max_iterations,

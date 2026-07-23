@@ -221,7 +221,13 @@ def test_cli_synthesize_refuses_existing_output_without_force(tmp_path):
     existing.write_text("existing guide")
     result = runner.invoke(
         app,
-        ["guidelines", "synthesize", "--output", str(existing)],
+        [
+            "guidelines",
+            "synthesize",
+            "--output",
+            str(existing),
+            "--legacy-connections",
+        ],
     )
     assert result.exit_code == 1
     assert "already exists" in result.output

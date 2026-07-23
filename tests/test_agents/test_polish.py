@@ -25,6 +25,7 @@ class _FakeEditImageGen:
 
     name = "fake_edit"
     model_name = "fake-edit-model"
+    supports_image_edit = True
 
     def __init__(self):
         self.calls: list[dict] = []
@@ -58,6 +59,7 @@ class _TextOnlyImageGen:
 
     name = "text_only"
     model_name = "text-only-model"
+    supports_image_edit = False
 
     async def generate(
         self,

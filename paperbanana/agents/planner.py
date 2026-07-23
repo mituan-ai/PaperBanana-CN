@@ -15,7 +15,7 @@ import structlog
 from PIL import Image
 
 from paperbanana.agents.base import BaseAgent
-from paperbanana.core.types import DiagramType, ReferenceExample
+from paperbanana.core.types import SUPPORTED_ASPECT_RATIOS, DiagramType, ReferenceExample
 from paperbanana.core.utils import load_image
 from paperbanana.providers.base import VLMProvider
 
@@ -287,15 +287,13 @@ class PlannerAgent(BaseAgent):
                 )
         return images
 
-    _VALID_RATIOS = {"1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"}
-
     @classmethod
     def _parse_ratio(cls, text: str) -> tuple[str, str | None]:
         """Extract RECOMMENDED_RATIO from planner output and return clean description."""
         match = re.search(r"RECOMMENDED_RATIO:\s*([\d:]+)", text)
         if match:
             ratio = match.group(1).strip()
-            if ratio in cls._VALID_RATIOS:
+            if ratio in SUPPORTED_ASPECT_RATIOS:
                 # Remove the ratio line (and surrounding markdown fences) from description
                 clean = re.sub(
                     r"\n*```\n*RECOMMENDED_RATIO:.*?\n*```\n*",

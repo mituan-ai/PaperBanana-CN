@@ -32,6 +32,30 @@ def invoke_help(*args: str) -> str:
     return result.output
 
 
+def test_connections_import_legacy_creates_role_profiles(tmp_path, monkeypatch):
+    from paperbanana.connections import cli as connections_cli
+    from paperbanana.connections.manager import ConnectionManager
+    from paperbanana.connections.models import ConnectionRole
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    monkeypatch.setattr(connections_cli, "ConnectionManager", lambda: manager)
+    monkeypatch.setenv("GOOGLE_API_KEY", "legacy-google-secret")
+    monkeypatch.setenv("GOOGLE_BASE_URL", "https://legacy-gemini.example")
+
+    result = runner.invoke(app, ["connections", "import-legacy"])
+
+    assert result.exit_code == 0
+    assert "legacy-google-secret" not in result.output
+    config = manager.load()
+    vlm = config.profile(config.active_vlm_profile_id, ConnectionRole.VLM)
+    image = config.profile(config.active_image_profile_id, ConnectionRole.IMAGE)
+    assert vlm.provider == "gemini"
+    assert image.provider == "google_imagen"
+    assert vlm.base_url == image.base_url == "https://legacy-gemini.example"
+    assert manager.secret_store.get(vlm.credential_ref) == "legacy-google-secret"
+    assert manager.secret_store.get(image.credential_ref) == "legacy-google-secret"
+
+
 def test_generate_dry_run_valid_inputs():
     """paperbanana generate --input file.txt --caption 'test' --dry-run works."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -41,7 +65,15 @@ def test_generate_dry_run_valid_inputs():
     try:
         result = runner.invoke(
             app,
-            ["generate", "--input", input_path, "--caption", "test", "--dry-run"],
+            [
+                "generate",
+                "--input",
+                input_path,
+                "--caption",
+                "test",
+                "--dry-run",
+                "--legacy-connections",
+            ],
         )
         assert result.exit_code == 0
         assert "Dry Run" in result.output
@@ -81,6 +113,7 @@ def test_generate_accepts_progress_json_flag():
                 "test",
                 "--dry-run",
                 "--progress-json",
+                "--legacy-connections",
             ],
         )
         # Dry run doesn't emit progress events, but the flag should be accepted.
@@ -181,6 +214,7 @@ def test_orchestrate_generates_package_with_mocked_pipeline(tmp_path, monkeypatc
             str(tmp_path),
             "--max-method-figures",
             "2",
+            "--legacy-connections",
         ],
     )
     assert result.exit_code == 0
@@ -248,6 +282,7 @@ def test_orchestrate_resume_retry_failed_item(tmp_path, monkeypatch):
             "1",
             "--max-plot-figures",
             "0",
+            "--legacy-connections",
         ],
     )
     assert first.exit_code == 1
@@ -271,6 +306,7 @@ def test_orchestrate_resume_retry_failed_item(tmp_path, monkeypatch):
             "--retry-failed",
             "--output-dir",
             str(tmp_path),
+            "--legacy-connections",
         ],
     )
     assert second.exit_code == 0
@@ -303,6 +339,7 @@ def test_sweep_dry_run_writes_report(tmp_path):
             "--dry-run",
             "--output-dir",
             str(tmp_path),
+            "--legacy-connections",
         ],
     )
     assert result.exit_code == 0
@@ -331,6 +368,7 @@ def test_sweep_rejects_invalid_bool_axis(tmp_path):
             "--optimize-modes",
             "maybe",
             "--dry-run",
+            "--legacy-connections",
         ],
     )
     assert result.exit_code == 1
@@ -353,6 +391,7 @@ def test_sweep_pdf_pages_rejected_for_text_input(tmp_path):
             "--pdf-pages",
             "1-2",
             "--dry-run",
+            "--legacy-connections",
         ],
     )
     assert result.exit_code == 1
@@ -409,6 +448,7 @@ def test_sweep_writes_report_with_mocked_pipeline(tmp_path, monkeypatch):
             "gemini,openai",
             "--output-dir",
             str(tmp_path),
+            "--legacy-connections",
         ],
     )
     assert result.exit_code == 0
@@ -507,6 +547,7 @@ def test_generate_accepts_valid_reference_category():
                 "--dry-run",
                 "--reference-category",
                 "vision_perception",
+                "--legacy-connections",
             ],
         )
         assert result.exit_code == 0
@@ -544,6 +585,7 @@ def test_generate_accepts_multiple_valid_reference_categories(monkeypatch):
                 "--dry-run",
                 "--reference-category",
                 "vision_perception, nlp_language",  # whitespace must be tolerated
+                "--legacy-connections",
             ],
         )
         assert result.exit_code == 0
@@ -561,7 +603,16 @@ def test_generate_accepts_vector_flag():
     try:
         result = runner.invoke(
             app,
-            ["generate", "--input", input_path, "--caption", "test", "--dry-run", "--vector"],
+            [
+                "generate",
+                "--input",
+                input_path,
+                "--caption",
+                "test",
+                "--dry-run",
+                "--vector",
+                "--legacy-connections",
+            ],
         )
         assert result.exit_code == 0
     finally:
@@ -577,7 +628,16 @@ def test_generate_no_vector_flag_accepted():
     try:
         result = runner.invoke(
             app,
-            ["generate", "--input", input_path, "--caption", "test", "--dry-run", "--no-vector"],
+            [
+                "generate",
+                "--input",
+                input_path,
+                "--caption",
+                "test",
+                "--dry-run",
+                "--no-vector",
+                "--legacy-connections",
+            ],
         )
         assert result.exit_code == 0
     finally:
@@ -674,6 +734,7 @@ def test_ablate_retrieval_writes_report(monkeypatch):
                 "4",
                 "--output-report",
                 report_path,
+                "--legacy-connections",
             ],
         )
 
@@ -820,7 +881,14 @@ def test_batch_resume_retry_failed(tmp_path, monkeypatch):
 
     first = runner.invoke(
         app,
-        ["batch", "--manifest", str(manifest), "--output-dir", str(tmp_path)],
+        [
+            "batch",
+            "--manifest",
+            str(manifest),
+            "--output-dir",
+            str(tmp_path),
+            "--legacy-connections",
+        ],
     )
     assert first.exit_code == 1  # flaky failed → non-zero exit
     batches = sorted(tmp_path.glob("batch_*/batch_report.json"))
@@ -842,6 +910,7 @@ def test_batch_resume_retry_failed(tmp_path, monkeypatch):
             "--resume-batch",
             str(batch_dir),
             "--retry-failed",
+            "--legacy-connections",
         ],
     )
     assert second.exit_code == 0
@@ -903,6 +972,7 @@ def test_plot_batch_supports_concurrency_and_retries(tmp_path, monkeypatch):
             "2",
             "--max-retries",
             "1",
+            "--legacy-connections",
         ],
     )
     assert result.exit_code == 0
@@ -934,6 +1004,7 @@ def test_generate_dry_run_accepts_export_tikz_flag():
                 "test",
                 "--dry-run",
                 "--export-tikz",
+                "--legacy-connections",
             ],
         )
         assert result.exit_code == 0
@@ -1066,7 +1137,15 @@ def test_batch_prints_status_table_on_partial_failure(tmp_path, monkeypatch):
 
     monkeypatch.setattr("paperbanana.core.pipeline.PaperBananaPipeline", _FakePipeline)
     result = runner.invoke(
-        app, ["batch", "--manifest", str(manifest), "--output-dir", str(tmp_path)]
+        app,
+        [
+            "batch",
+            "--manifest",
+            str(manifest),
+            "--output-dir",
+            str(tmp_path),
+            "--legacy-connections",
+        ],
     )
     assert result.exit_code == 1
     assert "1 succeeded" in result.output
@@ -1316,6 +1395,7 @@ def test_continue_run_with_custom_output_dir(tmp_path, monkeypatch):
             str(custom_out),
             "--feedback",
             "tweak the colours",
+            "--legacy-connections",
         ],
         terminal_width=HELP_TERMINAL_WIDTH,
     )
@@ -1338,7 +1418,7 @@ def test_continue_run_accepts_run_dir_path(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["generate", "--continue-run", str(run_dir)],
+        ["generate", "--continue-run", str(run_dir), "--legacy-connections"],
         terminal_width=HELP_TERMINAL_WIDTH,
     )
 
@@ -1359,7 +1439,13 @@ def test_continue_latest_uses_custom_output_dir(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["generate", "--continue", "--output-dir", str(custom_out)],
+        [
+            "generate",
+            "--continue",
+            "--output-dir",
+            str(custom_out),
+            "--legacy-connections",
+        ],
         terminal_width=HELP_TERMINAL_WIDTH,
     )
 
@@ -1380,6 +1466,7 @@ def test_continue_run_missing_reports_searched_path(tmp_path):
             "run_missing",
             "--output-dir",
             str(empty_out),
+            "--legacy-connections",
         ],
         terminal_width=HELP_TERMINAL_WIDTH,
     )
@@ -1397,7 +1484,7 @@ def test_continue_run_missing_path_reports_resolved_path(tmp_path):
 
     result = runner.invoke(
         app,
-        ["generate", "--continue-run", str(missing)],
+        ["generate", "--continue-run", str(missing), "--legacy-connections"],
         terminal_width=HELP_TERMINAL_WIDTH,
     )
 
@@ -1455,6 +1542,7 @@ def test_generate_image_flag_round_trip(tmp_path, monkeypatch):
             "--image",
             str(sketch2),
             "--dry-run",
+            "--legacy-connections",
         ],
     )
 

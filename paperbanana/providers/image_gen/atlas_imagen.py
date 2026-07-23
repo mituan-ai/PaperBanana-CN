@@ -8,9 +8,9 @@ from typing import Any, Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from paperbanana.providers.base import ImageGenProvider
+from paperbanana.providers.base import ImageGenProvider, ImageSizeMode, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -25,12 +25,14 @@ class AtlasImageGen(ImageGenProvider):
         base_url: str = "https://api.atlascloud.ai/api/v1",
         poll_interval_seconds: float = 2.0,
         max_poll_attempts: int = 60,
+        timeout_seconds: float = 180.0,
     ):
         self._api_key = api_key
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._poll_interval_seconds = poll_interval_seconds
         self._max_poll_attempts = max_poll_attempts
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -48,7 +50,7 @@ class AtlasImageGen(ImageGenProvider):
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
                 headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=180.0,
+                timeout=self._timeout_seconds,
             )
         return self._client
 
@@ -57,7 +59,15 @@ class AtlasImageGen(ImageGenProvider):
 
     @property
     def supported_ratios(self) -> list[str]:
-        return ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
+        return ["1:1", "3:2", "2:3"]
+
+    @property
+    def supported_resolutions(self) -> list[str]:
+        return ["1k"]
+
+    @property
+    def size_mode(self) -> ImageSizeMode:
+        return ImageSizeMode.FIXED
 
     def _aspect_ratio_hint(self, width: int, height: int) -> str:
         ratio = width / height
@@ -86,6 +96,12 @@ class AtlasImageGen(ImageGenProvider):
         if ratio > 1.0:
             return "1536x1024"
         return "1024x1536"
+
+    def requested_size_label(
+        self, aspect_ratio: str, resolution: str, width: int, height: int
+    ) -> str:
+        self.validate_output_options(aspect_ratio, resolution)
+        return self._size_string(width, height, aspect_ratio) + " px"
 
     def _build_prompt(
         self,
@@ -122,7 +138,11 @@ class AtlasImageGen(ImageGenProvider):
             return first.get("url") or first.get("image_url") or first.get("output")
         return None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

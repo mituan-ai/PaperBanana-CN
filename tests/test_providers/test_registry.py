@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import SecretStr
 
 from paperbanana.core.config import Settings
 from paperbanana.providers.registry import ProviderRegistry
@@ -178,6 +179,45 @@ def test_none_image_provider_returns_dummy():
     provider = ProviderRegistry.create_image_gen(settings)
     assert isinstance(provider, DummyImageGen)
     assert provider.name == "none"
+
+
+def test_profile_ollama_ignores_legacy_model_and_uses_profile_timeout():
+    settings = Settings(
+        connection_source="profiles",
+        vlm_provider="ollama",
+        vlm_model="profile-model",
+        vlm_base_url="http://profile.example/v1",
+        vlm_timeout_seconds=41,
+        ollama_model="legacy-model",
+        ollama_base_url="http://legacy.example/v1",
+    )
+    provider = ProviderRegistry.create_vlm(settings)
+    assert provider.model_name == "profile-model"
+    assert provider._base_url == "http://profile.example/v1"
+    assert provider._timeout_seconds == 41
+
+
+def test_profile_litellm_uses_role_specific_connection(monkeypatch):
+    monkeypatch.setattr(
+        "paperbanana.providers.vlm.litellm.LiteLLMVLM.is_available",
+        lambda self: True,
+    )
+    settings = Settings(
+        connection_source="profiles",
+        vlm_provider="litellm",
+        vlm_model="profile-model",
+        vlm_base_url="https://profile.example/v1",
+        vlm_api_key=SecretStr("profile-key"),
+        vlm_timeout_seconds=37,
+        litellm_model="legacy-model",
+        litellm_api_key="legacy-key",
+        litellm_api_base="https://legacy.example/v1",
+    )
+    provider = ProviderRegistry.create_vlm(settings)
+    assert provider.model_name == "profile-model"
+    assert provider._api_key == "profile-key"
+    assert provider._api_base == "https://profile.example/v1"
+    assert provider._timeout_seconds == 37
 
 
 async def test_dummy_image_gen_raises_if_called():

@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 from PIL import Image
 
 if TYPE_CHECKING:
     from paperbanana.core.cost_tracker import CostTracker
+
+
+class ImageSizeMode(str, Enum):
+    """How an image provider consumes requested output dimensions."""
+
+    EXPLICIT_PIXELS = "explicit_pixels"
+    NATIVE_TIER = "native_tier"
+    FIXED = "fixed"
+    PROMPT_HINT = "prompt_hint"
+
+
+def is_retryable_provider_error(error: BaseException) -> bool:
+    """Retry only transport failures, throttling, and server-side errors."""
+    status_code = getattr(error, "status_code", None)
+    if not isinstance(status_code, int):
+        status_code = getattr(getattr(error, "response", None), "status_code", None)
+    if isinstance(status_code, int):
+        return status_code in {408, 409, 425, 429} or status_code >= 500
+    name = type(error).__name__.lower()
+    if any(
+        token in name
+        for token in ("timeout", "connection", "ratelimit", "throttl", "serviceunavailable")
+    ):
+        return True
+    return isinstance(error, OSError)
 
 
 class VLMProvider(ABC):
@@ -73,11 +99,9 @@ class ImageGenProvider(ABC):
     Used by the Visualizer agent to generate methodology diagrams
     and other academic illustrations.
 
-    Guided edits (image-conditioned generation): providers that can edit an
-    existing image declare an additional ``images: Optional[list[Image.Image]]``
-    keyword on ``generate`` (see ``GoogleImagenGen``). Callers detect support
-    by inspecting the provider's ``generate`` signature — the base contract
-    below is text-to-image only.
+    Providers explicitly declare ratios, resolutions, sizing behavior, and
+    guided-edit support. Callers must validate these capabilities before a
+    paid generation request.
     """
 
     cost_tracker: CostTracker | None = None
@@ -99,6 +123,52 @@ class ImageGenProvider(ABC):
         """Aspect ratios this provider supports. Override in subclasses."""
         return ["1:1", "16:9"]  # conservative default
 
+    @property
+    def supported_resolutions(self) -> list[str]:
+        """Resolution tiers this provider accepts."""
+        return ["1k"]
+
+    @property
+    def size_mode(self) -> ImageSizeMode:
+        """How width, height, and resolution are represented on the wire."""
+        return ImageSizeMode.FIXED
+
+    @property
+    def supports_image_edit(self) -> bool:
+        """Whether ``generate`` accepts source images for guided editing."""
+        return False
+
+    def validate_output_options(self, aspect_ratio: str, resolution: str) -> None:
+        """Reject unsupported options before starting a paid request."""
+        if aspect_ratio not in self.supported_ratios:
+            raise ValueError(
+                f"Image provider '{self.name}' does not support aspect ratio {aspect_ratio}. "
+                f"Supported: {', '.join(self.supported_ratios)}"
+            )
+        normalized_resolution = resolution.lower()
+        if normalized_resolution not in self.supported_resolutions:
+            raise ValueError(
+                f"Image provider '{self.name}' does not support resolution {resolution.upper()}. "
+                f"Supported: {', '.join(item.upper() for item in self.supported_resolutions)}"
+            )
+
+    def requested_size_label(
+        self,
+        aspect_ratio: str,
+        resolution: str,
+        width: int,
+        height: int,
+    ) -> str:
+        """Describe the exact pixels or native tier sent to this provider."""
+        self.validate_output_options(aspect_ratio, resolution)
+        if self.size_mode == ImageSizeMode.EXPLICIT_PIXELS:
+            return f"{width}x{height} px"
+        if self.size_mode == ImageSizeMode.NATIVE_TIER:
+            return f"{aspect_ratio} / {resolution.upper()} native tier"
+        if self.size_mode == ImageSizeMode.PROMPT_HINT:
+            return f"{aspect_ratio} prompt hint / {resolution.upper()}"
+        return f"{aspect_ratio} provider preset"
+
     @abstractmethod
     async def generate(
         self,
@@ -118,7 +188,7 @@ class ImageGenProvider(ABC):
             width: Output image width in pixels.
             height: Output image height in pixels.
             seed: Random seed for reproducibility.
-            aspect_ratio: Target aspect ratio (1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9).
+            aspect_ratio: Target aspect ratio from ``SUPPORTED_ASPECT_RATIOS``.
                 takes precedence over width/height for providers that support it.
             quality: Optional provider-specific rendering quality.
 

@@ -62,7 +62,18 @@ def test_check_pdf_dep_delegates_for_pdf(monkeypatch):
 def test_generate_exits_with_hint_when_fitz_missing(tmp_path, block_fitz):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
-    result = runner.invoke(app, ["generate", "--input", str(pdf), "--caption", "test", "--dry-run"])
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--input",
+            str(pdf),
+            "--caption",
+            "test",
+            "--dry-run",
+            "--legacy-connections",
+        ],
+    )
     assert result.exit_code == 1
     assert "PyMuPDF" in result.output
     assert "paperbanana[pdf]" in result.output

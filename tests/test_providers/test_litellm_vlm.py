@@ -93,6 +93,17 @@ class TestLiteLLMVLMGenerate:
         assert call_kwargs["drop_params"] is True
         assert call_kwargs["temperature"] == 1.0
         assert call_kwargs["max_tokens"] == 4096
+        assert call_kwargs["timeout"] == 180.0
+
+    @pytest.mark.asyncio
+    async def test_custom_timeout_forwarded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        mock_acompletion = _install_litellm_stub(monkeypatch)
+        mock_acompletion.return_value = _mock_response("ok")
+
+        vlm = LiteLLMVLM(timeout_seconds=42)
+        await vlm.generate("test")
+
+        assert mock_acompletion.call_args.kwargs["timeout"] == 42
 
     @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self, monkeypatch: pytest.MonkeyPatch) -> None:

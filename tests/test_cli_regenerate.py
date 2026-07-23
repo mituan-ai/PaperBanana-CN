@@ -49,6 +49,7 @@ def test_regenerate_rejects_missing_ir_file(tmp_path):
             str(input_path),
             "--caption",
             "Locked caption",
+            "--legacy-connections",
         ],
     )
 
@@ -112,6 +113,7 @@ def test_regenerate_runs_pipeline_and_passes_locks(tmp_path, monkeypatch):
             "Locked caption",
             "--aspect-ratio",
             "16:9",
+            "--legacy-connections",
         ],
     )
 

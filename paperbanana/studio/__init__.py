@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["launch_studio", "build_studio_app"]
+__all__ = ["launch_studio", "build_studio_app", "build_studio_server_app"]
 
 
 def launch_studio(**kwargs):
@@ -15,5 +15,12 @@ def launch_studio(**kwargs):
 def build_studio_app(**kwargs):
     """Build the Gradio Blocks app without launching (for tests and embedding)."""
     from paperbanana.studio.app import build_studio_app as _build
+
+    return _build(**kwargs)
+
+
+def build_studio_server_app(**kwargs):
+    """Build the bilingual FastAPI app without starting a server."""
+    from paperbanana.studio.app import build_studio_server_app as _build
 
     return _build(**kwargs)

@@ -6,7 +6,9 @@ from typing import Optional
 
 from PIL import Image
 
-from paperbanana.providers.base import ImageGenProvider
+from paperbanana.core.config import OUTPUT_RESOLUTION_VALUES
+from paperbanana.core.types import ASPECT_RATIO_VALUES
+from paperbanana.providers.base import ImageGenProvider, ImageSizeMode
 
 
 class DummyImageGen(ImageGenProvider):
@@ -23,6 +25,18 @@ class DummyImageGen(ImageGenProvider):
     @property
     def model_name(self) -> str:
         return "dummy"
+
+    @property
+    def supported_ratios(self) -> list[str]:
+        return list(ASPECT_RATIO_VALUES)
+
+    @property
+    def supported_resolutions(self) -> list[str]:
+        return list(OUTPUT_RESOLUTION_VALUES)
+
+    @property
+    def size_mode(self) -> ImageSizeMode:
+        return ImageSizeMode.EXPLICIT_PIXELS
 
     async def generate(
         self,

@@ -22,9 +22,9 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -38,8 +38,9 @@ class ClaudeCodeVLM(VLMProvider):
     ``asyncio.Lock`` serialises concurrent calls to prevent races.
     """
 
-    def __init__(self, model: str = "sonnet"):
+    def __init__(self, model: str = "sonnet", timeout_seconds: float = 180.0):
         self._model = model
+        self._timeout_seconds = timeout_seconds
         self._session_id: Optional[str] = None
         self._lock = asyncio.Lock()
 
@@ -54,7 +55,12 @@ class ClaudeCodeVLM(VLMProvider):
     def is_available(self) -> bool:
         return shutil.which("claude") is not None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+        reraise=True,
+    )
     async def generate(
         self,
         prompt: str,
@@ -152,7 +158,17 @@ class ClaudeCodeVLM(VLMProvider):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self._timeout_seconds,
+                )
+            except TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                raise TimeoutError(
+                    f"claude CLI timed out after {self._timeout_seconds:g} seconds"
+                ) from None
         finally:
             for tmp in temp_files:
                 tmp.unlink(missing_ok=True)

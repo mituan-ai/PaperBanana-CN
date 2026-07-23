@@ -16,6 +16,7 @@ class AtlasVLM(OpenAIVLM):
         model: str = "deepseek-ai/DeepSeek-V3-0324",
         base_url: str = "https://api.atlascloud.ai/v1",
         json_mode: bool = True,
+        timeout_seconds: float = 180.0,
     ):
         super().__init__(
             api_key=api_key,
@@ -23,4 +24,5 @@ class AtlasVLM(OpenAIVLM):
             base_url=base_url,
             json_mode=json_mode,
             provider_name="atlas",
+            timeout_seconds=timeout_seconds,
         )

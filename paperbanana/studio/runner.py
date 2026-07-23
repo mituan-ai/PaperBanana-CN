@@ -4,22 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
-import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from paperbanana.core.batch import (
-    checkpoint_progress,
-    generate_batch_id,
-    init_or_load_checkpoint,
-    load_batch_manifest,
-    load_plot_batch_manifest,
-    mark_item_failure,
-    mark_item_running,
-    mark_item_success,
-    select_items_for_run,
-)
+from paperbanana.connections.manager import ConnectionManager
+from paperbanana.connections.models import ConnectionRole
+from paperbanana.connections.resolver import load_runtime_settings
 from paperbanana.core.config import Settings
 from paperbanana.core.logging import configure_logging
 from paperbanana.core.pipeline import PaperBananaPipeline
@@ -36,6 +28,7 @@ from paperbanana.core.sweep import (
     summarize_sweep,
 )
 from paperbanana.core.types import (
+    ASPECT_RATIO_VALUES,
     DiagramType,
     GenerationInput,
     PipelineProgressEvent,
@@ -43,26 +36,12 @@ from paperbanana.core.types import (
 )
 from paperbanana.core.utils import ensure_dir, find_prompt_dir, generate_run_id, save_json
 from paperbanana.evaluation.judge import VLMJudge
+from paperbanana.i18n import get_translator, localize_error
 from paperbanana.providers.registry import ProviderRegistry
 
-VLM_PROVIDER_CHOICES = ["gemini", "openai", "atlas", "openrouter", "bedrock", "anthropic"]
-IMAGE_PROVIDER_CHOICES = [
-    "google_imagen",
-    "openai_imagen",
-    "atlas_imagen",
-    "openrouter_imagen",
-    "bedrock_imagen",
-]
 ASPECT_RATIO_CHOICES = [
     "default",
-    "1:1",
-    "2:3",
-    "3:2",
-    "3:4",
-    "4:3",
-    "9:16",
-    "16:9",
-    "21:9",
+    *ASPECT_RATIO_VALUES,
 ]
 REFERENCE_CATEGORY_CHOICES = [
     "",
@@ -114,17 +93,22 @@ def build_settings(
     max_iterations: int,
     optimize_inputs: bool,
     save_prompts: bool,
+    output_resolution: str = "2k",
     seed: Optional[int] = None,
     reference_category: Optional[list[str]] = None,
+    connection_manager: ConnectionManager | None = None,
+    vlm_profile_id: str | None = None,
+    image_profile_id: str | None = None,
+    legacy_connections: bool = False,
+    required_roles: tuple[ConnectionRole, ...] = (
+        ConnectionRole.VLM,
+        ConnectionRole.IMAGE,
+    ),
 ) -> Settings:
-    """Merge YAML config (optional), environment, and Studio overrides."""
-    base_defaults = Settings()
+    """Build pipeline settings and resolve exactly one connection source."""
     overrides: dict[str, Any] = {
         "output_dir": output_dir,
-        "vlm_provider": vlm_provider.strip() or "gemini",
-        "vlm_model": vlm_model.strip() or base_defaults.vlm_model,
-        "image_provider": image_provider.strip() or "google_imagen",
-        "image_model": image_model.strip() or base_defaults.image_model,
+        "output_resolution": output_resolution,
         "output_format": output_format.lower(),
         "refinement_iterations": int(refinement_iterations),
         "auto_refine": bool(auto_refine),
@@ -139,17 +123,37 @@ def build_settings(
             pass
     if reference_category:
         overrides["reference_category"] = reference_category
+    if not legacy_connections and ConnectionRole.IMAGE not in required_roles:
+        overrides["image_provider"] = "none"
+    if legacy_connections:
+        base_defaults = Settings()
+        overrides.update(
+            {
+                "vlm_provider": vlm_provider.strip() or "gemini",
+                "vlm_model": vlm_model.strip() or base_defaults.vlm_model,
+                "image_provider": image_provider.strip() or "google_imagen",
+                "image_model": image_model.strip() or base_defaults.image_model,
+            }
+        )
 
-    if config_path and str(config_path).strip():
-        return Settings.from_yaml(Path(config_path).expanduser(), **overrides)
-    return Settings(**overrides)
+    normalized_config = (str(config_path).strip() if config_path else "") or None
+    return load_runtime_settings(
+        config_path=normalized_config,
+        overrides=overrides,
+        manager=connection_manager,
+        vlm_profile_id=vlm_profile_id,
+        image_profile_id=image_profile_id,
+        legacy=legacy_connections,
+        required_roles=required_roles,
+    )
 
 
 class ProgressLog:
     """Collect human-readable lines from ``PipelineProgressEvent`` callbacks."""
 
-    def __init__(self) -> None:
+    def __init__(self, locale: str = "en") -> None:
         self.lines: list[str] = []
+        self.t = get_translator(locale)
 
     def append(self, line: str) -> None:
         self.lines.append(line)
@@ -168,55 +172,66 @@ class ProgressLog:
         st = event.stage
         sec = f" ({event.seconds:.1f}s)" if event.seconds is not None else ""
         if st == PipelineProgressStage.OPTIMIZER_START:
-            self.append("Phase 0 — Input optimization: starting…")
+            self.append(self.t("progress.optimizer_start"))
         elif st == PipelineProgressStage.OPTIMIZER_END:
-            self.append(f"Phase 0 — Input optimization: done{sec}")
+            self.append(self.t("progress.optimizer_end", seconds=sec))
         elif st == PipelineProgressStage.RETRIEVER_START:
-            self.append("Phase 1 — Retriever: selecting examples…")
+            self.append(self.t("progress.retriever_start"))
         elif st == PipelineProgressStage.RETRIEVER_END:
             n = (event.extra or {}).get("examples_count", "?")
-            self.append(f"Phase 1 — Retriever: {n} examples{sec}")
+            self.append(self.t("progress.retriever_end", count=n, seconds=sec))
         elif st == PipelineProgressStage.PLANNER_START:
-            self.append("Phase 1 — Planner: drafting description…")
+            self.append(self.t("progress.planner_start"))
         elif st == PipelineProgressStage.PLANNER_END:
             ratio = (event.extra or {}).get("recommended_ratio")
-            extra = f", suggested ratio {ratio}" if ratio else ""
-            self.append(f"Phase 1 — Planner: done{sec}{extra}")
+            extra = self.t("progress.ratio", ratio=ratio) if ratio else ""
+            self.append(self.t("progress.planner_end", seconds=sec, ratio=extra))
         elif st == PipelineProgressStage.STYLIST_START:
-            self.append("Phase 1 — Stylist: refining aesthetics…")
+            self.append(self.t("progress.stylist_start"))
         elif st == PipelineProgressStage.STYLIST_END:
-            self.append(f"Phase 1 — Stylist: done{sec}")
+            self.append(self.t("progress.stylist_end", seconds=sec))
         elif st == PipelineProgressStage.STRUCTURER_START:
-            self.append("Vector — Structurer: building diagram IR…")
+            self.append(self.t("progress.structurer_start"))
         elif st == PipelineProgressStage.STRUCTURER_END:
             ex = event.extra or {}
             if ex.get("error"):
-                self.append(f"Vector — Structurer: failed{sec}")
+                self.append(self.t("progress.structurer_failed", seconds=sec))
             else:
-                self.append(f"Vector — export done{sec}")
+                self.append(self.t("progress.structurer_end", seconds=sec))
         elif st == PipelineProgressStage.VISUALIZER_START:
             it = event.iteration or "?"
             tot = (event.extra or {}).get("total_iterations")
             tot_s = f"/{tot}" if tot else ""
-            self.append(f"Phase 2 — Visualizer: iteration {it}{tot_s}…")
+            self.append(self.t("progress.visualizer_start", iteration=it, total=tot_s))
         elif st == PipelineProgressStage.VISUALIZER_END:
-            self.append(f"Phase 2 — Visualizer: image saved{sec}")
+            self.append(self.t("progress.visualizer_end", seconds=sec))
         elif st == PipelineProgressStage.CRITIC_START:
-            self.append("Phase 2 — Critic: reviewing…")
+            self.append(self.t("progress.critic_start"))
         elif st == PipelineProgressStage.CRITIC_END:
             ex = event.extra or {}
             if ex.get("needs_revision"):
-                self.append(f"Phase 2 — Critic: revision suggested{sec}")
+                self.append(self.t("progress.critic_revision", seconds=sec))
                 for s in (ex.get("critic_suggestions") or [])[:5]:
                     self.append(f"  • {s}")
             else:
-                self.append(f"Phase 2 — Critic: satisfied{sec}")
+                self.append(self.t("progress.critic_satisfied", seconds=sec))
 
 
 def _aspect_ratio_value(label: str) -> Optional[str]:
     if not label or label == "default":
         return None
     return label
+
+
+def _actual_image_size(path: str) -> str | None:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            width, height = image.size
+        return f"{width}x{height} px"
+    except (OSError, ValueError):
+        return None
 
 
 def run_methodology(
@@ -226,11 +241,12 @@ def run_methodology(
     aspect_ratio_label: str,
     reference_ids: Optional[str] = None,
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, Optional[str], list[tuple[str, str]], str]:
     """Run methodology diagram generation. Returns (log, final_path, gallery, error)."""
     configure_logging(verbose=verbose_logging)
-    log = ProgressLog()
-    log.append("Starting methodology diagram pipeline…")
+    log = ProgressLog(locale)
+    log.append(log.t("run.methodology_start"))
     err = ""
     try:
         ref_id_list = None
@@ -250,8 +266,11 @@ def run_methodology(
 
         result = asyncio.run(_go())
         log.append("")
-        log.append(f"Complete. Run ID: {result.metadata.get('run_id', '?')}")
-        log.append(f"Final image: {result.image_path}")
+        log.append(log.t("run.complete", run_id=result.metadata.get("run_id", "?")))
+        log.append(log.t("run.final_image", path=result.image_path))
+        actual_size = _actual_image_size(result.image_path)
+        if actual_size:
+            log.append(log.t("run.actual_size", size=actual_size))
         gallery: list[tuple[str, str]] = []
         for rec in result.iterations:
             p = Path(rec.image_path)
@@ -261,11 +280,10 @@ def run_methodology(
         fp = final if Path(final).is_file() else None
         return log.text, fp, gallery, ""
     except Exception as e:
-        err = f"{type(e).__name__}: {e}"
+        err = localize_error(e, log.t)
         log.append("")
-        log.append("FAILED")
+        log.append(log.t("run.failed"))
         log.append(err)
-        log.append(traceback.format_exc())
         return log.text, None, [], err
 
 
@@ -275,11 +293,12 @@ def run_plot(
     intent: str,
     aspect_ratio_label: str,
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, Optional[str], list[tuple[str, str]], str]:
     """Run statistical plot pipeline from CSV or JSON path."""
     configure_logging(verbose=verbose_logging)
-    log = ProgressLog()
-    log.append("Starting statistical plot pipeline…")
+    log = ProgressLog(locale)
+    log.append(log.t("run.plot_start"))
     path = Path(data_path)
     if not path.is_file():
         msg = f"Data file not found: {data_path}"
@@ -303,7 +322,10 @@ def run_plot(
 
         result = asyncio.run(_go())
         log.append("")
-        log.append(f"Complete. Run ID: {result.metadata.get('run_id', '?')}")
+        log.append(log.t("run.complete", run_id=result.metadata.get("run_id", "?")))
+        actual_size = _actual_image_size(result.image_path)
+        if actual_size:
+            log.append(log.t("run.actual_size", size=actual_size))
         gallery: list[tuple[str, str]] = []
         for rec in result.iterations:
             p = Path(rec.image_path)
@@ -312,11 +334,10 @@ def run_plot(
         fp = result.image_path if Path(result.image_path).is_file() else None
         return log.text, fp, gallery, ""
     except Exception as e:
-        err = f"{type(e).__name__}: {e}"
+        err = localize_error(e, log.t)
         log.append("")
-        log.append("FAILED")
+        log.append(log.t("run.failed"))
         log.append(err)
-        log.append(traceback.format_exc())
         return log.text, None, [], err
 
 
@@ -329,37 +350,44 @@ def run_evaluate(
     evaluation_task: DiagramType = DiagramType.METHODOLOGY,
     plot_data_path: str = "",
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, str]:
     """VLM judge comparative evaluation. Returns (log, formatted results)."""
     configure_logging(verbose=verbose_logging)
-    task_label = "plot" if evaluation_task == DiagramType.STATISTICAL_PLOT else "diagram"
-    lines: list[str] = [f"Starting comparative evaluation ({task_label}, VLM judge)…"]
+    t = get_translator(locale)
+    task_key = (
+        "choice.statistical_plot"
+        if evaluation_task == DiagramType.STATISTICAL_PLOT
+        else "choice.methodology"
+    )
+    task_label = t(task_key)
+    lines: list[str] = [t("evaluate.start", task=task_label)]
     gp = Path(generated_path)
     rp = Path(reference_path)
     if not gp.is_file():
-        msg = f"Generated image not found: {generated_path}"
+        msg = t("evaluate.generated_missing", path=generated_path)
         lines.append(msg)
         return "\n".join(lines), msg
     if not rp.is_file():
-        msg = f"Reference image not found: {reference_path}"
+        msg = t("evaluate.reference_missing", path=reference_path)
         lines.append(msg)
         return "\n".join(lines), msg
     effective_context = source_context
     if evaluation_task == DiagramType.STATISTICAL_PLOT:
         plot_path = Path(plot_data_path)
         if not plot_path.is_file():
-            msg = f"Plot data file not found: {plot_data_path}"
+            msg = t("evaluate.plot_data_missing", path=plot_data_path)
             lines.append(msg)
             return "\n".join(lines), msg
         try:
             effective_context, _ = load_statistical_plot_payload(plot_path)
         except ValueError as e:
-            msg = f"Invalid plot data: {e}"
+            msg = t("evaluate.plot_data_invalid", error=e)
             lines.append(msg)
             return "\n".join(lines), msg
 
     if not effective_context.strip():
-        msg = "Source context is empty."
+        msg = t("error.context_empty")
         lines.append(msg)
         return "\n".join(lines), msg
 
@@ -377,21 +405,25 @@ def run_evaluate(
             )
 
         scores = asyncio.run(_go())
-        lines.append("Done.")
+        lines.append(t("common.done"))
         dims = ["faithfulness", "conciseness", "readability", "aesthetics"]
-        out_parts = [f"## Results ({task_label})\n"]
+        out_parts = [f"## {t('evaluate.results')} ({task_label})\n"]
         for dim in dims:
             r = getattr(scores, dim)
-            out_parts.append(f"**{dim}** — {r.winner} (score {r.score:.0f})\n")
+            out_parts.append(
+                f"**{t(f'evaluate.dimension.{dim}')}** - "
+                f"{r.winner} ({t('evaluate.score', score=r.score)})\n"
+            )
             if r.reasoning:
                 out_parts.append(f"{r.reasoning}\n\n")
         out_parts.append(
-            f"### Overall\n**{scores.overall_winner}** — score {scores.overall_score:.0f}\n"
+            f"### {t('evaluate.overall')}\n**{scores.overall_winner}** - "
+            f"{t('evaluate.score', score=scores.overall_score)}\n"
         )
         return "\n".join(lines), "".join(out_parts)
     except Exception as e:
-        err = f"{type(e).__name__}: {e}\n\n{traceback.format_exc()}"
-        lines.append("FAILED")
+        err = localize_error(e, t)
+        lines.append(t("run.failed"))
         lines.append(err)
         return "\n".join(lines), err
 
@@ -403,15 +435,16 @@ def run_continue(
     user_feedback: str,
     additional_iterations: Optional[int],
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, Optional[str], list[tuple[str, str]], str]:
     """Continue an existing run directory."""
     configure_logging(verbose=verbose_logging)
-    log = ProgressLog()
-    log.append(f"Continuing run {run_id}…")
+    log = ProgressLog(locale)
+    log.append(log.t("continue.start", run_id=run_id))
     try:
         state = load_resume_state(output_dir, run_id.strip())
     except (FileNotFoundError, ValueError) as e:
-        msg = str(e)
+        msg = localize_error(e, log.t)
         log.append(msg)
         return log.text, None, [], msg
 
@@ -431,7 +464,7 @@ def run_continue(
 
         result = asyncio.run(_go())
         log.append("")
-        log.append(f"Complete. Final: {result.image_path}")
+        log.append(log.t("continue.complete", path=result.image_path))
         gallery: list[tuple[str, str]] = []
         for rec in result.iterations:
             p = Path(rec.image_path)
@@ -440,12 +473,52 @@ def run_continue(
         fp = result.image_path if Path(result.image_path).is_file() else None
         return log.text, fp, gallery, ""
     except Exception as e:
-        err = f"{type(e).__name__}: {e}"
+        err = localize_error(e, log.t)
         log.append("")
-        log.append("FAILED")
+        log.append(log.t("run.failed"))
         log.append(err)
-        log.append(traceback.format_exc())
         return log.text, None, [], err
+
+
+def _localize_workflow_message(t: Callable[..., str], message: str) -> str:
+    """Translate the finite progress vocabulary emitted by the shared batch runner."""
+    patterns = (
+        (r"Nothing to run; report at (.+)", "batch.nothing", ("path",)),
+        (r"Item (\d+)/(\d+) (.+): input missing", "batch.input_missing", ("index", "total", "id")),
+        (r"Item (\d+)/(\d+) (.+): data missing", "batch.data_missing", ("index", "total", "id")),
+        (r"Item (\d+)/(\d+) (.+): ok -> (.+)", "batch.item_ok", ("index", "total", "id", "path")),
+        (
+            r"Item (.+): retry (\d+)/(\d+) after (.+)",
+            "batch.item_retry",
+            ("id", "attempt", "total", "error"),
+        ),
+        (
+            r"Item (\d+)/(\d+) (.+): failed - (.+)",
+            "batch.item_failed",
+            ("index", "total", "id", "error"),
+        ),
+        (r"Composite: (.+)", "batch.composite", ("path",)),
+        (
+            r"\[green\](\d+)/(\d+) (.+): ok -> (.+)\[/green\]",
+            "batch.item_ok",
+            ("index", "total", "id", "path"),
+        ),
+        (
+            r"\[yellow\](.+): retry (\d+)/(\d+) after (.+)\[/yellow\]",
+            "batch.item_retry",
+            ("id", "attempt", "total", "error"),
+        ),
+        (
+            r"\[red\](\d+)/(\d+) (.+): failed - (.+)\[/red\]",
+            "batch.item_failed",
+            ("index", "total", "id", "error"),
+        ),
+    )
+    for pattern, key, fields in patterns:
+        match = re.fullmatch(pattern, message)
+        if match:
+            return t(key, **dict(zip(fields, match.groups())))
+    return message
 
 
 def run_batch(
@@ -457,121 +530,40 @@ def run_batch(
     max_retries: int = 0,
     concurrency: int = 1,
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, str]:
     """Run batch manifest; returns (log, batch_dir path or error note)."""
+    from paperbanana.core.workflow_runner import run_methodology_batch
+
     configure_logging(verbose=verbose_logging)
-    lines: list[str] = []
-    mpath = Path(manifest_path)
-    if not mpath.is_file():
-        msg = f"Manifest not found: {manifest_path}"
-        lines.append(msg)
-        return "\n".join(lines), msg
-
+    t = get_translator(locale)
+    lines: list[str] = [t("batch.start_methodology")]
     try:
-        items = load_batch_manifest(mpath)
-    except (ValueError, FileNotFoundError, RuntimeError) as e:
-        msg = f"Invalid manifest: {e}"
-        lines.append(msg)
-        return "\n".join(lines), msg
-
-    is_resume = bool(resume_batch)
-    if is_resume:
-        resume_ref = Path(resume_batch)
-        if resume_ref.is_dir():
-            batch_dir = resume_ref.resolve()
-            batch_id = batch_dir.name
-        else:
-            batch_id = resume_batch.strip()
-            batch_dir = (Path(settings.output_dir) / batch_id).resolve()
-    else:
-        batch_id = generate_batch_id()
-        batch_dir = Path(settings.output_dir) / batch_id
-    ensure_dir(batch_dir)
-
-    settings = settings.model_copy(update={"output_dir": str(batch_dir)})
-    lines.append(f"Batch ID: {batch_id}")
-    lines.append(f"Items: {len(items)}")
-    lines.append(f"Output: {batch_dir}")
-    lines.append("")
-
-    state = init_or_load_checkpoint(
-        batch_dir=batch_dir,
-        batch_id=batch_id,
-        manifest_path=mpath,
-        batch_kind="methodology",
-        items=items,
-        resume=is_resume,
+        result = run_methodology_batch(
+            manifest_path=Path(manifest_path),
+            output_dir=Path(settings.output_dir),
+            runtime_settings=settings,
+            format=str(settings.output_format),
+            resume_batch=resume_batch,
+            retry_failed=retry_failed,
+            max_retries=max(0, max_retries),
+            concurrency=max(1, concurrency),
+            progress_callback=lambda message: lines.append(_localize_workflow_message(t, message)),
+        )
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        message = t("batch.failed", error=exc)
+        lines.append(message)
+        return "\n".join(lines), message
+    lines.append(
+        t(
+            "batch.summary",
+            succeeded=result["succeeded"],
+            failed=result["failed"],
+            skipped=result["skipped"],
+        )
     )
-    planned = select_items_for_run(state, retry_failed=retry_failed)
-    if not planned:
-        checkpoint_progress(batch_dir=batch_dir, state=state, mark_complete=True)
-        lines.append("Nothing to run: all items already completed.")
-        lines.append(f"Report written: {batch_dir / 'batch_report.json'}")
-        return "\n".join(lines), str(batch_dir.resolve())
-
-    if max_retries < 0:
-        max_retries = 0
-    if concurrency < 1:
-        concurrency = 1
-
-    async def _run_all_items() -> None:
-        sem = asyncio.Semaphore(concurrency)
-        from paperbanana.core.source_loader import load_methodology_source
-
-        async def _run_one(idx: int, item: dict[str, Any]) -> None:
-            item_id = item["id"]
-            item_key = item["_item_key"]
-            lines.append(f"— Item {idx + 1}/{len(items)} — {item_id}")
-            async with sem:
-                for attempt in range(max_retries + 1):
-                    mark_item_running(state, item_key)
-                    checkpoint_progress(batch_dir=batch_dir, state=state)
-                    input_path = Path(item["input"])
-                    if not input_path.is_file():
-                        mark_item_failure(state, item_key, "input file not found")
-                        checkpoint_progress(batch_dir=batch_dir, state=state)
-                        lines.append(f"  error: input not found ({input_path})")
-                        return
-                    try:
-                        source_context = load_methodology_source(
-                            input_path, pdf_pages=item.get("pdf_pages")
-                        )
-                        gen_in = GenerationInput(
-                            source_context=source_context,
-                            communicative_intent=item["caption"],
-                            diagram_type=DiagramType.METHODOLOGY,
-                        )
-                        result = await PaperBananaPipeline(settings=settings).generate(gen_in)
-                        mark_item_success(
-                            state,
-                            item_key,
-                            result.metadata.get("run_id"),
-                            result.image_path,
-                            len(result.iterations),
-                        )
-                        checkpoint_progress(batch_dir=batch_dir, state=state)
-                        lines.append(f"  ok: {result.image_path}")
-                        return
-                    except Exception as e:
-                        mark_item_failure(state, item_key, str(e))
-                        checkpoint_progress(batch_dir=batch_dir, state=state)
-                        if attempt < max_retries:
-                            lines.append(f"  retry {attempt + 1}/{max_retries}: {e}")
-                            continue
-                        lines.append(f"  error: {e}")
-                        return
-
-        await asyncio.gather(*[_run_one(idx, item) for idx, item, _ in planned])
-
-    asyncio.run(_run_all_items())
-
-    report = checkpoint_progress(batch_dir=batch_dir, state=state, mark_complete=True)
-    report_path = batch_dir / "batch_report.json"
-    lines.append("")
-    lines.append(f"Report written: {report_path}")
-    ok = sum(1 for x in report["items"] if x.get("output_path"))
-    lines.append(f"Succeeded: {ok}/{len(items)}")
-    return "\n".join(lines), str(batch_dir.resolve())
+    lines.append(t("batch.report", path=result["batch_report_path"]))
+    return "\n".join(lines), str(result["batch_dir"])
 
 
 def run_plot_batch(
@@ -584,133 +576,41 @@ def run_plot_batch(
     max_retries: int = 0,
     concurrency: int = 1,
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, str]:
     """Run plot batch manifest; returns (log, batch_dir path or error note)."""
+    from paperbanana.core.workflow_runner import run_plot_batch as run_shared_plot_batch
+
     configure_logging(verbose=verbose_logging)
-    lines: list[str] = []
-    mpath = Path(manifest_path)
-    if not mpath.is_file():
-        msg = f"Manifest not found: {manifest_path}"
-        lines.append(msg)
-        return "\n".join(lines), msg
-
+    t = get_translator(locale)
+    lines: list[str] = [t("batch.start_plot")]
     try:
-        items = load_plot_batch_manifest(mpath)
-    except (ValueError, FileNotFoundError, RuntimeError) as e:
-        msg = f"Invalid manifest: {e}"
-        lines.append(msg)
-        return "\n".join(lines), msg
-
-    is_resume = bool(resume_batch)
-    if is_resume:
-        resume_ref = Path(resume_batch)
-        if resume_ref.is_dir():
-            batch_dir = resume_ref.resolve()
-            batch_id = batch_dir.name
-        else:
-            batch_id = resume_batch.strip()
-            batch_dir = (Path(settings.output_dir) / batch_id).resolve()
-    else:
-        batch_id = generate_batch_id()
-        batch_dir = Path(settings.output_dir) / batch_id
-    ensure_dir(batch_dir)
-
-    settings = settings.model_copy(update={"output_dir": str(batch_dir)})
-    lines.append(f"Batch ID: {batch_id}")
-    lines.append("Kind: statistical plots")
-    lines.append(f"Items: {len(items)}")
-    lines.append(f"Output: {batch_dir}")
-    lines.append("")
-
-    state = init_or_load_checkpoint(
-        batch_dir=batch_dir,
-        batch_id=batch_id,
-        manifest_path=mpath,
-        batch_kind="statistical_plot",
-        items=items,
-        resume=is_resume,
+        result = run_shared_plot_batch(
+            manifest_path=Path(manifest_path),
+            output_dir=Path(settings.output_dir),
+            runtime_settings=settings,
+            format=str(settings.output_format),
+            aspect_ratio=_aspect_ratio_value(default_aspect_ratio_label),
+            resume_batch=resume_batch,
+            retry_failed=retry_failed,
+            max_retries=max(0, max_retries),
+            concurrency=max(1, concurrency),
+            progress_callback=lambda message: lines.append(_localize_workflow_message(t, message)),
+        )
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        message = t("batch.failed", error=exc)
+        lines.append(message)
+        return "\n".join(lines), message
+    lines.append(
+        t(
+            "batch.summary",
+            succeeded=result["succeeded"],
+            failed=result["failed"],
+            skipped=result["skipped"],
+        )
     )
-    planned = select_items_for_run(state, retry_failed=retry_failed)
-    if not planned:
-        checkpoint_progress(batch_dir=batch_dir, state=state, mark_complete=True)
-        lines.append("Nothing to run: all items already completed.")
-        lines.append(f"Report written: {batch_dir / 'batch_report.json'}")
-        return "\n".join(lines), str(batch_dir.resolve())
-
-    if max_retries < 0:
-        max_retries = 0
-    if concurrency < 1:
-        concurrency = 1
-
-    total_start = time.perf_counter()
-
-    async def _run_all_items() -> None:
-        sem = asyncio.Semaphore(concurrency)
-
-        async def _run_one(idx: int, item: dict[str, Any]) -> None:
-            item_id = item["id"]
-            item_key = item["_item_key"]
-            lines.append(f"— Item {idx + 1}/{len(items)} — {item_id}")
-            async with sem:
-                for attempt in range(max_retries + 1):
-                    mark_item_running(state, item_key)
-                    checkpoint_progress(batch_dir=batch_dir, state=state)
-                    data_path = Path(item["data"])
-                    if not data_path.is_file():
-                        mark_item_failure(state, item_key, "data file not found")
-                        checkpoint_progress(batch_dir=batch_dir, state=state)
-                        lines.append(f"  error: data file not found ({data_path})")
-                        return
-                    try:
-                        source_context, raw_data = load_statistical_plot_payload(data_path)
-                        ar = item.get("aspect_ratio") or _aspect_ratio_value(
-                            default_aspect_ratio_label
-                        )
-                        gen_in = GenerationInput(
-                            source_context=source_context,
-                            communicative_intent=item["intent"],
-                            diagram_type=DiagramType.STATISTICAL_PLOT,
-                            raw_data={"data": raw_data},
-                            aspect_ratio=ar,
-                        )
-                        result = await PaperBananaPipeline(settings=settings).generate(gen_in)
-                        mark_item_success(
-                            state,
-                            item_key,
-                            result.metadata.get("run_id"),
-                            result.image_path,
-                            len(result.iterations),
-                        )
-                        checkpoint_progress(batch_dir=batch_dir, state=state)
-                        lines.append(f"  ok: {result.image_path}")
-                        return
-                    except Exception as e:
-                        mark_item_failure(state, item_key, str(e))
-                        checkpoint_progress(batch_dir=batch_dir, state=state)
-                        if attempt < max_retries:
-                            lines.append(f"  retry {attempt + 1}/{max_retries}: {e}")
-                            continue
-                        lines.append(f"  error: {e}")
-                        return
-
-        await asyncio.gather(*[_run_one(idx, item) for idx, item, _ in planned])
-
-    asyncio.run(_run_all_items())
-
-    total_elapsed = time.perf_counter() - total_start
-    report = checkpoint_progress(
-        batch_dir=batch_dir,
-        state=state,
-        total_seconds=total_elapsed,
-        mark_complete=True,
-    )
-    report_path = batch_dir / "batch_report.json"
-    lines.append("")
-    lines.append(f"Report written: {report_path}")
-    ok = sum(1 for x in report["items"] if x.get("output_path"))
-    lines.append(f"Succeeded: {ok}/{len(items)}")
-    lines.append(f"Total time: {report['total_seconds']}s")
-    return "\n".join(lines), str(batch_dir.resolve())
+    lines.append(t("batch.report", path=result["batch_report_path"]))
+    return "\n".join(lines), str(result["batch_dir"])
 
 
 def _preview_json_file(path: Path, *, max_chars: int = 10_000) -> str:
@@ -743,6 +643,7 @@ def run_orchestration(
     concurrency: int,
     config_path: str | None,
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, str, str, str]:
     """Run figure-package orchestration (CLI parity).
 
@@ -751,10 +652,11 @@ def run_orchestration(
     from paperbanana.core.workflow_runner import run_orchestration_package
 
     configure_logging(verbose=verbose_logging)
-    lines: list[str] = ["Starting figure-package orchestration…", ""]
+    t = get_translator(locale)
+    lines: list[str] = [t("orchestration.start"), ""]
 
     def emit(msg: str) -> None:
-        lines.append(msg)
+        lines.append(_localize_workflow_message(t, msg))
 
     resume = (resume_orchestrate or "").strip() or None
     paper_upload = (paper_file_path or "").strip() or None
@@ -762,12 +664,12 @@ def run_orchestration(
         paper_upload = None
 
     if resume and paper_upload:
-        msg = "Error: clear the paper upload when using resume (provide only resume ID or path)."
+        msg = t("orchestration.resume_conflict")
         lines.append(msg)
         return "\n".join(lines), "", "", ""
 
     if not resume and (not paper_upload or not Path(paper_upload).is_file()):
-        msg = "Error: upload a paper file (.txt, .md, or .pdf), or enter a resume ID / path."
+        msg = t("orchestration.paper_required")
         lines.append(msg)
         return "\n".join(lines), "", "", ""
 
@@ -796,9 +698,7 @@ def run_orchestration(
 
     out_fmt = str(settings.output_format)
     if out_fmt not in ("png", "jpeg", "webp"):
-        lines.append(
-            f"Note: orchestration supports png/jpeg/webp only; using png (format was {out_fmt!r})."
-        )
+        lines.append(t("orchestration.format_fallback", format=out_fmt))
         lines.append("")
         out_fmt = "png"
 
@@ -813,10 +713,11 @@ def run_orchestration(
             pdf_pages=pages_arg,
             dry_run=bool(dry_run),
             config=cfg,
-            vlm_provider=settings.vlm_provider,
-            vlm_model=settings.vlm_model,
-            image_provider=settings.image_provider,
-            image_model=settings.image_model,
+            vlm_provider=None,
+            vlm_model=None,
+            image_provider=None,
+            image_model=None,
+            runtime_settings=settings,
             iterations=settings.refinement_iterations,
             auto=settings.auto_refine,
             max_iterations=settings.max_iterations,
@@ -831,11 +732,10 @@ def run_orchestration(
             after_plan_callback=None,
         )
     except (FileNotFoundError, ValueError, ImportError, RuntimeError) as e:
-        lines.append(f"FAILED: {type(e).__name__}: {e}")
+        lines.append(t("orchestration.failed", error=localize_error(e, t)))
         return "\n".join(lines), "", "", ""
     except Exception as e:
-        lines.append(f"FAILED: {type(e).__name__}: {e}")
-        lines.append(traceback.format_exc())
+        lines.append(t("orchestration.failed", error=localize_error(e, t)))
         return "\n".join(lines), "", "", ""
 
     orch_dir = str(result.get("orchestrate_dir") or "")
@@ -843,27 +743,27 @@ def run_orchestration(
 
     lines.append("")
     if result.get("dry_run"):
-        lines.append("Dry run complete (plan only).")
+        lines.append(t("orchestration.dry_complete"))
         plan_preview = _preview_json_file(plan_path)
-        pkg_preview = "(dry run — no figure_package.json; use run without dry run to generate.)"
+        pkg_preview = t("orchestration.dry_package")
         return "\n".join(lines), orch_dir, plan_preview, pkg_preview
 
     gen_n = result.get("generated_count", 0)
     fail_n = result.get("failed_count", 0)
     ok = result.get("strict_success")
-    lines.append(f"Done. generated={gen_n} failed={fail_n} strict_success={ok}")
+    lines.append(t("orchestration.summary", generated=gen_n, failed=fail_n, success=ok))
     if result.get("figure_package_path"):
-        lines.append(f"Package: {result['figure_package_path']}")
+        lines.append(t("orchestration.package", path=result["figure_package_path"]))
     if result.get("figures_tex_path"):
-        lines.append(f"LaTeX: {result['figures_tex_path']}")
+        lines.append(t("orchestration.latex", path=result["figures_tex_path"]))
     if result.get("captions_md_path"):
-        lines.append(f"Captions: {result['captions_md_path']}")
+        lines.append(t("orchestration.captions", path=result["captions_md_path"]))
 
     plan_preview = _preview_json_file(plan_path)
     pkg_path = Path(str(result.get("figure_package_path") or ""))
     pkg_preview = _preview_json_file(pkg_path) if pkg_path.is_file() else ""
     if not pkg_preview and result.get("figure_package_path"):
-        pkg_preview = f"(not readable yet: {pkg_path})"
+        pkg_preview = t("orchestration.package_unreadable", path=pkg_path)
 
     return "\n".join(lines), orch_dir, plan_preview, pkg_preview
 
@@ -884,54 +784,65 @@ def run_sweep(
     max_variants: Optional[int] = None,
     dry_run: bool = False,
     verbose_logging: bool = False,
+    locale: str = "en",
 ) -> tuple[str, str, str]:
     """Run sweep using core sweep utilities. Returns (log, sweep_dir, report_path)."""
     configure_logging(verbose=verbose_logging)
-    lines: list[str] = ["Starting parameter sweep..."]
+    t = get_translator(locale)
+    lines: list[str] = [t("sweep.start")]
     input_file = Path(input_path)
     if not input_file.is_file():
-        msg = f"Input file not found: {input_path}"
+        msg = t("sweep.input_missing", path=input_path)
         lines.append(msg)
         return "\n".join(lines), "", ""
     if not caption.strip():
-        msg = "Caption is required."
+        msg = t("error.caption_required")
         lines.append(msg)
         return "\n".join(lines), "", ""
     if max_variants is not None and max_variants < 1:
-        msg = "max_variants must be >= 1"
+        msg = t("sweep.max_variants_invalid")
+        lines.append(msg)
+        return "\n".join(lines), "", ""
+
+    connection_axes = any(
+        parse_csv_values(value)
+        for value in (vlm_providers, vlm_models, image_providers, image_models)
+    )
+    if connection_axes and settings.connection_source != "legacy":
+        msg = t("sweep.profile_axes_forbidden")
         lines.append(msg)
         return "\n".join(lines), "", ""
 
     try:
         variants = build_sweep_variants(
-            vlm_providers=parse_csv_values(vlm_providers),
-            vlm_models=parse_csv_values(vlm_models),
-            image_providers=parse_csv_values(image_providers),
-            image_models=parse_csv_values(image_models),
+            vlm_providers=parse_csv_values(vlm_providers) or [settings.vlm_provider],
+            vlm_models=parse_csv_values(vlm_models) or [settings.effective_vlm_model],
+            image_providers=parse_csv_values(image_providers) or [settings.image_provider],
+            image_models=parse_csv_values(image_models) or [settings.effective_image_model],
             refinement_iterations=parse_csv_ints(iterations, field_name="iterations"),
             optimize_inputs=parse_csv_bools(optimize_modes, field_name="optimize_modes"),
             auto_refine=parse_csv_bools(auto_modes, field_name="auto_modes"),
             max_variants=max_variants,
         )
     except ValueError as e:
-        lines.append(str(e))
+        lines.append(localize_error(e, t))
         return "\n".join(lines), "", ""
     if not variants:
-        lines.append("Sweep generated zero variants.")
+        lines.append(t("sweep.empty"))
         return "\n".join(lines), "", ""
 
     try:
         source_context = load_methodology_source(input_file, pdf_pages=pdf_pages)
     except Exception as e:
-        lines.append(f"{type(e).__name__}: {e}")
+        lines.append(localize_error(e, t))
         return "\n".join(lines), "", ""
 
     sweep_id = f"sweep_{generate_run_id()}"
     sweep_dir = ensure_dir(Path(settings.output_dir) / sweep_id)
     report_path = sweep_dir / "sweep_report.json"
-    lines.append(f"Sweep ID: {sweep_id}")
-    lines.append(f"Variants: {len(variants)}")
-    lines.append(f"Output: {sweep_dir}")
+    lines.append(t("sweep.id", sweep_id=sweep_id))
+    lines.append(t("sweep.variants", count=len(variants)))
+    lines.append(t("sweep.output", path=sweep_dir))
 
     if dry_run:
         preview = [variant.as_dict() for variant in variants[: min(10, len(variants))]]
@@ -944,8 +855,8 @@ def run_sweep(
             "preview": preview,
         }
         save_json(report, report_path)
-        lines.append("Dry run complete.")
-        lines.append(f"Report written: {report_path}")
+        lines.append(t("sweep.dry_complete"))
+        lines.append(t("batch.report", path=report_path))
         return "\n".join(lines), str(sweep_dir), str(report_path)
 
     all_results: list[dict[str, Any]] = []
@@ -957,7 +868,7 @@ def run_sweep(
     )
 
     for idx, variant in enumerate(variants, start=1):
-        lines.append(f"Variant {idx}/{len(variants)} — {variant.variant_id}")
+        lines.append(t("sweep.variant", index=idx, total=len(variants), id=variant.variant_id))
         variant_dir = ensure_dir(sweep_dir / variant.variant_id)
         overrides: dict[str, Any] = {
             "output_dir": str(variant_dir),
@@ -992,16 +903,17 @@ def run_sweep(
                     "total_seconds": round(variant_seconds, 2),
                 }
             )
-            lines.append(f"  ok: score={score:.1f}, {variant_seconds:.1f}s")
+            lines.append(t("sweep.variant_ok", score=score, seconds=variant_seconds))
         except Exception as e:
+            safe_error = localize_error(e, t)
             all_results.append(
                 {
                     "status": "failed",
                     **variant.as_dict(),
-                    "error": str(e),
+                    "error": safe_error,
                 }
             )
-            lines.append(f"  failed: {e}")
+            lines.append(t("sweep.variant_failed", error=safe_error))
 
     successful_results = [item for item in all_results if item["status"] == "success"]
     ranked_results = rank_sweep_results(successful_results)
@@ -1022,10 +934,10 @@ def run_sweep(
     }
     save_json(report, report_path)
     lines.append("")
-    lines.append(f"Completed: {summary.get('completed', 0)}")
-    lines.append(f"Failed: {summary.get('failed', 0)}")
-    lines.append(f"Best variant: {summary.get('best_variant')}")
-    lines.append(f"Report written: {report_path}")
+    lines.append(t("sweep.completed", count=summary.get("completed", 0)))
+    lines.append(t("sweep.failed", count=summary.get("failed", 0)))
+    lines.append(t("sweep.best", variant=summary.get("best_variant")))
+    lines.append(t("batch.report", path=report_path))
     return "\n".join(lines), str(sweep_dir), str(report_path)
 
 
@@ -1048,6 +960,7 @@ def run_composite(
     label_position: str = "bottom",
     label_font_size: int = 32,
     output_filename: str = "composite.png",
+    locale: str = "en",
 ) -> tuple[str, Optional[str]]:
     """Compose multiple uploaded images into a single labeled multi-panel figure.
 
@@ -1057,26 +970,27 @@ def run_composite(
 
     from paperbanana.core.composite import compose_images
 
-    lines: list[str] = ["Starting composite figure generation…"]
+    t = get_translator(locale)
+    lines: list[str] = [t("composite.start")]
 
     valid_paths = [p for p in image_paths if p and Path(p).is_file()]
     if not valid_paths:
-        msg = "No valid image files provided. Upload at least one image."
+        msg = t("composite.images_required")
         lines.append(msg)
         return "\n".join(lines), None
 
     if label_position not in ("top", "bottom"):
-        msg = f"label_position must be 'top' or 'bottom'. Got: {label_position!r}"
+        msg = t("composite.position_invalid", value=label_position)
         lines.append(msg)
         return "\n".join(lines), None
 
     if spacing < 0:
-        msg = f"spacing must be >= 0. Got: {spacing}"
+        msg = t("composite.spacing_invalid", value=spacing)
         lines.append(msg)
         return "\n".join(lines), None
 
     if label_font_size <= 0:
-        msg = f"label_font_size must be > 0. Got: {label_font_size}"
+        msg = t("composite.font_invalid", value=label_font_size)
         lines.append(msg)
         return "\n".join(lines), None
 
@@ -1096,9 +1010,9 @@ def run_composite(
     safe_name = _sanitize_output_filename(output_filename)
     output_path = out_dir / safe_name
 
-    lines.append(f"Panels: {len(valid_paths)}")
-    lines.append(f"Layout: {layout}")
-    lines.append(f"Output: {output_path}")
+    lines.append(t("composite.panels", count=len(valid_paths)))
+    lines.append(t("composite.layout", layout=layout))
+    lines.append(t("composite.output", path=output_path))
 
     try:
         compose_images(
@@ -1112,13 +1026,13 @@ def run_composite(
             output_path=output_path,
         )
     except (ValueError, OSError) as e:
-        lines.append("FAILED")
-        lines.append(f"{type(e).__name__}: {e}")
+        lines.append(t("run.failed"))
+        lines.append(localize_error(e, t))
         return "\n".join(lines), None
     except Exception as e:
-        lines.append("FAILED")
-        lines.append(f"{type(e).__name__}: {e}\n\n{traceback.format_exc()}")
+        lines.append(t("run.failed"))
+        lines.append(localize_error(e, t))
         return "\n".join(lines), None
 
-    lines.append("Done.")
+    lines.append(t("common.done"))
     return "\n".join(lines), str(output_path)

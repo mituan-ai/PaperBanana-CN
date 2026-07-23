@@ -347,14 +347,7 @@ class BenchmarkRunner:
             split=split,
             task=task,
             mode=mode,
-            settings_snapshot=self.settings.model_dump(
-                exclude={
-                    "google_api_key",
-                    "openai_api_key",
-                    "openrouter_api_key",
-                    "anthropic_api_key",
-                }
-            ),
+            settings_snapshot=self.settings.non_secret_dump(),
             total_entries=len(entries),
             completed=len(completed),
             failed=len(failed),

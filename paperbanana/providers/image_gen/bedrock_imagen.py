@@ -10,9 +10,9 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from paperbanana.providers.base import ImageGenProvider
+from paperbanana.providers.base import ImageGenProvider, ImageSizeMode, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -40,10 +40,12 @@ class BedrockImageGen(ImageGenProvider):
         model: str = "amazon.nova-canvas-v1:0",
         region: str = "us-east-1",
         profile: Optional[str] = None,
+        timeout_seconds: float = 180.0,
     ):
         self._model = model
         self._region = region
         self._profile = profile
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -58,6 +60,14 @@ class BedrockImageGen(ImageGenProvider):
     def supported_ratios(self) -> list[str]:
         return list(self._RATIO_TO_DIMENSIONS.keys())
 
+    @property
+    def supported_resolutions(self) -> list[str]:
+        return ["1k"]
+
+    @property
+    def size_mode(self) -> ImageSizeMode:
+        return ImageSizeMode.FIXED
+
     def _get_client(self):
         if self._client is None:
             try:
@@ -71,7 +81,18 @@ class BedrockImageGen(ImageGenProvider):
                 region_name=self._region,
                 profile_name=self._profile,
             )
-            self._client = session.client("bedrock-runtime")
+            client_kwargs = {}
+            try:
+                from botocore.config import Config
+
+                client_kwargs["config"] = Config(
+                    connect_timeout=self._timeout_seconds,
+                    read_timeout=self._timeout_seconds,
+                )
+            except ImportError:
+                # Lightweight test stubs may provide boto3 without botocore.
+                pass
+            self._client = session.client("bedrock-runtime", **client_kwargs)
         return self._client
 
     def is_available(self) -> bool:
@@ -89,11 +110,14 @@ class BedrockImageGen(ImageGenProvider):
     def _resolve_dimensions(
         self, width: int, height: int, aspect_ratio: Optional[str] = None
     ) -> tuple[int, int]:
-        """Return pixel dimensions for the closest supported ratio."""
+        """Return the provider's exact dimensions for a supported ratio."""
         if aspect_ratio and aspect_ratio in self._RATIO_TO_DIMENSIONS:
             return self._RATIO_TO_DIMENSIONS[aspect_ratio]
 
-        # Snap width/height to the closest supported ratio.
+        if aspect_ratio:
+            raise ValueError(f"Bedrock image provider does not support aspect ratio {aspect_ratio}")
+
+        # No explicit ratio was requested, so infer a native default from dimensions.
         ratio = width / height
         best_key = "1:1"
         best_diff = float("inf")
@@ -103,6 +127,13 @@ class BedrockImageGen(ImageGenProvider):
                 best_diff = diff
                 best_key = key
         return self._RATIO_TO_DIMENSIONS[best_key]
+
+    def requested_size_label(
+        self, aspect_ratio: str, resolution: str, width: int, height: int
+    ) -> str:
+        self.validate_output_options(aspect_ratio, resolution)
+        resolved_width, resolved_height = self._RATIO_TO_DIMENSIONS[aspect_ratio]
+        return f"{resolved_width}x{resolved_height} px"
 
     @staticmethod
     def _build_nova_canvas_payload(
@@ -133,7 +164,11 @@ class BedrockImageGen(ImageGenProvider):
             "imageGenerationConfig": image_config,
         }
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

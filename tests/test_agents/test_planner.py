@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
+import pytest
 from PIL import Image
 
 from paperbanana.agents.planner import PlannerAgent
@@ -123,6 +124,15 @@ async def test_planner_attaches_user_sketch_images_after_exemplars(tmp_path):
     assert images[-1].size == (4, 4)
     # The prompt labels the trailing image parts as user-provided.
     assert "User-Provided Reference/Sketch" in vlm.captured["prompt"]
+
+
+@pytest.mark.parametrize("ratio", ["4:5", "5:4"])
+def test_planner_accepts_all_shared_aspect_ratios(ratio):
+    description, parsed = PlannerAgent._parse_ratio(
+        f"a detailed description\nRECOMMENDED_RATIO: {ratio}"
+    )
+    assert description == "a detailed description"
+    assert parsed == ratio
 
 
 async def test_planner_without_user_images_keeps_prompt_unchanged(tmp_path):

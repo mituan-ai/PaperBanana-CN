@@ -2,24 +2,16 @@
 <table align="center" width="100%" style="border: none; border-collapse: collapse;">
   <tr>
     <td width="220" align="left" valign="middle" style="border: none;">
-      <img src="https://dwzhu-pku.github.io/PaperBanana/static/images/logo.jpg" alt="PaperBanana Logo" width="180"/>
+      <img src="paperbanana/studio/assets/paperbanana-cn-logo.jpg" alt="PaperBanana-CN Logo" width="180"/>
     </td>
     <td align="left" valign="middle" style="border: none;">
-      <h1>PaperBanana</h1>
-      <p><strong>Automated Academic Illustration for AI Scientists</strong></p>
+      <h1>PaperBanana-CN V2</h1>
+      <p><strong>PaperBanana with independent model connections and a Chinese Studio</strong></p>
       <p>
-        <a href="https://github.com/llmsresearch/paperbanana/actions/workflows/ci.yml"><img src="https://github.com/llmsresearch/paperbanana/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-        <a href="https://pypi.org/project/paperbanana/"><img src="https://img.shields.io/pypi/dm/paperbanana?label=PyPI%20downloads&logo=pypi&logoColor=white" alt="PyPI Downloads"/></a>
-        <a href="https://huggingface.co/spaces/llmsresearch/paperbanana"><img src="https://img.shields.io/badge/Demo-HuggingFace-yellow?logo=huggingface&logoColor=white" alt="Demo"/></a>
-        <a href="https://colab.research.google.com/github/llmsresearch/paperbanana/blob/main/notebooks/PaperBanana_Colab_Quickstart.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"/></a>
-        <br/>
+        <a href="https://github.com/mituan-ai/PaperBanana-CN/actions/workflows/ci.yml"><img src="https://github.com/mituan-ai/PaperBanana-CN/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
         <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python 3.10+"/></a>
         <a href="https://arxiv.org/abs/2601.23265"><img src="https://img.shields.io/badge/arXiv-2601.23265-b31b1b?logo=arxiv&logoColor=white" alt="arXiv"/></a>
         <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?logo=opensourceinitiative&logoColor=white" alt="License: MIT"/></a>
-        <br/>
-        <a href="https://pydantic.dev"><img src="https://img.shields.io/badge/Pydantic-v2-e92063?logo=pydantic&logoColor=white" alt="Pydantic v2"/></a>
-        <a href="https://typer.tiangolo.com"><img src="https://img.shields.io/badge/CLI-Typer-009688?logo=gnubash&logoColor=white" alt="Typer"/></a>
-        <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Gemini-Free%20Tier-4285F4?logo=google&logoColor=white" alt="Gemini Free Tier"/></a>
       </p>
     </td>
   </tr>
@@ -27,13 +19,29 @@
 
 ---
 
+> **Version notice**: `main` is PaperBanana-CN V2. The frozen V1 implementation and its
+> complete history remain available on the [`v1`](https://github.com/mituan-ai/PaperBanana-CN/tree/v1)
+> branch and in the [`v1.0.0`](https://github.com/mituan-ai/PaperBanana-CN/releases/tag/v1.0.0)
+> release.
+
 > **Disclaimer**: This is an **unofficial, community-driven open-source implementation** of the paper
 > *"PaperBanana: Automating Academic Illustration for AI Scientists"* by Dawei Zhu, Rui Meng, Yale Song,
 > Xiyu Wei, Sujian Li, Tomas Pfister, and Jinsung Yoon ([arXiv:2601.23265](https://arxiv.org/abs/2601.23265)).
 > This project is **not affiliated with or endorsed by** the original authors or Google Research.
 > The implementation is based on the publicly available paper and may differ from the original system.
 
-An agentic framework for generating publication-quality academic diagrams and statistical plots from text descriptions. Supports OpenAI (GPT-5.2 + GPT-Image-1.5), Azure OpenAI / Foundry, Google Gemini, and Atlas Cloud providers.
+PaperBanana-CN keeps the upstream PaperBanana research-illustration workflow and adds three
+product-level capabilities:
+
+- Independent saved connections for the VLM and image generator. Each role has its own provider,
+  Base URL, API key, model, and timeout.
+- A Chinese-first Studio with an English locale. Interface language does not alter prompts or the
+  language used inside figures.
+- One shared set of ten aspect ratios and `1K` / `2K` / `4K` resolution controls, validated against
+  the selected image provider before generation.
+
+The upstream multi-agent pipeline, statistical plots, evaluation, batch generation, orchestration,
+run continuation, CLI, and MCP workflows remain in place.
 
 - Two-phase multi-agent pipeline with iterative refinement
 - Multiple VLM and image generation providers (OpenAI, Azure, Gemini, Atlas Cloud)
@@ -65,28 +73,18 @@ Check out Atlas Cloud's new coding plan promotion for more budget-friendly API a
 
 ## Quick Start
 
-> **Try it in your browser:** the
-> [Colab quickstart notebook](https://colab.research.google.com/github/llmsresearch/paperbanana/blob/main/notebooks/PaperBanana_Colab_Quickstart.ipynb)
-> walks through install → API key → diagram generation end-to-end, no local setup required.
-
 ### Prerequisites
 
 - Python 3.10+
 - An OpenAI API key ([platform.openai.com](https://platform.openai.com/api-keys)) or Azure OpenAI / Foundry endpoint
 - Or a Google Gemini API key (free, [Google AI Studio](https://makersuite.google.com/app/apikey))
 
-### Step 1: Install
+### Step 1: Install PaperBanana-CN
 
 ```bash
-pip install paperbanana
-```
-
-Or install from source for development:
-
-```bash
-git clone https://github.com/llmsresearch/paperbanana.git
-cd paperbanana
-pip install -e ".[dev,openai,google]"
+git clone https://github.com/mituan-ai/PaperBanana-CN.git
+cd PaperBanana-CN
+pip install -e ".[openai,google,studio,mcp]"
 ```
 
 #### Docker
@@ -104,31 +102,43 @@ To generate a diagram, mount your input and an outputs folder into `/work`:
 docker run --rm -e GOOGLE_API_KEY \
   -v "$(pwd)/method.txt:/work/method.txt:ro" \
   -v "$(pwd)/outputs:/work/outputs" \
-  paperbanana generate --input method.txt --caption "Overview of our framework"
+  paperbanana generate --legacy-connections \
+  --input method.txt --caption "Overview of our framework"
 ```
 
-### Step 2: Get Your API Key
+### Step 2: Save the two model connections
 
 ```bash
-cp .env.example .env
-# Edit .env and add your API key:
-#   OPENAI_API_KEY=your-key-here
-#   GOOGLE_API_KEY=your-key-here
-#
-# For Azure OpenAI / Foundry:
-#   OPENAI_BASE_URL=https://<resource>.openai.azure.com/openai/v1
-#
-# Optional Gemini overrides:
-#   GOOGLE_BASE_URL=https://your-gemini-proxy.example.com
-#   GOOGLE_VLM_MODEL=gemini-2.5-flash
-#   GOOGLE_IMAGE_MODEL=gemini-3-pro-image-preview
+paperbanana connections add \
+  --role vlm \
+  --name "My VLM" \
+  --provider openai \
+  --base-url https://relay.example.com/v1 \
+  --model your-vlm-model
+
+paperbanana connections add \
+  --role image \
+  --name "My image model" \
+  --provider openai_imagen \
+  --base-url https://image-relay.example.com/v1 \
+  --model your-image-model \
+  --size-mode explicit_pixels
 ```
 
-Or use the setup wizard for Gemini:
+Each command prompts for the role's API key without echoing it. Use the adapter and `--size-mode`
+that match the endpoint's actual protocol; `explicit_pixels` is appropriate only when the image
+endpoint accepts arbitrary `WIDTHxHEIGHT` sizes. Inspect or test saved profiles with:
 
 ```bash
-paperbanana setup
+paperbanana connections list
+paperbanana connections test <vlm-profile-id>
+paperbanana connections test <image-profile-id>          # local validation only
+paperbanana connections test <image-profile-id> --paid   # sends a real test image request
 ```
+
+The most recently saved profile for each role becomes active. Non-secret profile data and API keys
+are stored separately in the operating system's private application directories; keys are never
+written to repository YAML or run metadata. See [Connection configuration](docs/CONNECTIONS.md).
 
 ### Step 3: Generate a Diagram
 
@@ -151,14 +161,19 @@ Output is saved to `outputs/run_<timestamp>/final_output.png` along with all int
 
 ### PaperBanana Studio (local web UI)
 
-Install the optional Gradio dependency, then start the app:
+Start the Studio installed in Step 1:
 
 ```bash
-pip install 'paperbanana[studio]'
 paperbanana studio
 ```
 
-Open the URL shown in the terminal (default `http://127.0.0.1:7860/`). The Studio exposes the same workflows as the CLI: methodology diagrams, statistical plots, comparative evaluation, continuing a prior run, batch manifests (methodology or **plot** batch via the Batch tab), and a simple browser for `run_*` / `batch_*` output folders. Use `--host`, `--port`, `--config`, and `--output-dir` as needed.
+Open the URL shown in the terminal (default `http://127.0.0.1:7860/`). The desktop Studio has nine production pages: methodology diagrams, statistical plots, comparative evaluation, continuing a prior run, paper orchestration, methodology or plot batches, parameter sweeps, deterministic multi-image composition, and a browser for `run_*` / `batch_*` outputs. Benchmark, ablation, dataset, venue-management, polish, IR regeneration, and TikZ tools remain available through CLI or MCP instead of being duplicated in Studio.
+
+Studio opens in Chinese by default. Its VLM and image connection editors support creating, copying,
+renaming, deleting, testing, and explicitly saving a profile for use. API keys are never filled back
+into the browser; an empty key field keeps the saved value. Chinese and English share one Studio page
+and switch immediately without navigation, refresh, or the Gradio Settings dialog. The preference is
+remembered across reloads and does not alter the language used inside generated figures.
 
 ---
 
@@ -190,16 +205,16 @@ PaperBanana supports multiple VLM and image generation providers:
 
 | Component | Provider | Model | Notes |
 |-----------|----------|-------|-------|
-| VLM (planning, critique) | OpenAI | `gpt-5.2` | Default |
-| Image Generation | OpenAI | `gpt-image-1.5` | Default |
+| VLM (planning, critique) | OpenAI | `gpt-5.2` | OpenAI-compatible adapter |
+| Image Generation | OpenAI | `gpt-image-1.5` | Fixed native sizes by default |
 | VLM | Atlas Cloud | `deepseek-ai/DeepSeek-V3-0324` | OpenAI-compatible chat endpoint |
 | Image Generation | Atlas Cloud | `openai/gpt-image-2/text-to-image` | Async prediction API |
-| VLM | Google Gemini | `gemini-2.5-flash` | Low cost |
-| Image Generation | Google Gemini | `gemini-3-pro-image-preview` | $0.134/image (1K) |
+| VLM | Google Gemini | `gemini-2.5-flash` | Legacy Settings default |
+| Image Generation | Google Gemini | `gemini-3-pro-image-preview` | Legacy Settings default |
 | VLM / Image | OpenRouter | Any supported model | Flexible routing |
 
-Azure OpenAI / Foundry endpoints are auto-detected — set `OPENAI_BASE_URL` to your endpoint.
-Gemini-compatible gateways are also supported — set `GOOGLE_BASE_URL` when needed.
+OpenAI-compatible and Gemini-compatible endpoints can be selected per role in a saved profile.
+The environment variables below are retained for explicit legacy mode.
 Atlas Cloud uses `ATLASCLOUD_BASE_URL=https://api.atlascloud.ai/v1` for chat and `ATLASCLOUD_IMAGE_BASE_URL=https://api.atlascloud.ai/api/v1` for image generation.
 
 Atlas Cloud official site:
@@ -278,10 +293,15 @@ paperbanana generate \
 | `--continue-run` | | Continue from a specific run ID |
 | `--feedback` | | User feedback for the critic when continuing a run |
 | `--pdf-pages` | | PDF input only: 1-based pages (e.g. `1-5`, `2,4,6-8`; default: all) |
-| `--vlm-provider` | | VLM provider name (default: `openai`) |
-| `--vlm-model` | | VLM model name (default: `gpt-5.2`) |
-| `--image-provider` | | Image gen provider (default: `openai_imagen`) |
-| `--image-model` | | Image gen model (default: `gpt-image-1.5`) |
+| `--vlm-provider` | | Legacy-mode VLM provider name |
+| `--vlm-model` | | Legacy-mode VLM model name |
+| `--image-provider` | | Legacy-mode image provider name |
+| `--image-model` | | Legacy-mode image model name |
+| `--vlm-connection` | | Saved VLM profile ID; otherwise the active VLM profile is used |
+| `--image-connection` | | Saved image profile ID; otherwise the active image profile is used |
+| `--legacy-connections` | | Explicitly use upstream YAML/environment connection settings |
+| `--aspect-ratio` | `-ar` | One of `1:1`, `4:3`, `3:2`, `5:4`, `16:9`, `21:9`, `4:5`, `3:4`, `2:3`, `9:16` |
+| `--resolution` | | Image resolution tier: `1K`, `2K`, or `4K` |
 | `--format` | `-f` | Output format: `png`, `jpeg`, or `webp` (default: `png`) |
 | `--config` | | Path to YAML config file (see `configs/config.yaml`) |
 | `--verbose` | `-v` | Show detailed agent progress and timing |
@@ -569,7 +589,7 @@ Requires an image provider that supports guided image edits (Google Gemini image
 
 ### `paperbanana studio` -- Local web UI
 
-Requires `pip install 'paperbanana[studio]'` (Gradio).
+Requires `pip install 'paperbanana[studio]'` (the Studio dependency is pinned to Gradio `6.20.0`).
 
 ```bash
 paperbanana studio
@@ -591,8 +611,10 @@ paperbanana studio --port 8080 --output-dir ./my_outputs
 paperbanana setup
 ```
 
-Interactive wizard that first asks whether to use the official Gemini API.
+Legacy configuration wizard that first asks whether to use the official Gemini API.
 If you choose official API, it follows the default AI Studio key flow; if not, it asks for a custom Gemini-compatible URL and API key.
+Commands use saved profiles by default. Pass `--legacy-connections` to a generation command when you
+intentionally want `.env`, environment variables, or upstream YAML provider fields instead.
 
 ### `paperbanana data` -- Reference Dataset
 
@@ -669,21 +691,20 @@ See `examples/generate_diagram.py` and `examples/generate_plot.py` for complete 
 
 ## MCP Server
 
-PaperBanana includes an MCP server for use with Claude Code, Cursor, or any MCP-compatible client. Add the following config to use it via `uvx` without a local clone:
+PaperBanana-CN includes an MCP server for Claude Code, Cursor, and other MCP-compatible clients.
+Install this repository and configure both active connection profiles first, then add:
 
 ```json
 {
   "mcpServers": {
     "paperbanana": {
-      "command": "uvx",
-      "args": ["--from", "paperbanana[mcp]", "paperbanana-mcp"],
-      "env": { "GOOGLE_API_KEY": "your-google-api-key" }
+      "command": "paperbanana-mcp"
     }
   }
 }
 ```
 
-Eleven MCP tools are exposed: `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, and `download_references`.
+Eleven MCP tools are exposed: `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, and `download_references`. Tools accept explicit VLM/image profile IDs; otherwise they use the active profiles. Legacy environment/YAML settings apply only when a tool call explicitly sets `legacy_connections=true`.
 
 The repo also ships with 3 Claude Code skills:
 - `/generate-diagram <file> [caption]` - generate a methodology diagram from a text file
@@ -714,7 +735,16 @@ See [`integrations/github-action/README.md`](integrations/github-action/README.m
 
 ## Configuration
 
-Default settings are in `configs/config.yaml`. Override via CLI flags or a custom YAML:
+PaperBanana-CN generation entry points use saved VLM and image profiles by default. Pipeline YAML
+continues to configure non-connection settings such as refinement, output, retrieval, and venue.
+Provider/model fields in YAML and environment variables are read only with explicit legacy mode;
+profile IDs and legacy provider options cannot be mixed in one command.
+
+The Python API keeps the upstream `Settings` behavior for compatibility. Applications that want the
+same saved-profile semantics as Studio, CLI, and MCP should call
+`paperbanana.connections.load_runtime_settings()` before constructing the pipeline.
+
+Use a custom YAML for non-connection pipeline settings:
 
 ```bash
 paperbanana generate \
@@ -723,17 +753,9 @@ paperbanana generate \
   --config my_config.yaml
 ```
 
-Key settings:
+Profile-mode YAML must omit `vlm` and `image` connection fields:
 
 ```yaml
-vlm:
-  provider: openai           # openai, atlas, gemini, or openrouter
-  model: gpt-5.2
-
-image:
-  provider: openai_imagen    # openai_imagen, atlas_imagen, google_imagen, or openrouter_imagen
-  model: gpt-image-1.5
-
 pipeline:
   num_retrieval_examples: 10
   refinement_iterations: 3
@@ -751,10 +773,11 @@ output:
   save_metadata: true
 ```
 
-Environment variables (`.env`):
+The shipped `configs/config.yaml` retains upstream provider sections for explicit legacy mode.
+Legacy environment variables (`.env`) include:
 
 ```bash
-# OpenAI (default)
+# OpenAI legacy example
 OPENAI_API_KEY=your-key
 OPENAI_BASE_URL=https://api.openai.com/v1    # or Azure endpoint
 OPENAI_VLM_MODEL=gpt-5.2                      # override model
@@ -767,7 +790,7 @@ ATLASCLOUD_VLM_MODEL=deepseek-ai/DeepSeek-V3-0324
 ATLASCLOUD_IMAGE_BASE_URL=https://api.atlascloud.ai/api/v1
 ATLASCLOUD_IMAGE_MODEL=openai/gpt-image-2/text-to-image
 
-# Google Gemini (alternative, free)
+# Google Gemini legacy defaults
 GOOGLE_API_KEY=your-key
 GOOGLE_BASE_URL=                            # optional custom Gemini-compatible endpoint
 GOOGLE_VLM_MODEL=gemini-2.5-flash          # override Gemini VLM model
@@ -783,6 +806,8 @@ paperbanana/
 ├── paperbanana/
 │   ├── core/          # Pipeline orchestration, types, config, resume, utilities
 │   ├── agents/        # Optimizer, Retriever, Planner, Stylist, Visualizer, Critic
+│   ├── connections/   # Saved VLM/image profiles, secrets, and profile resolution
+│   ├── i18n/          # Chinese and English Studio catalogs
 │   ├── providers/     # VLM and image gen provider implementations
 │   │   ├── vlm/       # OpenAI, Atlas Cloud, Gemini, OpenRouter VLM providers
 │   │   └── image_gen/ # OpenAI, Atlas Cloud, Gemini, OpenRouter image gen providers

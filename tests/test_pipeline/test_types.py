@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from paperbanana.core.types import (
+    ASPECT_RATIO_VALUES,
     CritiqueResult,
     DiagramType,
     DimensionResult,
@@ -32,6 +33,16 @@ def test_generation_input_with_valid_aspect_ratio():
         aspect_ratio="16:9",
     )
     assert gi.aspect_ratio == "16:9"
+
+
+@pytest.mark.parametrize("ratio", ASPECT_RATIO_VALUES)
+def test_generation_input_accepts_every_supported_ratio(ratio):
+    gi = GenerationInput(
+        source_context="Test methodology",
+        communicative_intent="Test caption",
+        aspect_ratio=ratio,
+    )
+    assert gi.aspect_ratio == ratio
 
 
 def test_generation_input_with_invalid_aspect_ratio_raises():

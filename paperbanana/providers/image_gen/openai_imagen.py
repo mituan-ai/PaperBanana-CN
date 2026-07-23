@@ -4,19 +4,17 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Sequence
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from paperbanana.providers.base import ImageGenProvider
+from paperbanana.core.config import OUTPUT_RESOLUTION_VALUES
+from paperbanana.core.types import ASPECT_RATIO_VALUES
+from paperbanana.providers.base import ImageGenProvider, ImageSizeMode, is_retryable_provider_error
 
 logger = structlog.get_logger()
-
-
-def _is_gpt_image_2(model: str) -> bool:
-    return model.lower() == "gpt-image-2"
 
 
 class OpenAIImageGen(ImageGenProvider):
@@ -31,10 +29,32 @@ class OpenAIImageGen(ImageGenProvider):
         api_key: Optional[str] = None,
         model: str = "gpt-image-1.5",
         base_url: str = "https://api.openai.com/v1",
+        size_mode: ImageSizeMode | str = ImageSizeMode.FIXED,
+        supported_ratios: Sequence[str] | None = None,
+        supported_resolutions: Sequence[str] | None = None,
+        timeout_seconds: float = 180.0,
     ):
         self._api_key = api_key
         self._model = model
         self._base_url = base_url
+        self._size_mode = ImageSizeMode(size_mode)
+        default_ratios = (
+            ASPECT_RATIO_VALUES
+            if self._size_mode == ImageSizeMode.EXPLICIT_PIXELS
+            else (
+                "1:1",
+                "3:2",
+                "2:3",
+            )
+        )
+        default_resolutions = (
+            OUTPUT_RESOLUTION_VALUES
+            if self._size_mode == ImageSizeMode.EXPLICIT_PIXELS
+            else ("1k",)
+        )
+        self._supported_ratios = list(supported_ratios or default_ratios)
+        self._supported_resolutions = list(supported_resolutions or default_resolutions)
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -53,6 +73,7 @@ class OpenAIImageGen(ImageGenProvider):
                 self._client = AsyncOpenAI(
                     api_key=self._api_key,
                     base_url=self._base_url,
+                    timeout=self._timeout_seconds,
                 )
             except ImportError:
                 raise ImportError(
@@ -66,14 +87,19 @@ class OpenAIImageGen(ImageGenProvider):
 
     @property
     def supported_ratios(self) -> list[str]:
-        if _is_gpt_image_2(self._model):
-            return ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
-        # Earlier GPT Image models only have 3 native sizes.
-        return ["1:1", "3:2", "2:3"]
+        return list(self._supported_ratios)
+
+    @property
+    def supported_resolutions(self) -> list[str]:
+        return list(self._supported_resolutions)
+
+    @property
+    def size_mode(self) -> ImageSizeMode:
+        return self._size_mode
 
     def _size_string(self, width: int, height: int) -> str:
         """Map pixel dimensions to an OpenAI-supported size string."""
-        if _is_gpt_image_2(self._model):
+        if self._size_mode == ImageSizeMode.EXPLICIT_PIXELS:
             return f"{width}x{height}"
         ratio = width / height
         if ratio > 1.2:
@@ -82,20 +108,26 @@ class OpenAIImageGen(ImageGenProvider):
             return "1024x1536"
         return "1024x1024"
 
-    # OpenAI only supports 1024x1024, 1536x1024, 1024x1536.
-    # Map all aspect ratios to the closest supported size.
+    # Fixed-size OpenAI image protocols expose these exact native ratios.
     _RATIO_TO_SIZE = {
-        "21:9": "1536x1024",
-        "16:9": "1536x1024",
-        "4:3": "1536x1024",
         "3:2": "1536x1024",
         "1:1": "1024x1024",
         "2:3": "1024x1536",
-        "3:4": "1024x1536",
-        "9:16": "1024x1536",
     }
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    def requested_size_label(
+        self, aspect_ratio: str, resolution: str, width: int, height: int
+    ) -> str:
+        self.validate_output_options(aspect_ratio, resolution)
+        if self._size_mode == ImageSizeMode.EXPLICIT_PIXELS:
+            return f"{width}x{height} px"
+        return self._RATIO_TO_SIZE[aspect_ratio] + " px"
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,
@@ -112,10 +144,10 @@ class OpenAIImageGen(ImageGenProvider):
         if negative_prompt:
             full_prompt += f"\n\nAvoid: {negative_prompt}"
 
-        if _is_gpt_image_2(self._model):
+        if self._size_mode == ImageSizeMode.EXPLICIT_PIXELS:
             size = self._size_string(width, height)
         else:
-            size = self._RATIO_TO_SIZE.get(aspect_ratio, self._size_string(width, height))
+            size = self._RATIO_TO_SIZE.get(aspect_ratio or "", self._size_string(width, height))
 
         kwargs = {
             "model": self._model,

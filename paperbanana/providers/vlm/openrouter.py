@@ -6,10 +6,10 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from paperbanana.core.utils import image_to_base64
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -25,9 +25,13 @@ class OpenRouterVLM(VLMProvider):
         self,
         api_key: Optional[str] = None,
         model: str = "google/gemini-3-flash-preview",
+        base_url: str = "https://openrouter.ai/api/v1",
+        timeout_seconds: float = 120.0,
     ):
         self._api_key = api_key
         self._model = model
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -44,20 +48,24 @@ class OpenRouterVLM(VLMProvider):
             import httpx
 
             self._client = httpx.AsyncClient(
-                base_url="https://openrouter.ai/api/v1",
+                base_url=self._base_url,
                 headers={
                     "Authorization": f"Bearer {self._api_key}",
                     "HTTP-Referer": "https://github.com/llmsresearch/paperbanana",
                     "X-Title": "PaperBanana",
                 },
-                timeout=120.0,
+                timeout=self._timeout_seconds,
             )
         return self._client
 
     def is_available(self) -> bool:
         return self._api_key is not None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

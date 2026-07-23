@@ -32,9 +32,13 @@ On validation errors (missing manifest, bad flags), the JSON body includes `"err
 
 ## Installation
 
-### Quick Install (via `uvx`)
+Install PaperBanana-CN from this repository with the `mcp` extra, then create and activate the VLM
+and image profiles used by the server:
 
-No local clone needed. Add the config below to your MCP client.
+```bash
+pip install -e ".[mcp]"
+paperbanana connections list
+```
 
 ### Claude Code
 
@@ -44,9 +48,7 @@ Add to `.claude/claude_code_config.json` (or project-level):
 {
   "mcpServers": {
     "paperbanana": {
-      "command": "uvx",
-      "args": ["--from", "paperbanana[mcp]", "paperbanana-mcp"],
-      "env": { "OPENAI_API_KEY": "your-openai-api-key" }
+      "command": "paperbanana-mcp"
     }
   }
 }
@@ -60,30 +62,20 @@ Add to `.cursor/mcp.json` in your project:
 {
   "mcpServers": {
     "paperbanana": {
-      "command": "uvx",
-      "args": ["--from", "paperbanana[mcp]", "paperbanana-mcp"],
-      "env": { "OPENAI_API_KEY": "your-openai-api-key" }
+      "command": "paperbanana-mcp"
     }
   }
 }
 ```
 
-### Development / Local Install
-
-For contributors or local development:
-
-```bash
-pip install -e ".[mcp]"
-```
-
-This installs `fastmcp` and registers the `paperbanana-mcp` console script. Then use the same MCP config as above but replace the `uvx` command with a direct call:
+For a source checkout without an activated environment, point the client at `uv`:
 
 ```json
 {
   "mcpServers": {
     "paperbanana": {
-      "command": "paperbanana-mcp",
-      "env": { "OPENAI_API_KEY": "your-openai-api-key" }
+      "command": "uv",
+      "args": ["run", "paperbanana-mcp"]
     }
   }
 }
@@ -139,23 +131,10 @@ User: Evaluate the diagram at ./output.png against the reference at ./reference.
 
 ## Configuration
 
-The server reads configuration from environment variables and `.env` files.
+MCP tools use the same saved profiles as Studio and CLI. Each tool accepts `vlm_connection` and,
+when image generation is required, `image_connection`; otherwise the active profile for that role is
+used. The two roles may use different providers, URLs, API keys, models, and timeouts.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | (none) | OpenAI API key (default provider) |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI endpoint (or Azure OpenAI / Foundry URL) |
-| `GOOGLE_API_KEY` | (none) | Google API key (for Gemini provider) |
-| `GOOGLE_BASE_URL` | (none) | Optional custom Gemini-compatible endpoint |
-| `GOOGLE_VLM_MODEL` | (none) | Optional Gemini VLM model override |
-| `GOOGLE_IMAGE_MODEL` | (none) | Optional Gemini image model override |
-| `SKIP_SSL_VERIFICATION` | `false` | Disable SSL verification for proxied environments |
-
-## Listing on MCP Directories
-
-After publishing to PyPI, you can submit PaperBanana to MCP directories for discoverability:
-
-- [Official MCP Registry](https://registry.modelcontextprotocol.io) - uses the `mcp-publisher` CLI; see their docs for the current submission process
-- [Smithery.ai](https://smithery.ai) - submit through their website
-- [Glama.ai](https://glama.ai) - community listing submission
-- [mcp.so](https://mcp.so) - community-driven, submit via their GitHub
+Environment variables and YAML provider fields are legacy inputs. They are used only when the tool
+call sets `legacy_connections=true`, and legacy provider arguments cannot be mixed with profile IDs.
+See [Connection configuration](../docs/CONNECTIONS.md) for storage and migration details.

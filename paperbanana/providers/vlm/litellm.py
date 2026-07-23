@@ -6,10 +6,10 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from paperbanana.core.utils import image_to_base64
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -27,10 +27,12 @@ class LiteLLMVLM(VLMProvider):
         model: str = "openai/gpt-4o-mini",
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
+        timeout_seconds: float = 180.0,
     ):
         self._model = model
         self._api_key = api_key
         self._api_base = api_base
+        self._timeout_seconds = timeout_seconds
 
     @property
     def name(self) -> str:
@@ -48,7 +50,11 @@ class LiteLLMVLM(VLMProvider):
         except ImportError:
             return False
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,
@@ -83,6 +89,7 @@ class LiteLLMVLM(VLMProvider):
             "max_tokens": max_tokens,
             "temperature": temperature,
             "drop_params": True,
+            "timeout": self._timeout_seconds,
         }
 
         if self._api_key:

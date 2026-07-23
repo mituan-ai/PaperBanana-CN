@@ -46,6 +46,8 @@ async def test_api_keys_are_excluded_from_metadata_config_snapshot(tmp_path):
         reference_set_path=str(tmp_path / "refs"),
         refinement_iterations=1,
         save_iterations=True,
+        vlm_api_key="profile-vlm-secret",
+        image_api_key="profile-image-secret",
         google_api_key="google-secret",
         openai_api_key="openai-secret",
         openrouter_api_key="openrouter-secret",
@@ -66,6 +68,8 @@ async def test_api_keys_are_excluded_from_metadata_config_snapshot(tmp_path):
 
     config_snapshot = result.metadata["config_snapshot"]
     for key in (
+        "vlm_api_key",
+        "image_api_key",
         "google_api_key",
         "openai_api_key",
         "openrouter_api_key",
@@ -79,6 +83,8 @@ async def test_api_keys_are_excluded_from_metadata_config_snapshot(tmp_path):
     saved = json.loads(metadata_path.read_text(encoding="utf-8"))
     saved_config_snapshot = saved["config_snapshot"]
     for key in (
+        "vlm_api_key",
+        "image_api_key",
         "google_api_key",
         "openai_api_key",
         "openrouter_api_key",
@@ -89,5 +95,11 @@ async def test_api_keys_are_excluded_from_metadata_config_snapshot(tmp_path):
         assert key not in saved_config_snapshot
 
     serialized_metadata = metadata_path.read_text(encoding="utf-8")
-    for secret in ("anthropic-secret", "atlas-secret", "litellm-secret"):
+    for secret in (
+        "profile-vlm-secret",
+        "profile-image-secret",
+        "anthropic-secret",
+        "atlas-secret",
+        "litellm-secret",
+    ):
         assert secret not in serialized_metadata

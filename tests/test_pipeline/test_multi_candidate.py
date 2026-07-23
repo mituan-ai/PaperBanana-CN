@@ -360,6 +360,7 @@ def test_cli_accepts_valid_num_candidates(tmp_path):
             "--num-candidates",
             "4",
             "--dry-run",
+            "--legacy-connections",
         ],
     )
     assert result.exit_code == 0

@@ -481,6 +481,24 @@ def test_run_rejects_unknown_mode():
         asyncio.run(runner.run([], mode="bogus"))
 
 
+async def test_benchmark_snapshot_excludes_profile_and_legacy_api_keys(tmp_path):
+    settings = Settings(
+        vlm_api_key="profile-vlm-secret",
+        image_api_key="profile-image-secret",
+        google_api_key="legacy-google-secret",
+        openai_api_key="legacy-openai-secret",
+        atlascloud_api_key="legacy-atlas-secret",
+        litellm_api_key="legacy-litellm-secret",
+    )
+    runner = BenchmarkRunner(settings, judge_factory=lambda s: object())
+
+    report = await runner.run([], output_dir=tmp_path / "benchmark")
+
+    assert not any(key.endswith("api_key") for key in report.settings_snapshot)
+    serialized = (tmp_path / "benchmark" / "benchmark_report.json").read_text(encoding="utf-8")
+    assert "secret" not in serialized
+
+
 class _MockVisualizer:
     """Captures vanilla-mode calls and writes a fake output image."""
 

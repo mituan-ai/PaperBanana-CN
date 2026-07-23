@@ -377,13 +377,12 @@ class TestDimensionResolution:
         w, h = gen._resolve_dimensions(768, 1024)
         assert h > w  # should be portrait
 
-    def test_unknown_ratio_falls_back(self):
+    def test_unknown_ratio_is_rejected(self):
         from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
 
         gen = BedrockImageGen()
-        # Unknown string ratio falls back to dimension snapping
-        w, h = gen._resolve_dimensions(1024, 1024, "5:7")
-        assert (w, h) == (1024, 1024)  # closest is 1:1
+        with pytest.raises(ValueError, match="does not support aspect ratio"):
+            gen._resolve_dimensions(1024, 1024, "5:7")
 
     def test_supported_ratios_matches_dimension_map(self):
         from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen

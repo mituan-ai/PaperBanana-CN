@@ -44,10 +44,71 @@ def test_build_settings_merge(tmp_path):
         max_iterations=10,
         optimize_inputs=True,
         save_prompts=False,
+        legacy_connections=True,
     )
     assert s.output_dir == str(tmp_path / "out")
     assert s.refinement_iterations == 2
     assert s.optimize_inputs is True
+
+
+def test_vlm_only_settings_do_not_require_image_connection(tmp_path):
+    from paperbanana.connections.manager import ConnectionManager
+    from paperbanana.connections.models import ConnectionProfile, ConnectionRole
+    from paperbanana.studio.runner import build_settings
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    vlm = ConnectionProfile(
+        name="VLM only",
+        role=ConnectionRole.VLM,
+        provider="openai",
+        model="vision-model",
+    )
+    manager.save_profile(vlm, api_key="test-secret")
+
+    settings = build_settings(
+        config_path=None,
+        output_dir=str(tmp_path / "out"),
+        vlm_provider="",
+        vlm_model="",
+        image_provider="",
+        image_model="",
+        output_format="png",
+        refinement_iterations=2,
+        auto_refine=False,
+        max_iterations=10,
+        optimize_inputs=False,
+        save_prompts=True,
+        connection_manager=manager,
+        required_roles=(ConnectionRole.VLM,),
+    )
+
+    assert settings.vlm_model == "vision-model"
+    assert settings.image_provider == "none"
+    assert settings.image_api_key is None
+
+
+def test_workflow_specs_and_dynamic_roles(tmp_path):
+    from paperbanana.connections.models import ConnectionRole
+    from paperbanana.studio.models import (
+        WORKFLOW_BY_KEY,
+        roles_for_batch_type,
+        roles_for_saved_run,
+    )
+
+    assert WORKFLOW_BY_KEY["diagram"].required_roles == (
+        ConnectionRole.VLM,
+        ConnectionRole.IMAGE,
+    )
+    assert WORKFLOW_BY_KEY["plot"].required_roles == (ConnectionRole.VLM,)
+    assert WORKFLOW_BY_KEY["composite"].required_roles == ()
+    assert roles_for_batch_type("statistical_plot") == (ConnectionRole.VLM,)
+
+    run_dir = tmp_path / "run_plot"
+    run_dir.mkdir()
+    (run_dir / "run_input.json").write_text(
+        '{"diagram_type": "statistical_plot"}', encoding="utf-8"
+    )
+    assert roles_for_saved_run(str(tmp_path), "run_plot") == (ConnectionRole.VLM,)
 
 
 def test_build_studio_app():
@@ -57,6 +118,143 @@ def test_build_studio_app():
     _ = gradio
     demo = build_studio_app(default_output_dir="outputs", config_path=None)
     assert demo is not None
+
+
+def test_studio_server_mounts_one_single_page_app(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from paperbanana.connections.manager import ConnectionManager
+    from paperbanana.studio.app import build_studio_server_app
+    from paperbanana.studio.branding import BRAND_LOGO_PATH
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    app = build_studio_server_app(connection_manager=manager, server_port=7788)
+    with TestClient(app, follow_redirects=False) as client:
+        root = client.get("/")
+        assert root.status_code == 200
+        assert "location" not in root.headers
+        assert client.get("/zh-CN/").status_code == 404
+        assert client.get("/en/").status_code == 404
+        expected_logo = BRAND_LOGO_PATH.read_bytes()
+        brand_logo = client.get("/paperbanana-assets/paperbanana-cn-logo.jpg")
+        favicon = client.get("/favicon.ico")
+        assert brand_logo.status_code == 200
+        assert favicon.status_code == 200
+        assert brand_logo.headers["content-type"] == "image/jpeg"
+        assert favicon.headers["content-type"] == "image/jpeg"
+        assert brand_logo.content == expected_logo
+        assert favicon.content == expected_logo
+
+
+def test_launch_studio_share_uses_gradio_620_tunnel_signature(monkeypatch):
+    import gradio.networking
+    import uvicorn
+
+    from paperbanana.studio import app as app_module
+
+    tunnel_args = {}
+
+    class FakeServer:
+        def __init__(self, _config):
+            self.started = False
+            self.should_exit = False
+
+        def run(self):
+            self.started = True
+
+    def fake_setup_tunnel(**kwargs):
+        tunnel_args.update(kwargs)
+        return "https://studio.example"
+
+    monkeypatch.setattr(uvicorn, "Server", FakeServer)
+    monkeypatch.setattr(gradio.networking, "setup_tunnel", fake_setup_tunnel)
+    monkeypatch.setattr(app_module.secrets, "token_urlsafe", lambda _size: "share-token")
+
+    app_module.launch_studio(host="127.0.0.1", port=7788, share=True)
+
+    assert tunnel_args == {
+        "local_host": "127.0.0.1",
+        "local_port": 7788,
+        "share_token": "share-token",
+        "share_server_address": None,
+        "share_server_tls_certificate": None,
+    }
+
+
+def test_studio_defaults_persist_without_form_state(tmp_path):
+    from paperbanana.connections.manager import ConnectionManager
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    manager.save_studio_defaults(output_dir="/tmp/paperbanana-runs", config_path="config.yaml")
+    reloaded = manager.load()
+    assert reloaded.studio_output_dir == "/tmp/paperbanana-runs"
+    assert reloaded.studio_config_path == "config.yaml"
+
+
+def test_image_options_follow_provider_capabilities(tmp_path):
+    from paperbanana.connections.manager import ConnectionManager
+    from paperbanana.connections.models import ConnectionProfile, ConnectionRole
+    from paperbanana.i18n import get_translator
+    from paperbanana.studio.connections_ui import resolve_image_options
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    fixed = ConnectionProfile(
+        name="fixed",
+        role=ConnectionRole.IMAGE,
+        provider="openai_imagen",
+        model="gpt-image-1.5",
+        image_size_mode="fixed",
+    )
+    explicit = fixed.model_copy(
+        update={"id": "explicit", "name": "explicit", "image_size_mode": "explicit_pixels"}
+    )
+    manager.save_profile(fixed, api_key="key")
+    manager.save_profile(explicit, api_key="key")
+    t = get_translator("en")
+
+    fixed_options = resolve_image_options(manager, fixed.id, "4:5", "4k", t)
+    assert fixed_options.ratios == ["1:1", "3:2", "2:3"]
+    assert fixed_options.resolutions == ["1k"]
+    assert fixed_options.selected_ratio is None
+    assert "unsupported" in fixed_options.preview
+
+    explicit_options = resolve_image_options(manager, explicit.id, "4:5", "4k", t)
+    assert len(explicit_options.ratios) == 10
+    assert explicit_options.resolutions == ["1k", "2k", "4k"]
+    assert explicit_options.selected_ratio == "4:5"
+    assert explicit_options.selected_resolution == "4k"
+    assert "px" in explicit_options.preview
+
+
+def test_studio_batch_reuses_shared_runner_and_localizes_summary(tmp_path, monkeypatch):
+    from paperbanana.core.config import Settings
+    from paperbanana.studio.runner import run_batch
+
+    captured = {}
+
+    def _fake_shared(**kwargs):
+        captured.update(kwargs)
+        kwargs["progress_callback"]("Item 1/1 figure-1: ok -> /tmp/result.png")
+        return {
+            "batch_dir": str(tmp_path / "batch_1"),
+            "batch_report_path": str(tmp_path / "batch_1" / "batch_report.json"),
+            "succeeded": 1,
+            "failed": 0,
+            "skipped": 0,
+        }
+
+    monkeypatch.setattr("paperbanana.core.workflow_runner.run_methodology_batch", _fake_shared)
+    settings = Settings(output_dir=str(tmp_path))
+    log, batch_dir = run_batch(
+        settings,
+        str(tmp_path / "manifest.json"),
+        locale="zh-CN",
+    )
+
+    assert captured["runtime_settings"] is settings
+    assert "成功" in log
+    assert "批处理完成" in log
+    assert batch_dir.endswith("batch_1")
 
 
 def test_run_composite_smoke(tmp_path):

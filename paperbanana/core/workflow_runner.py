@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 import structlog
 
+from paperbanana.connections.models import ConnectionRole
+from paperbanana.connections.resolver import load_runtime_settings
 from paperbanana.core.batch import (
     checkpoint_progress,
     generate_batch_id,
@@ -53,13 +55,25 @@ def _load_settings(
     *,
     config: str | None,
     overrides: dict[str, Any],
+    vlm_profile_id: str | None = None,
+    image_profile_id: str | None = None,
+    legacy_connections: bool = False,
+    required_roles: tuple[ConnectionRole, ...] = (
+        ConnectionRole.VLM,
+        ConnectionRole.IMAGE,
+    ),
 ) -> Settings:
-    if config:
-        return Settings.from_yaml(config, **overrides)
-    from dotenv import load_dotenv
-
-    load_dotenv()
-    return Settings(**overrides)
+    legacy_keys = {"vlm_provider", "vlm_model", "image_provider", "image_model"}
+    if not legacy_connections and legacy_keys.intersection(overrides):
+        raise ValueError("Provider/model overrides require explicit legacy connection mode")
+    return load_runtime_settings(
+        config_path=config,
+        overrides=overrides,
+        vlm_profile_id=vlm_profile_id,
+        image_profile_id=image_profile_id,
+        legacy=legacy_connections,
+        required_roles=required_roles,
+    )
 
 
 def run_methodology_batch(
@@ -71,6 +85,9 @@ def run_methodology_batch(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_profile_id: str | None = None,
+    image_profile_id: str | None = None,
+    legacy_connections: bool = False,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -84,6 +101,7 @@ def run_methodology_batch(
     max_retries: int = 0,
     concurrency: int = 1,
     progress_callback: Callable[[str], None] | None = None,
+    runtime_settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Run methodology batch; mirrors ``paperbanana batch``."""
     from paperbanana.core.pipeline import PaperBananaPipeline
@@ -140,7 +158,16 @@ def run_methodology_batch(
     if venue:
         overrides["venue"] = venue
 
-    settings = _load_settings(config=config, overrides=overrides)
+    if runtime_settings is None:
+        settings = _load_settings(
+            config=config,
+            overrides=overrides,
+            vlm_profile_id=vlm_profile_id,
+            image_profile_id=image_profile_id,
+            legacy_connections=legacy_connections,
+        )
+    else:
+        settings = runtime_settings.model_copy(update=overrides)
 
     if auto_download_data:
         dm = DatasetManager(cache_dir=settings.cache_dir)
@@ -315,6 +342,9 @@ def run_plot_batch(
     vlm_model: str | None = None,
     image_provider: str | None = None,
     image_model: str | None = None,
+    vlm_profile_id: str | None = None,
+    image_profile_id: str | None = None,
+    legacy_connections: bool = False,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -328,6 +358,7 @@ def run_plot_batch(
     max_retries: int = 0,
     concurrency: int = 1,
     progress_callback: Callable[[str], None] | None = None,
+    runtime_settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Run statistical plot batch; mirrors ``paperbanana plot-batch``."""
     from paperbanana.core.pipeline import PaperBananaPipeline
@@ -380,10 +411,17 @@ def run_plot_batch(
     overrides["save_prompts"] = True if save_prompts is None else save_prompts
     if venue:
         overrides["venue"] = venue
-    if not vlm_provider:
-        overrides.setdefault("vlm_provider", "gemini")
-
-    settings = _load_settings(config=config, overrides=overrides)
+    if runtime_settings is None:
+        settings = _load_settings(
+            config=config,
+            overrides=overrides,
+            vlm_profile_id=vlm_profile_id,
+            image_profile_id=image_profile_id,
+            legacy_connections=legacy_connections,
+            required_roles=(ConnectionRole.VLM,),
+        )
+    else:
+        settings = runtime_settings.model_copy(update=overrides)
 
     state = init_or_load_checkpoint(
         batch_dir=batch_dir,
@@ -532,6 +570,9 @@ def run_orchestration_package(
     vlm_model: str | None,
     image_provider: str | None,
     image_model: str | None,
+    vlm_profile_id: str | None = None,
+    image_profile_id: str | None = None,
+    legacy_connections: bool = False,
     iterations: int | None,
     auto: bool,
     max_iterations: int | None,
@@ -544,6 +585,7 @@ def run_orchestration_package(
     concurrency: int,
     progress_callback: Callable[[str], None] | None = None,
     after_plan_callback: Callable[[dict[str, Any]], None] | None = None,
+    runtime_settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Plan and/or run figure-package orchestration; mirrors ``paperbanana orchestrate``."""
     is_resume = bool(resume_orchestrate)
@@ -626,7 +668,16 @@ def run_orchestration_package(
     if venue:
         overrides["venue"] = venue
 
-    settings = _load_settings(config=config, overrides=overrides)
+    if runtime_settings is None:
+        settings = _load_settings(
+            config=config,
+            overrides=overrides,
+            vlm_profile_id=vlm_profile_id,
+            image_profile_id=image_profile_id,
+            legacy_connections=legacy_connections,
+        )
+    else:
+        settings = runtime_settings.model_copy(update=overrides)
 
     state = init_or_load_orchestration_checkpoint(
         orchestrate_dir=orchestrate_dir,

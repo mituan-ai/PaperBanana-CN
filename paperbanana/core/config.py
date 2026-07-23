@@ -6,17 +6,32 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings
 
 OutputFormat = Literal["png", "jpeg", "webp"]
 ImageQuality = Literal["low", "medium", "high", "auto"]
+ConnectionSource = Literal["legacy", "profiles"]
+ImageSizeModeName = Literal["explicit_pixels", "native_tier", "fixed", "prompt_hint"]
 ExemplarRetrievalMode = Literal["external_only", "external_then_rerank"]
+OUTPUT_RESOLUTION_VALUES = ("1k", "2k", "4k")
 # Venue is an open name resolved against built-in and user style packs at
 # pipeline startup (see paperbanana.guidelines.venues). Kept as an alias for
 # backward compatibility with earlier Literal-based typing.
 Venue = str
 VectorExportMode = Literal["none", "svg", "pdf", "both"]
+SECRET_SETTING_FIELDS = frozenset(
+    {
+        "vlm_api_key",
+        "image_api_key",
+        "google_api_key",
+        "openrouter_api_key",
+        "openai_api_key",
+        "atlascloud_api_key",
+        "anthropic_api_key",
+        "litellm_api_key",
+    }
+)
 
 
 class VLMConfig(BaseSettings):
@@ -67,6 +82,17 @@ class Settings(BaseSettings):
     vlm_model: str = Field(default="gemini-2.5-flash", alias="VLM_MODEL")
     image_provider: str = Field(default="google_imagen", alias="IMAGE_PROVIDER")
     image_model: str = Field(default="gemini-3-pro-image-preview", alias="IMAGE_MODEL")
+
+    # Role-specific connection values. Profile mode reads only these fields;
+    # legacy mode keeps the upstream provider-specific environment variables.
+    connection_source: ConnectionSource = "legacy"
+    vlm_base_url: Optional[str] = None
+    vlm_api_key: Optional[SecretStr] = None
+    vlm_timeout_seconds: float = Field(default=180.0, gt=0, le=1800)
+    image_base_url: Optional[str] = None
+    image_api_key: Optional[SecretStr] = None
+    image_timeout_seconds: float = Field(default=180.0, gt=0, le=1800)
+    image_size_mode: Optional[ImageSizeModeName] = None
 
     # Pipeline settings
     num_retrieval_examples: int = 10
@@ -170,22 +196,36 @@ class Settings(BaseSettings):
     bedrock_vlm_model: Optional[str] = Field(default=None, alias="BEDROCK_VLM_MODEL")
     bedrock_image_model: Optional[str] = Field(default=None, alias="BEDROCK_IMAGE_MODEL")
 
+    def non_secret_dump(self) -> dict[str, Any]:
+        """Serialize runtime settings without any credential-bearing fields."""
+        return self.model_dump(exclude=SECRET_SETTING_FIELDS)
+
     @property
     def effective_vlm_model(self) -> str:
         """Return the VLM model for the active provider."""
+        if self.connection_source == "profiles":
+            return self.vlm_model
         if self.vlm_provider == "gemini" and self.google_vlm_model:
             return self.google_vlm_model
         if self.vlm_provider == "openai" and self.openai_vlm_model:
+            return self.openai_vlm_model
+        if self.vlm_provider == "openai_local" and self.openai_vlm_model:
             return self.openai_vlm_model
         if self.vlm_provider == "atlas" and self.atlascloud_vlm_model:
             return self.atlascloud_vlm_model
         if self.vlm_provider == "bedrock" and self.bedrock_vlm_model:
             return self.bedrock_vlm_model
+        if self.vlm_provider == "ollama" and self.ollama_model:
+            return self.ollama_model
+        if self.vlm_provider == "litellm" and self.litellm_model:
+            return self.litellm_model
         return self.vlm_model
 
     @property
     def effective_image_model(self) -> str:
         """Return the image model for the active provider."""
+        if self.connection_source == "profiles":
+            return self.image_model
         if self.image_provider == "google_imagen" and self.google_image_model:
             return self.google_image_model
         if self.image_provider == "openai_imagen" and self.openai_image_model:
@@ -224,7 +264,7 @@ class Settings(BaseSettings):
         if v is None:
             return "2k"
         v = str(v).lower()
-        if v not in ("1k", "2k", "4k"):
+        if v not in OUTPUT_RESOLUTION_VALUES:
             raise ValueError(f"output_resolution must be 1k, 2k, or 4k. Got: {v}")
         return v
 

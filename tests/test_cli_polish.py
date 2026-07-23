@@ -41,6 +41,7 @@ class _FakeEditImageGen:
     name = "fake_edit"
     model_name = "fake-edit"
     cost_tracker = None
+    supports_image_edit = True
 
     def __init__(self):
         self.calls: list[dict] = []
@@ -54,6 +55,7 @@ class _TextOnlyImageGen:
     name = "text_only"
     model_name = "text-only"
     cost_tracker = None
+    supports_image_edit = False
 
     async def generate(self, prompt, negative_prompt=None, width=1024, height=1024):
         return Image.new("RGB", (8, 8))
@@ -93,7 +95,7 @@ def test_polish_rejects_text_only_image_provider(tmp_path, monkeypatch):
     _write_figure(figure)
     _patch_providers(monkeypatch, _FakeVLM(), _TextOnlyImageGen())
 
-    result = runner.invoke(app, ["polish", "--input", str(figure)])
+    result = runner.invoke(app, ["polish", "--input", str(figure), "--legacy-connections"])
     assert result.exit_code == 1
     assert "does not support guided image editing" in _strip_ansi(result.output)
 
@@ -106,7 +108,17 @@ def test_polish_single_round_prints_suggestions_and_saves_output(tmp_path, monke
     image_gen = _FakeEditImageGen()
     _patch_providers(monkeypatch, vlm, image_gen)
 
-    result = runner.invoke(app, ["polish", "--input", str(figure), "--output", str(output)])
+    result = runner.invoke(
+        app,
+        [
+            "polish",
+            "--input",
+            str(figure),
+            "--output",
+            str(output),
+            "--legacy-connections",
+        ],
+    )
 
     out = _strip_ansi(result.output)
     assert result.exit_code == 0, out
@@ -133,7 +145,16 @@ def test_polish_iterations_repeat_suggest_apply(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["polish", "--input", str(figure), "--output", str(output), "--iterations", "3"],
+        [
+            "polish",
+            "--input",
+            str(figure),
+            "--output",
+            str(output),
+            "--iterations",
+            "3",
+            "--legacy-connections",
+        ],
     )
 
     assert result.exit_code == 0, _strip_ansi(result.output)
@@ -155,7 +176,16 @@ def test_polish_stops_when_no_more_suggestions(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["polish", "--input", str(figure), "--output", str(output), "--iterations", "5"],
+        [
+            "polish",
+            "--input",
+            str(figure),
+            "--output",
+            str(output),
+            "--iterations",
+            "5",
+            "--legacy-connections",
+        ],
     )
 
     out = _strip_ansi(result.output)
@@ -185,6 +215,7 @@ def test_polish_multi_candidate_fans_out_apply_step(tmp_path, monkeypatch):
             str(output),
             "--num-candidates",
             "3",
+            "--legacy-connections",
         ],
     )
 

@@ -7,10 +7,10 @@ from typing import Optional
 import httpx
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from paperbanana.core.utils import image_to_base64
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -23,10 +23,12 @@ class OllamaVLM(VLMProvider):
         model: str = "qwen2.5-vl",
         base_url: str = "http://localhost:11434/v1",
         json_mode: bool = False,
+        timeout_seconds: float = 300.0,
     ):
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._json_mode = json_mode
+        self._timeout_seconds = timeout_seconds
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -43,7 +45,10 @@ class OllamaVLM(VLMProvider):
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(base_url=self._base_url, timeout=300.0)
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout_seconds,
+            )
         return self._client
 
     async def close(self) -> None:
@@ -58,7 +63,11 @@ class OllamaVLM(VLMProvider):
         except (httpx.ConnectError, httpx.TimeoutException):
             return False
 
-    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=15))
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(min=2, max=15),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

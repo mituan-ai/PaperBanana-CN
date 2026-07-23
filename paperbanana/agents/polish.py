@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 from typing import Optional
@@ -56,16 +55,8 @@ class PolishAgent(BaseAgent):
 
     @staticmethod
     def supports_guided_edit(image_gen: ImageGenProvider) -> bool:
-        """Whether the provider accepts input images for guided editing.
-
-        Image-edit capable providers declare an ``images`` keyword on
-        ``generate`` (see ``GoogleImagenGen``); the base text-to-image
-        contract does not.
-        """
-        try:
-            return "images" in inspect.signature(image_gen.generate).parameters
-        except (TypeError, ValueError):
-            return False
+        """Whether the provider explicitly supports guided image editing."""
+        return bool(getattr(image_gen, "supports_image_edit", False))
 
     def _load_polish_prompt(self, step: str) -> str:
         """Load a polish prompt template (``suggest`` or ``apply``)."""
@@ -123,7 +114,7 @@ class PolishAgent(BaseAgent):
         if not self.supports_guided_edit(self.image_gen):
             raise RuntimeError(
                 f"Image provider '{getattr(self.image_gen, 'name', 'unknown')}' does not "
-                "support guided image editing (no 'images' parameter on generate()). "
+                "support guided image editing. "
                 "Polish mode requires an image-edit capable provider such as 'google'."
             )
 

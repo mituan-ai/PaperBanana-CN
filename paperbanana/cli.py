@@ -20,6 +20,16 @@ from paperbanana.analytics import (
     render_markdown_summary,
     summarize_records,
 )
+from paperbanana.connections.cli import (
+    connections_app,
+)
+from paperbanana.connections.cli import (
+    load_cli_runtime_settings as _load_cli_runtime_settings,
+)
+from paperbanana.connections.cli import (
+    validate_connection_options as _validate_connection_options,
+)
+from paperbanana.connections.models import ConnectionRole
 from paperbanana.core.config import Settings
 from paperbanana.core.logging import configure_logging
 from paperbanana.core.pipeline import PaperBananaPipeline
@@ -103,6 +113,8 @@ venues_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(venues_app, name="venues")
+
+app.add_typer(connections_app, name="connections")
 
 
 def _validate_venue_or_exit(venue: Optional[str], venue_dir: Optional[str] = None) -> None:
@@ -289,6 +301,17 @@ def generate(
         None, "--image-provider", help="Image gen provider"
     ),
     image_model: Optional[str] = typer.Option(None, "--image-model", help="Image gen model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     iterations: Optional[int] = typer.Option(
         None, "--iterations", "-n", help="Refinement iterations"
     ),
@@ -312,7 +335,10 @@ def generate(
         None,
         "--aspect-ratio",
         "-ar",
-        help="Target aspect ratio: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9",
+        help="Target aspect ratio: 1:1, 4:3, 3:2, 5:4, 16:9, 21:9, 4:5, 3:4, 2:3, 9:16",
+    ),
+    resolution: Optional[str] = typer.Option(
+        None, "--resolution", help="Image resolution tier: 1K, 2K, or 4K"
     ),
     format: str = typer.Option(
         "png",
@@ -492,6 +518,13 @@ def generate(
     if image and (continue_last or continue_run):
         console.print("[red]Error: --image cannot be used with --continue or --continue-run[/red]")
         raise typer.Exit(1)
+    legacy_overrides = any([vlm_provider, vlm_model, image_provider, image_model])
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=legacy_overrides,
+    )
 
     # Validate reference/sketch images before any pipeline work starts.
     input_images: list[str] = []
@@ -600,14 +633,16 @@ def generate(
         overrides["export_tikz"] = True
     if parsed_categories:
         overrides["reference_category"] = parsed_categories
+    if resolution is not None:
+        overrides["output_resolution"] = resolution
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-        settings = Settings(**overrides)
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
     from paperbanana.core.pipeline import PaperBananaPipeline
 
@@ -1092,6 +1127,17 @@ def regenerate_from_ir(
         help="Image gen provider",
     ),
     image_model: Optional[str] = typer.Option(None, "--image-model", help="Image gen model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     iterations: Optional[int] = typer.Option(
         None,
         "--iterations",
@@ -1108,7 +1154,7 @@ def regenerate_from_ir(
         None,
         "--aspect-ratio",
         "-ar",
-        help="Target aspect ratio: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9",
+        help="Target aspect ratio: 1:1, 4:3, 3:2, 5:4, 16:9, 21:9, 4:5, 3:4, 2:3, 9:16",
     ),
     format: str = typer.Option(
         "png",
@@ -1169,7 +1215,19 @@ def regenerate_from_ir(
     if save_prompts is not None:
         overrides["save_prompts"] = save_prompts
 
-    settings = Settings.from_yaml(config, **overrides) if config else Settings(**overrides)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
     input_path = Path(input)
     if not input_path.exists():
@@ -1292,6 +1350,17 @@ def sweep(
         help="Parent directory for sweep outputs (sweep_<id> will be created here)",
     ),
     config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML file"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connections and enable provider/model axes",
+    ),
     vlm_providers: Optional[str] = typer.Option(
         None,
         "--vlm-providers",
@@ -1387,6 +1456,13 @@ def sweep(
         )
         raise typer.Exit(1)
 
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_providers, vlm_models, image_providers, image_models]),
+    )
+
     configure_logging(verbose=verbose)
 
     from paperbanana.core.sweep import (
@@ -1414,6 +1490,16 @@ def sweep(
         if parsed["max_variants"] is not None:
             max_variants = parsed["max_variants"]
         axes_from_manifest = parsed["axes"]
+        manifest_connection_axes = any(
+            axes_from_manifest[key]
+            for key in ("vlm_providers", "vlm_models", "image_providers", "image_models")
+        )
+        if manifest_connection_axes and not legacy_connections:
+            console.print(
+                "[red]Error: sweep provider/model axes require --legacy-connections. "
+                "Profile mode keeps each saved URL, key, provider, and model together.[/red]"
+            )
+            raise typer.Exit(1)
 
     input_path = Path(input)
     if not input_path.exists():
@@ -1421,19 +1507,27 @@ def sweep(
         raise typer.Exit(1)
     _check_pdf_dep(input_path)
 
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
     from paperbanana.core.source_loader import load_methodology_source
+
+    base_settings = _load_cli_runtime_settings(
+        config=config,
+        overrides={"output_dir": output_dir, "output_format": format},
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
     try:
         if axes_from_manifest is not None:
             variant_list = build_sweep_variants(
-                vlm_providers=[str(x) for x in axes_from_manifest["vlm_providers"]],
-                vlm_models=[str(x) for x in axes_from_manifest["vlm_models"]],
-                image_providers=[str(x) for x in axes_from_manifest["image_providers"]],
-                image_models=[str(x) for x in axes_from_manifest["image_models"]],
+                vlm_providers=[str(x) for x in axes_from_manifest["vlm_providers"]]
+                or [base_settings.vlm_provider],
+                vlm_models=[str(x) for x in axes_from_manifest["vlm_models"]]
+                or [base_settings.effective_vlm_model],
+                image_providers=[str(x) for x in axes_from_manifest["image_providers"]]
+                or [base_settings.image_provider],
+                image_models=[str(x) for x in axes_from_manifest["image_models"]]
+                or [base_settings.effective_image_model],
                 refinement_iterations=[int(x) for x in axes_from_manifest["refinement_iterations"]],
                 optimize_inputs=[bool(x) for x in axes_from_manifest["optimize_inputs"]],
                 auto_refine=[bool(x) for x in axes_from_manifest["auto_refine"]],
@@ -1441,10 +1535,11 @@ def sweep(
             )
         else:
             variant_list = build_sweep_variants(
-                vlm_providers=parse_csv_values(vlm_providers),
-                vlm_models=parse_csv_values(vlm_models),
-                image_providers=parse_csv_values(image_providers),
-                image_models=parse_csv_values(image_models),
+                vlm_providers=parse_csv_values(vlm_providers) or [base_settings.vlm_provider],
+                vlm_models=parse_csv_values(vlm_models) or [base_settings.effective_vlm_model],
+                image_providers=parse_csv_values(image_providers) or [base_settings.image_provider],
+                image_models=parse_csv_values(image_models)
+                or [base_settings.effective_image_model],
                 refinement_iterations=parse_csv_ints(iterations, field_name="--iterations"),
                 optimize_inputs=parse_csv_bools(optimize_modes, field_name="--optimize-modes"),
                 auto_refine=parse_csv_bools(auto_modes, field_name="--auto-modes"),
@@ -1493,11 +1588,6 @@ def sweep(
         return
 
     from paperbanana.core.pipeline import PaperBananaPipeline
-
-    if config:
-        base_settings = Settings.from_yaml(config)
-    else:
-        base_settings = Settings()
 
     if auto_download_data:
         from paperbanana.data.manager import DatasetManager
@@ -1623,6 +1713,17 @@ def batch(
         None, "--image-provider", help="Image gen provider"
     ),
     image_model: Optional[str] = typer.Option(None, "--image-model", help="Image gen model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     iterations: Optional[int] = typer.Option(
         None, "--iterations", "-n", help="Refinement iterations"
     ),
@@ -1680,6 +1781,12 @@ def batch(
     if concurrency < 1:
         console.print("[red]Error: --concurrency must be >= 1[/red]")
         raise typer.Exit(1)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
 
     configure_logging(verbose=verbose)
     manifest_path = Path(manifest)
@@ -1723,6 +1830,9 @@ def batch(
             vlm_model=vlm_model,
             image_provider=image_provider,
             image_model=image_model,
+            vlm_profile_id=vlm_connection,
+            image_profile_id=image_connection,
+            legacy_connections=legacy_connections,
             iterations=iterations,
             auto=auto,
             max_iterations=max_iterations,
@@ -1982,6 +2092,17 @@ def orchestrate(
         None, "--image-provider", help="Image generation provider"
     ),
     image_model: Optional[str] = typer.Option(None, "--image-model", help="Image model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     iterations: Optional[int] = typer.Option(
         None, "--iterations", "-n", help="Refinement iterations per figure"
     ),
@@ -2050,6 +2171,12 @@ def orchestrate(
     if is_resume and pdf_pages:
         console.print("[red]Error: --pdf-pages is only valid for new orchestrations[/red]")
         raise typer.Exit(1)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
 
     configure_logging(verbose=verbose)
 
@@ -2085,6 +2212,9 @@ def orchestrate(
             vlm_model=vlm_model,
             image_provider=image_provider,
             image_model=image_model,
+            vlm_profile_id=vlm_connection,
+            image_profile_id=image_connection,
+            legacy_connections=legacy_connections,
             iterations=iterations,
             auto=auto,
             max_iterations=max_iterations,
@@ -2211,6 +2341,14 @@ def plot_batch(
         None, "--image-provider", help="Image gen provider"
     ),
     image_model: Optional[str] = typer.Option(None, "--image-model", help="Image gen model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     iterations: Optional[int] = typer.Option(
         None, "--iterations", "-n", help="Refinement iterations per plot"
     ),
@@ -2268,6 +2406,12 @@ def plot_batch(
     if concurrency < 1:
         console.print("[red]Error: --concurrency must be >= 1[/red]")
         raise typer.Exit(1)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
 
     configure_logging(verbose=verbose)
     manifest_path = Path(manifest)
@@ -2306,6 +2450,8 @@ def plot_batch(
             vlm_model=vlm_model,
             image_provider=image_provider,
             image_model=image_model,
+            vlm_profile_id=vlm_connection,
+            legacy_connections=legacy_connections,
             iterations=iterations,
             auto=auto,
             max_iterations=max_iterations,
@@ -2356,6 +2502,14 @@ def plot(
         None, "--vlm-provider", help="VLM provider (gemini, openai)"
     ),
     vlm_model: Optional[str] = typer.Option(None, "--vlm-model", help="VLM model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     iterations: Optional[int] = typer.Option(
         None, "--iterations", "-n", help="Number of refinement iterations"
     ),
@@ -2372,7 +2526,7 @@ def plot(
         None,
         "--aspect-ratio",
         "-ar",
-        help="Target aspect ratio: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9",
+        help="Target aspect ratio: 1:1, 4:3, 3:2, 5:4, 16:9, 21:9, 4:5, 3:4, 2:3, 9:16",
     ),
     optimize: bool = typer.Option(
         False, "--optimize", help="Enrich context and sharpen caption before generation"
@@ -2439,6 +2593,12 @@ def plot(
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {format}[/red]")
         raise typer.Exit(1)
     _validate_venue_or_exit(venue, venue_dir)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model]),
+    )
 
     configure_logging(verbose=verbose)
     data_path = Path(data)
@@ -2489,13 +2649,14 @@ def plot(
     if export_pgfplots:
         overrides["export_pgfplots"] = True
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-        settings = Settings(**overrides)
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+    )
 
     gen_input = GenerationInput(
         source_context=source_context,
@@ -2607,6 +2768,14 @@ def tikz(
         None, "--vlm-provider", help="VLM provider (gemini, openai, anthropic, …)"
     ),
     vlm_model: Optional[str] = typer.Option(None, "--vlm-model", help="VLM model name override"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     venue: Optional[str] = typer.Option(
         None,
         "--venue",
@@ -2653,13 +2822,20 @@ def tikz(
     if venue:
         overrides["venue"] = venue
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-        settings = Settings(**overrides)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model]),
+    )
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+    )
 
     from paperbanana.agents.tikz_exporter import TikZExporterAgent
     from paperbanana.core.types import DiagramType
@@ -2732,7 +2908,7 @@ def polish(
         None,
         "--aspect-ratio",
         "-ar",
-        help="Target aspect ratio: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9 "
+        help="Target aspect ratio: 1:1, 4:3, 3:2, 5:4, 16:9, 21:9, 4:5, 3:4, 2:3, 9:16 "
         "(default: preserve the input figure's ratio)",
     ),
     vlm_provider: Optional[str] = typer.Option(
@@ -2743,6 +2919,17 @@ def polish(
         None, "--image-provider", help="Image gen provider (must support guided image edits)"
     ),
     image_model: Optional[str] = typer.Option(None, "--image-model", help="Image gen model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     budget: Optional[float] = typer.Option(
         None,
         "--budget",
@@ -2775,6 +2962,12 @@ def polish(
             f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
         )
         raise typer.Exit(1)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
 
     input_path = Path(input)
     if not input_path.exists():
@@ -2810,13 +3003,13 @@ def polish(
     if venue:
         overrides["venue"] = venue
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-        settings = Settings(**overrides)
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
     import datetime
 
@@ -3043,8 +3236,16 @@ def evaluate(
     context: str = typer.Option(..., "--context", help="Path to source context text file or PDF"),
     caption: str = typer.Option(..., "--caption", "-c", help="Figure caption"),
     reference: str = typer.Option(..., "--reference", "-r", help="Path to human reference image"),
-    vlm_provider: str = typer.Option(
-        "gemini", "--vlm-provider", help="VLM provider for evaluation"
+    vlm_provider: Optional[str] = typer.Option(
+        None, "--vlm-provider", help="VLM provider for legacy evaluation"
+    ),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed agent progress and timing"
@@ -3057,6 +3258,12 @@ def evaluate(
 ):
     """Evaluate a generated diagram vs human reference (comparative)."""
     configure_logging(verbose=verbose)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=vlm_provider is not None,
+    )
     from paperbanana.core.utils import find_prompt_dir
     from paperbanana.evaluation.judge import VLMJudge
 
@@ -3086,11 +3293,14 @@ def evaluate(
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    settings = Settings(vlm_provider=vlm_provider)
+    settings = _load_cli_runtime_settings(
+        config=None,
+        overrides={"vlm_provider": vlm_provider} if vlm_provider else {},
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+    )
     from paperbanana.providers.registry import ProviderRegistry
 
     vlm = ProviderRegistry.create_vlm(settings)
@@ -3144,8 +3354,16 @@ def evaluate_plot(
         "-r",
         help="Path to human reference plot image",
     ),
-    vlm_provider: str = typer.Option(
-        "gemini", "--vlm-provider", help="VLM provider for evaluation"
+    vlm_provider: Optional[str] = typer.Option(
+        None, "--vlm-provider", help="VLM provider for legacy evaluation"
+    ),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed agent progress and timing"
@@ -3153,6 +3371,12 @@ def evaluate_plot(
 ):
     """Evaluate a generated statistical plot vs human reference (comparative)."""
     configure_logging(verbose=verbose)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=vlm_provider is not None,
+    )
     from paperbanana.core.plot_data import load_statistical_plot_payload
     from paperbanana.core.utils import find_prompt_dir
     from paperbanana.evaluation.judge import VLMJudge
@@ -3178,11 +3402,14 @@ def evaluate_plot(
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    settings = Settings(vlm_provider=vlm_provider)
+    settings = _load_cli_runtime_settings(
+        config=None,
+        overrides={"vlm_provider": vlm_provider} if vlm_provider else {},
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+    )
     from paperbanana.providers.registry import ProviderRegistry
 
     vlm = ProviderRegistry.create_vlm(settings)
@@ -3266,6 +3493,17 @@ def ablate_retrieval(
     image_provider: Optional[str] = typer.Option(
         None, "--image-provider", help="Image generation provider override"
     ),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed agent progress and timing"
     ),
@@ -3290,10 +3528,6 @@ def ablate_retrieval(
         if not reference_path.exists():
             console.print(f"[red]Error: Reference image not found: {reference}[/red]")
             raise typer.Exit(1)
-
-    from dotenv import load_dotenv
-
-    load_dotenv()
 
     from paperbanana.core.types import DiagramType, GenerationInput
     from paperbanana.core.utils import generate_run_id
@@ -3321,10 +3555,19 @@ def ablate_retrieval(
     if exemplar_retries is not None:
         overrides["exemplar_retrieval_max_retries"] = exemplar_retries
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        settings = Settings(**overrides)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, image_provider]),
+    )
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
     from paperbanana.core.source_loader import load_methodology_source
 
@@ -3415,14 +3658,21 @@ def ablate_prompts(
     image_provider: Optional[str] = typer.Option(
         None, "--image-provider", help="Image generation provider"
     ),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress"),
 ):
     """Run A/B comparison of two prompt configurations and produce a scored report."""
     configure_logging(verbose=verbose)
-
-    from dotenv import load_dotenv
-
-    load_dotenv()
 
     overrides: dict = {}
     if vlm_provider:
@@ -3432,10 +3682,19 @@ def ablate_prompts(
     if seed is not None:
         overrides["seed"] = seed
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        settings = Settings(**overrides)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, image_provider]),
+    )
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
     from paperbanana.evaluation.benchmark import filter_examples
     from paperbanana.evaluation.prompt_ablation import (
@@ -3542,6 +3801,17 @@ def benchmark(
         None, "--image-provider", help="Image gen provider"
     ),
     image_model: Optional[str] = typer.Option(None, "--image-model", help="Image gen model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     iterations: Optional[int] = typer.Option(
         None, "--iterations", "-n", help="Refinement iterations per entry"
     ),
@@ -3616,10 +3886,6 @@ def benchmark(
 
     configure_logging(verbose=verbose)
 
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
     overrides: dict = {"output_format": image_format, "benchmark_concurrency": concurrency}
     if vlm_provider:
         overrides["vlm_provider"] = vlm_provider
@@ -3642,10 +3908,19 @@ def benchmark(
     if prompt_dir:
         overrides["prompt_dir"] = prompt_dir
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        settings = Settings(**overrides)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model, image_provider, image_model]),
+    )
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
     from paperbanana.evaluation.benchmark import BenchmarkRunner
 
@@ -4301,6 +4576,14 @@ def guidelines_synthesize(
     ),
     vlm_provider: Optional[str] = typer.Option(None, "--vlm-provider", help="VLM provider"),
     vlm_model: Optional[str] = typer.Option(None, "--vlm-model", help="VLM model name"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
     budget: Optional[float] = typer.Option(
         None,
         "--budget",
@@ -4351,13 +4634,20 @@ def guidelines_synthesize(
     if reference_set:
         overrides["reference_set_path"] = reference_set
 
-    if config:
-        settings = Settings.from_yaml(config, **overrides)
-    else:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-        settings = Settings(**overrides)
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=any([vlm_provider, vlm_model]),
+    )
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides=overrides,
+        vlm_connection=vlm_connection,
+        image_connection=None,
+        legacy_connections=legacy_connections,
+        required_roles=(ConnectionRole.VLM,),
+    )
 
     if venue is not None:
         target = Path(settings.guidelines_path) / venue.lower() / f"{guide_type}_style_guide.md"
@@ -4454,7 +4744,7 @@ _VENUE_YAML_TEMPLATE = """\
 display_name: "{display_name}"
 
 # Default --aspect-ratio for runs with this venue (used when the CLI flag
-# is not passed). One of: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9.
+# is not passed). One of: 1:1, 4:3, 3:2, 5:4, 16:9, 21:9, 4:5, 3:4, 2:3, 9:16.
 # aspect_ratio: "16:9"
 
 # Preferred font families, appended as a note to the style guides.
@@ -4732,31 +5022,34 @@ def analytics(
 def show_config(
     json_output: bool = typer.Option(False, "--json", help="Emit resolved config as JSON"),
     config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML file"),
+    vlm_connection: Optional[str] = typer.Option(
+        None, "--vlm-connection", help="Saved VLM connection profile ID"
+    ),
+    image_connection: Optional[str] = typer.Option(
+        None, "--image-connection", help="Saved image connection profile ID"
+    ),
+    legacy_connections: bool = typer.Option(
+        False,
+        "--legacy-connections",
+        help="Use upstream environment/YAML connection settings",
+    ),
 ) -> None:
-    """Print the fully resolved settings (env + config file) without running generation."""
-    from dotenv import load_dotenv
+    """Print resolved profile or explicit legacy settings without exposing credentials."""
+    _validate_connection_options(
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+        legacy_provider_options=False,
+    )
+    settings = _load_cli_runtime_settings(
+        config=config,
+        overrides={},
+        vlm_connection=vlm_connection,
+        image_connection=image_connection,
+        legacy_connections=legacy_connections,
+    )
 
-    load_dotenv()
-
-    if config:
-        settings = Settings.from_yaml(config)
-    else:
-        settings = Settings()
-
-    # Fields containing sensitive secrets that should be masked
-    _secret_fields = {
-        "google_api_key",
-        "openrouter_api_key",
-        "openai_api_key",
-        "anthropic_api_key",
-    }
-
-    data = settings.model_dump()
-    # Mask sensitive values
-    for key in _secret_fields:
-        val = data.get(key)
-        if val:
-            data[key] = val[:4] + "****" + val[-4:] if len(val) > 8 else "****"
+    data = settings.non_secret_dump()
 
     # Add effective (resolved) models for clarity
     data["_effective_vlm_model"] = settings.effective_vlm_model

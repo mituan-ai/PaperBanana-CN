@@ -8,9 +8,9 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from paperbanana.providers.base import VLMProvider
+from paperbanana.providers.base import VLMProvider, is_retryable_provider_error
 
 logger = structlog.get_logger()
 
@@ -28,10 +28,12 @@ class BedrockVLM(VLMProvider):
         model: str = "us.amazon.nova-pro-v1:0",
         region: str = "us-east-1",
         profile: Optional[str] = None,
+        timeout_seconds: float = 180.0,
     ):
         self._model = model
         self._region = region
         self._profile = profile
+        self._timeout_seconds = timeout_seconds
         self._client = None
 
     @property
@@ -55,7 +57,18 @@ class BedrockVLM(VLMProvider):
                 region_name=self._region,
                 profile_name=self._profile,
             )
-            self._client = session.client("bedrock-runtime")
+            client_kwargs = {}
+            try:
+                from botocore.config import Config
+
+                client_kwargs["config"] = Config(
+                    connect_timeout=self._timeout_seconds,
+                    read_timeout=self._timeout_seconds,
+                )
+            except ImportError:
+                # Lightweight test stubs may provide boto3 without botocore.
+                pass
+            self._client = session.client("bedrock-runtime", **client_kwargs)
         return self._client
 
     def is_available(self) -> bool:
@@ -70,7 +83,11 @@ class BedrockVLM(VLMProvider):
         credentials = session.get_credentials()
         return credentials is not None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception(is_retryable_provider_error),
+    )
     async def generate(
         self,
         prompt: str,

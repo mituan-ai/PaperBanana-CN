@@ -984,6 +984,7 @@ async def test_openai_imagen_gpt_image_2_uses_custom_size_and_quality():
     import base64
     from io import BytesIO
 
+    from paperbanana.providers.base import ImageSizeMode
     from paperbanana.providers.image_gen.openai_imagen import OpenAIImageGen
 
     img = Image.new("RGB", (64, 64), color=(0, 128, 255))
@@ -998,7 +999,11 @@ async def test_openai_imagen_gpt_image_2_uses_custom_size_and_quality():
     mock_client = AsyncMock()
     mock_client.images.generate = AsyncMock(return_value=mock_result)
 
-    gen = OpenAIImageGen(api_key="test-key", model="gpt-image-2")
+    gen = OpenAIImageGen(
+        api_key="test-key",
+        model="gpt-image-2",
+        size_mode=ImageSizeMode.EXPLICIT_PIXELS,
+    )
     gen._client = mock_client
 
     await gen.generate(
