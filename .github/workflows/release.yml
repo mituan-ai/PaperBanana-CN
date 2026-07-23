@@ -7,6 +7,7 @@ on:
 
 jobs:
   release:
+    if: github.repository == 'llmsresearch/paperbanana'
     runs-on: ubuntu-latest
     environment: release
     permissions:
