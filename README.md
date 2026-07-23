@@ -19,10 +19,11 @@
 
 ---
 
-> **Version notice**: `main` is PaperBanana-CN V2. The frozen V1 implementation and its
-> complete history remain available on the [`v1`](https://github.com/mituan-ai/PaperBanana-CN/tree/v1)
-> branch and in the [`v1.0.0`](https://github.com/mituan-ai/PaperBanana-CN/releases/tag/v1.0.0)
-> release.
+> **Version notice**: `main` is PaperBanana-CN V2, released as
+> [`v2.0.0`](https://github.com/mituan-ai/PaperBanana-CN/releases/tag/v2.0.0). The frozen V1
+> implementation and its complete history remain available on the
+> [`v1`](https://github.com/mituan-ai/PaperBanana-CN/tree/v1) branch and in the
+> [`v1.0.0`](https://github.com/mituan-ai/PaperBanana-CN/releases/tag/v1.0.0) release.
 
 > **Disclaimer**: This is an **unofficial, community-driven open-source implementation** of the paper
 > *"PaperBanana: Automating Academic Illustration for AI Scientists"* by Dawei Zhu, Rui Meng, Yale Song,
