@@ -13,6 +13,13 @@ build/
 venv/
 env/
 
+# Local PaperBanana-CN state
+/AGENTS.md
+/connections.json
+/secrets.json
+/session_state.json
+/.playwright-cli/
+
 # IDE
 .idea/
 .vscode/
