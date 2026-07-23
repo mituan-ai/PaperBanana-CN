@@ -60,7 +60,7 @@ all-providers = [
 mcp = ["fastmcp>=2.0"]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=4.0",
     "playwright>=1.48",
     "ruff>=0.4",
