@@ -162,7 +162,7 @@ def test_mcp_command_delegates_to_existing_server(monkeypatch):
 
 
 def test_generate_dry_run_valid_inputs():
-    """paperbanana generate --input file.txt --caption 'test' --dry-run works."""
+    """paperbanana-cn generate --input file.txt --caption 'test' --dry-run works."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("Sample methodology text for testing.")
         input_path = f.name
@@ -202,7 +202,7 @@ def test_generate_dry_run_invalid_input():
 
 
 def test_generate_accepts_progress_json_flag():
-    """paperbanana generate accepts --progress-json flag in dry-run mode."""
+    """paperbanana-cn generate accepts --progress-json flag in dry-run mode."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("Sample methodology text for testing.")
         input_path = f.name
@@ -1093,7 +1093,7 @@ def test_plot_batch_supports_concurrency_and_retries(tmp_path, monkeypatch):
 
 
 def test_generate_dry_run_accepts_export_tikz_flag():
-    """paperbanana generate accepts --export-tikz in dry-run mode."""
+    """paperbanana-cn generate accepts --export-tikz in dry-run mode."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("Sample methodology text for testing.")
         input_path = f.name
@@ -1198,7 +1198,7 @@ def test_tikz_subcommand_help():
 
 
 def test_plot_accepts_export_pgfplots_flag(tmp_path):
-    """paperbanana plot --help shows --export-pgfplots flag."""
+    """paperbanana-cn plot --help shows --export-pgfplots flag."""
     output = invoke_help("plot")
     assert "--export-pgfplots" in output
 

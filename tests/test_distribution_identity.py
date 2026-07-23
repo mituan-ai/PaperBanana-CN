@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import configparser
+import re
 import subprocess
 import sys
 import zipfile
@@ -16,6 +17,37 @@ from paperbanana_cn.providers.image_gen.openrouter_imagen import OpenRouterImage
 from paperbanana_cn.providers.vlm.openrouter import OpenRouterVLM
 
 ROOT = Path(__file__).resolve().parents[1]
+UPSTREAM_REPOSITORY = "https://github.com/llmsresearch/paperbanana"
+UPSTREAM_ATTRIBUTION_ALLOWLIST = {
+    "CONTRIBUTING.md",
+    "README.md",
+    "README_CN.md",
+    "paperbanana_cn/data/manager.py",
+}
+PUBLIC_COMMAND_DOCS = [
+    ROOT / "README.md",
+    ROOT / "README_CN.md",
+    ROOT / "mcp_server" / "README.md",
+    ROOT / "docs" / "CONNECTIONS.md",
+    ROOT / "docs" / "releases" / "v2.0.1.md",
+    ROOT / "integrations" / "github-action" / "README.md",
+]
+PUBLISHED_IDENTITY_ROOTS = [
+    ROOT / ".github",
+    ROOT / "CONTRIBUTING.md",
+    ROOT / "Dockerfile",
+    ROOT / "README.md",
+    ROOT / "README_CN.md",
+    ROOT / "SECURITY.md",
+    ROOT / "docs",
+    ROOT / "integrations",
+    ROOT / "mcp_server",
+    ROOT / "notebooks",
+    ROOT / "paperbanana_cn",
+    ROOT / "pyproject.toml",
+    ROOT / "scripts",
+    ROOT / "server.json",
+]
 
 
 def _project_metadata() -> dict:
@@ -49,6 +81,38 @@ def test_python_sources_do_not_import_removed_namespace():
                     offenders.append(str(path.relative_to(ROOT)))
 
     assert offenders == []
+
+
+def test_upstream_repository_only_appears_in_attribution_and_dataset_sources():
+    suffixes = {"", ".ipynb", ".json", ".md", ".py", ".toml", ".yaml", ".yml"}
+    offenders: set[str] = set()
+    for identity_root in PUBLISHED_IDENTITY_ROOTS:
+        paths = [identity_root] if identity_root.is_file() else identity_root.rglob("*")
+        for path in paths:
+            if not path.is_file() or path.suffix not in suffixes:
+                continue
+            if UPSTREAM_REPOSITORY in path.read_text(encoding="utf-8"):
+                offenders.add(path.relative_to(ROOT).as_posix())
+
+    assert offenders == UPSTREAM_ATTRIBUTION_ALLOWLIST
+
+
+def test_public_docs_only_advertise_the_paperbanana_cn_command():
+    old_command = re.compile(
+        r"(?<![\w-])paperbanana(?:-mcp|\s+(?:connections|doctor|generate|mcp|plot|studio))\b"
+    )
+    offenders: list[str] = []
+    for path in PUBLIC_COMMAND_DOCS:
+        if old_command.search(path.read_text(encoding="utf-8")):
+            offenders.append(path.relative_to(ROOT).as_posix())
+
+    assert offenders == []
+
+
+def test_readme_declares_mcp_registry_ownership():
+    marker = "<!-- mcp-name: io.github.mituan-ai/paperbanana-cn -->"
+
+    assert marker in (ROOT / "README.md").read_text(encoding="utf-8")
 
 
 async def test_openrouter_requests_identify_paperbanana_cn():

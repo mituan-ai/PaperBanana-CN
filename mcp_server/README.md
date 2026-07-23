@@ -1,6 +1,7 @@
-# PaperBanana MCP Server
+# PaperBanana-CN MCP Server
 
-MCP server that exposes PaperBanana's diagram and plot generation as tools for Claude Code, Cursor, or any MCP-compatible client.
+MCP server that exposes PaperBanana-CN diagram and plot workflows to Claude Code, Cursor, and
+other MCP-compatible clients.
 
 ## Tools
 
