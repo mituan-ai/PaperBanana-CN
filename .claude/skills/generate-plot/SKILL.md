@@ -3,7 +3,7 @@ user-invocable: true
 allowed-tools:
   - mcp__paperbanana__generate_plot
   - Read
-  - "Bash(paperbanana *)"
+  - "Bash(paperbanana-cn *)"
 ---
 
 # Generate Plot
@@ -28,7 +28,7 @@ Generate a publication-quality statistical plot from a data file using PaperBana
 If the MCP tool is not available, fall back to the CLI:
 
 ```bash
-paperbanana plot --data <file> --intent "<intent>"
+paperbanana-cn plot --data <file> --intent "<intent>"
 ```
 
 ## Example

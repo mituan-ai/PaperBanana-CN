@@ -13,16 +13,16 @@ Studio, CLI generation commands, and MCP tools use profile mode by default. Reso
 3. A clear configuration error when no valid profile exists.
 
 Environment variables and YAML provider fields do not override saved profiles. Use
-`paperbanana connections list` to inspect active profiles without exposing credentials.
+`paperbanana-cn connections list` to inspect active profiles without exposing credentials.
 
 Create one profile for each role:
 
 ```bash
-paperbanana connections add \
+paperbanana-cn connections add \
   --role vlm --name "VLM relay" --provider openai \
   --base-url https://vlm.example.com/v1 --model vlm-model
 
-paperbanana connections add \
+paperbanana-cn connections add \
   --role image --name "Image relay" --provider openai_imagen \
   --base-url https://image.example.com/v1 --model image-model \
   --size-mode explicit_pixels
@@ -34,11 +34,11 @@ completely different endpoints. Provider names select existing adapters; they ar
 Manage profiles with:
 
 ```bash
-paperbanana connections list
-paperbanana connections edit <profile-id> --name "New name"
-paperbanana connections use --role vlm <profile-id>
-paperbanana connections test <profile-id>
-paperbanana connections delete <profile-id>
+paperbanana-cn connections list
+paperbanana-cn connections edit <profile-id> --name "New name"
+paperbanana-cn connections use --role vlm <profile-id>
+paperbanana-cn connections test <profile-id>
+paperbanana-cn connections delete <profile-id>
 ```
 
 Image tests perform local configuration and capability validation unless `--paid` is supplied. A
@@ -75,7 +75,7 @@ stretch, or substitute a nearby ratio.
 Legacy mode preserves the upstream `.env`, environment variable, YAML, and provider option behavior:
 
 ```bash
-paperbanana generate \
+paperbanana-cn generate \
   --legacy-connections \
   --vlm-provider openai --vlm-model gpt-5.2 \
   --image-provider openai_imagen --image-model gpt-image-1.5 \
@@ -83,5 +83,5 @@ paperbanana generate \
 ```
 
 Profile IDs cannot be combined with `--legacy-connections`. Existing upstream settings can be
-imported once with `paperbanana connections import-legacy`; PaperBanana-CN never scans or imports an
-old repository automatically.
+imported once with `paperbanana-cn connections import-legacy`; PaperBanana-CN never scans or imports
+an old repository automatically.

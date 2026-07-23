@@ -10,7 +10,7 @@ from paperbanana_cn.core.pdf_text import extract_text_from_pdf, is_pdf_path
 def load_methodology_source(path: Path, *, pdf_pages: str | None = None) -> str:
     """Read methodology context from *path*.
 
-    For ``.pdf`` files, extracts text with PyMuPDF (optional extra ``paperbanana[pdf]``).
+    For ``.pdf`` files, extracts text with PyMuPDF from the default installation.
     *pdf_pages* selects 1-based pages (comma-separated and/or ranges); omitted means all pages.
 
     For non-PDF files, reads UTF-8 text. *pdf_pages* must not be set in that case.

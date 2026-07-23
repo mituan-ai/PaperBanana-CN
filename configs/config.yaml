@@ -22,8 +22,8 @@ pipeline:
   output_resolution: "2k"   # 1k, 2k, 4k
   diagram_type: methodology  # methodology, statistical_plot
   # venue: neurips          # Venue style pack: built-in (neurips, icml, acl, ieee),
-  #                         # a user pack name (see `paperbanana venues list`), or custom
-  # venue_dir: ~/.config/paperbanana/venues  # User venue pack directory override
+  #                         # a user pack name (see `paperbanana-cn venues list`), or custom
+  # venue_dir: ~/.config/paperbanana-cn/venues  # User venue pack directory override
 
 # Reference set
 reference:

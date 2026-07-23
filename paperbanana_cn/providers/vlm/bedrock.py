@@ -51,7 +51,7 @@ class BedrockVLM(VLMProvider):
             except ImportError:
                 raise ImportError(
                     "boto3 is required for the Bedrock provider. "
-                    "Install with: pip install 'paperbanana[bedrock]'"
+                    "Install with: pip install 'paperbanana-cn[bedrock]'"
                 )
             session = boto3.Session(
                 region_name=self._region,

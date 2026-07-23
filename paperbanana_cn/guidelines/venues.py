@@ -15,7 +15,7 @@ Packs are resolved from two sources, in order:
 2. **User** packs from a user venue directory, resolved as:
    an explicit ``--venue-dir`` flag / ``extra_dir`` argument, else the
    ``PAPERBANANA_VENUE_DIR`` environment variable, else
-   ``~/.config/paperbanana_cn/venues``.
+   ``~/.config/paperbanana-cn/venues``.
 
 On a name clash, the **built-in pack wins** — user packs cannot shadow
 built-in venues. The name ``custom`` is reserved (it bypasses venue
@@ -50,7 +50,7 @@ VENUE_CONFIG_FILENAME = "venue.yaml"
 
 DEFAULT_BUILTIN_GUIDELINES_DIR = "data/guidelines"
 VENUE_DIR_ENV_VAR = "PAPERBANANA_VENUE_DIR"
-DEFAULT_USER_VENUE_DIR = Path.home() / ".config" / "paperbanana" / "venues"
+DEFAULT_USER_VENUE_DIR = Path.home() / ".config" / "paperbanana-cn" / "venues"
 
 #: Reserved venue names that never resolve to a pack directory.
 RESERVED_VENUE_NAMES = frozenset({"custom"})
@@ -72,8 +72,8 @@ class UnknownVenueError(ValueError):
             f"Unknown venue '{name}'. "
             f"Built-in venues: {builtin_part}. "
             f"User venues in {user_dir}: {user_part}. "
-            "Run 'paperbanana venues list' to see all packs, or "
-            "'paperbanana venues init <name>' to scaffold a new one."
+            "Run 'paperbanana-cn venues list' to see all packs, or "
+            "'paperbanana-cn venues init <name>' to scaffold a new one."
         )
 
 
@@ -125,7 +125,7 @@ def resolve_user_venue_dir(extra_dir: str | Path | None = None) -> Path:
     """Resolve the user venue directory.
 
     Precedence: explicit ``extra_dir`` > ``PAPERBANANA_VENUE_DIR`` env var >
-    ``~/.config/paperbanana_cn/venues``.
+    ``~/.config/paperbanana-cn/venues``.
     """
     if extra_dir:
         return Path(extra_dir).expanduser()
@@ -179,7 +179,7 @@ def list_venues(
     Args:
         builtin_dir: Built-in guidelines directory (default: ``data/guidelines``).
         extra_dir: User venue directory override (default: env var, then
-            ``~/.config/paperbanana_cn/venues``).
+            ``~/.config/paperbanana-cn/venues``).
 
     Returns:
         Mapping of venue name to :class:`VenueInfo`, sorted by name.
@@ -224,7 +224,7 @@ def resolve_venue(
             resolvable.
         builtin_dir: Built-in guidelines directory (default: ``data/guidelines``).
         extra_dir: User venue directory override (default: env var, then
-            ``~/.config/paperbanana_cn/venues``).
+            ``~/.config/paperbanana-cn/venues``).
 
     Returns:
         The resolved :class:`VenuePack`.

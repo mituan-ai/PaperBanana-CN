@@ -2,11 +2,11 @@
 """Import reference examples from the official PaperBananaBench dataset.
 
 This script is a thin CLI wrapper around DatasetManager for manual imports.
-For most users, `paperbanana data download` is the recommended approach.
+For most users, `paperbanana-cn data download` is the recommended approach.
 
 Usage:
     # Download and cache expanded references (recommended)
-    paperbanana data download
+    paperbanana-cn data download
 
     # Or use this script directly:
     python scripts/import_official_references.py
@@ -224,7 +224,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Import official PaperBananaBench references.\n\n"
-            "Recommended: use 'paperbanana data download' instead."
+            "Recommended: use 'paperbanana-cn data download' instead."
         ),
     )
     parser.add_argument(
@@ -243,7 +243,7 @@ def main():
         "--output",
         type=str,
         default=None,
-        help="Output directory (default: ~/.cache/paperbanana_cn/reference_sets)",
+        help="Output directory (default: ~/.cache/paperbanana-cn/reference_sets)",
     )
     parser.add_argument(
         "--keep-existing",

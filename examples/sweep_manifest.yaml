@@ -1,6 +1,6 @@
 # Example sweep manifest — one input, cartesian product over the axes below.
 # Invoke with:
-#   paperbanana sweep --manifest examples/sweep_manifest.yaml
+#   paperbanana-cn sweep --manifest examples/sweep_manifest.yaml
 #
 # --manifest is mutually exclusive with the axis CLI flags
 # (--vlm-providers, --vlm-models, --image-providers, --image-models,

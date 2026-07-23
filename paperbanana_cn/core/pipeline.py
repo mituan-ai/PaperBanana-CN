@@ -72,11 +72,11 @@ _ssl_skip_applied = False
 
 
 def _get_version() -> str:
-    """Return the installed PaperBanana version, or 'unknown' if unavailable."""
+    """Return the installed PaperBanana-CN version, or 'unknown' if unavailable."""
     try:
         from importlib.metadata import version
 
-        return version("paperbanana")
+        return version("paperbanana-cn")
     except Exception:
         return "unknown"
 
@@ -1401,7 +1401,7 @@ class PaperBananaPipeline:
             if missing_ids:
                 raise ValueError(
                     f"Unknown reference IDs: {', '.join(missing_ids)}. "
-                    "Use 'paperbanana references list' to see available IDs."
+                    "Use 'paperbanana-cn references list' to see available IDs."
                 )
             retrieval_mode = "manual_override"
             external_candidate_ids: list[str] = list(input.reference_ids)

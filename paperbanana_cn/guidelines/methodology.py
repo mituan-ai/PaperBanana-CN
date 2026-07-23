@@ -114,7 +114,7 @@ def load_methodology_guidelines(
             (original behavior). Unknown venue names raise
             :class:`~paperbanana_cn.guidelines.venues.UnknownVenueError`.
         venue_dir: User venue directory override (default: PAPERBANANA_VENUE_DIR
-            env var, then ~/.config/paperbanana_cn/venues).
+            env var, then ~/.config/paperbanana-cn/venues).
 
     Returns:
         Guidelines text.

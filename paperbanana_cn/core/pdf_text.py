@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_PDF_INSTALL_HINT = "Install PyMuPDF: pip install 'paperbanana[pdf]' or pip install pymupdf"
+_PDF_INSTALL_HINT = "Install the default dependencies: pip install --upgrade paperbanana-cn"
 
 
 def parse_pdf_pages_spec(spec: str | None, page_count: int) -> list[int]:

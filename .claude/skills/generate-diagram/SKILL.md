@@ -3,7 +3,7 @@ user-invocable: true
 allowed-tools:
   - mcp__paperbanana__generate_diagram
   - Read
-  - "Bash(paperbanana *)"
+  - "Bash(paperbanana-cn *)"
 ---
 
 # Generate Diagram
@@ -25,7 +25,7 @@ Generate a publication-quality methodology diagram from a text file using PaperB
 If the MCP tool is not available, fall back to the CLI:
 
 ```bash
-paperbanana generate --input <file> --caption "<caption>"
+paperbanana-cn generate --input <file> --caption "<caption>"
 ```
 
 ## Example

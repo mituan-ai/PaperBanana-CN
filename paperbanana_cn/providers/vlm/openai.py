@@ -64,7 +64,7 @@ class OpenAIVLM(VLMProvider):
             except ImportError:
                 raise ImportError(
                     "openai is required for the OpenAI provider. "
-                    "Install with: pip install 'paperbanana[openai]'"
+                    "Install with: pip install --upgrade paperbanana-cn"
                 )
         return self._client
 

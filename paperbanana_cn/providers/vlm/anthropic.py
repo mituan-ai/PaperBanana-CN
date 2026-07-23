@@ -54,7 +54,7 @@ class AnthropicVLM(VLMProvider):
             except ImportError:
                 raise ImportError(
                     "anthropic is required for the Anthropic provider. "
-                    "Install with: pip install 'paperbanana[anthropic]'"
+                    "Install with: pip install 'paperbanana-cn[anthropic]'"
                 )
         return self._client
 

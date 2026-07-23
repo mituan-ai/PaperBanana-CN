@@ -1,4 +1,4 @@
-"""PaperBanana MCP Server.
+"""PaperBanana-CN MCP Server.
 
 Exposes PaperBanana's core functionality as MCP tools usable from
 Claude Code, Cursor, or any MCP client.
@@ -17,7 +17,7 @@ Tools:
     batch_plots         — Batch statistical plots from a YAML/JSON manifest
 
 Usage:
-    paperbanana-mcp          # stdio transport (default)
+    paperbanana-cn mcp       # stdio transport (default)
 """
 
 from __future__ import annotations
@@ -171,7 +171,7 @@ def _embed_caption(image_path: str, caption: str) -> None:
         logger.debug("Failed to embed caption in image metadata")
 
 
-mcp = FastMCP("PaperBanana")
+mcp = FastMCP("PaperBanana-CN")
 
 
 def _validate_input_images(input_images: list[str] | None) -> list[str]:
@@ -505,7 +505,7 @@ async def continue_diagram(
     """Continue a methodology diagram run under ``output_dir`` / ``run_id``.
 
     Loads ``run_input.json`` and the latest iteration from an existing ``run_*``
-    directory (same as ``paperbanana generate --continue-run``). Runs more
+    directory (same as ``paperbanana-cn generate --continue-run``). Runs more
     visualizer–critic rounds without redoing retrieval / planner / stylist.
 
     Args:
@@ -962,7 +962,7 @@ async def orchestrate_figures(
 ) -> str:
     """Plan and optionally generate a multi-figure publication package from a paper.
 
-    Mirrors ``paperbanana orchestrate``. Use ``dry_run=True`` to write
+    Mirrors ``paperbanana-cn orchestrate``. Use ``dry_run=True`` to write
     ``orchestration_plan.json`` only (no API generation). For continuation,
     pass ``resume_orchestrate`` with an orchestration id or package directory path.
 

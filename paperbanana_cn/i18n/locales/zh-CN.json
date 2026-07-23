@@ -1,7 +1,7 @@
 {
   "app.title": "PaperBanana-CN 科研生图工作台",
   "app.subtitle": "科研插图生成工作台",
-  "app.tip": "运行 `paperbanana data download` 可安装扩展参考集。",
+  "app.tip": "运行 `paperbanana-cn data download` 可安装扩展参考集。",
   "app.disclaimer": "PaperBanana-CN，开发者 mituan",
   "nav.generate": "生成",
   "nav.improve": "改进",

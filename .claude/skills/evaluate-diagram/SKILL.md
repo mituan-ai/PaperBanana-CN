@@ -3,7 +3,7 @@ user-invocable: true
 allowed-tools:
   - mcp__paperbanana__evaluate_diagram
   - Read
-  - "Bash(paperbanana *)"
+  - "Bash(paperbanana-cn *)"
 ---
 
 # Evaluate Diagram
@@ -29,7 +29,7 @@ Evaluate a generated diagram against a human reference using PaperBanana's VLM-a
 If the MCP tool is not available, fall back to the CLI:
 
 ```bash
-paperbanana evaluate --generated <generated-img> --reference <reference-img> --context <context-file> --caption "<caption>"
+paperbanana-cn evaluate --generated <generated-img> --reference <reference-img> --context <context-file> --caption "<caption>"
 ```
 
 ## Example

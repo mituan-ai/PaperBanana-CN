@@ -1,4 +1,4 @@
-"""Provider registry and factory for PaperBanana."""
+"""Provider registry and factory for PaperBanana-CN."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _API_KEY_HINTS = {
         "GOOGLE_API_KEY not found.\n\n"
         "To fix this:\n"
         "  1. Get a free API key at: https://makersuite.google.com/app/apikey\n"
-        "  2. Run: paperbanana setup\n\n"
+        "  2. Run: paperbanana-cn setup\n\n"
         "Or set it manually:\n"
         "  export GOOGLE_API_KEY=your-key-here"
     ),
@@ -38,7 +38,7 @@ _API_KEY_HINTS = {
         "ATLASCLOUD_API_KEY not found.\n\n"
         "To fix this:\n"
         "  1. Get an API key at: "
-        "https://www.atlascloud.ai/console/api-keys?utm_source=github&utm_medium=link&utm_campaign=paperbanana\n"
+        "https://www.atlascloud.ai/console/api-keys?utm_source=github&utm_medium=link&utm_campaign=paperbanana-cn\n"
         "  2. Set the environment variable:\n\n"
         "  export ATLASCLOUD_API_KEY=your-key-here"
     ),
@@ -101,7 +101,7 @@ def _validate_bedrock_auth(region: str, profile: str | None) -> None:
     except ImportError:
         raise ImportError(
             "boto3 is required for the Bedrock provider. "
-            "Install with: pip install 'paperbanana[bedrock]'"
+            "Install with: pip install 'paperbanana-cn[bedrock]'"
         )
     session = boto3.Session(region_name=region, profile_name=profile)
     credentials = session.get_credentials()
@@ -233,7 +233,7 @@ class ProviderRegistry:
             if not vlm.is_available():
                 raise ImportError(
                     "litellm is required for the LiteLLM provider. "
-                    "Install with: pip install 'paperbanana[litellm]'"
+                    "Install with: pip install 'paperbanana-cn[litellm]'"
                 )
             return vlm
         else:

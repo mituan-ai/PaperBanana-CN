@@ -232,12 +232,13 @@ class TestCompressForApi:
         from mcp_server import server
         from mcp_server.server import _compress_for_api
 
-        # Set a very low limit so our test image exceeds it.
-        monkeypatch.setattr(server, "_MAX_IMAGE_BYTES", 100)
+        # Keep the limit below the PNG size but above the minimum JPEG
+        # container overhead across supported Pillow versions.
+        monkeypatch.setattr(server, "_MAX_IMAGE_BYTES", 550)
 
         p = tmp_path / "big.png"
         Image.new("RGB", (200, 200), color=(128, 64, 32)).save(p, format="PNG")
-        assert p.stat().st_size > 100
+        assert p.stat().st_size > 550
 
         path, fmt = _compress_for_api(str(p))
         assert fmt == "jpeg"

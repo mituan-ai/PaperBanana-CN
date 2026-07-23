@@ -1,7 +1,7 @@
 """Dataset management — download and cache official PaperBananaBench reference sets.
 
 Cache layout:
-    ~/.cache/paperbanana_cn/              (or PAPERBANANA_CACHE_DIR)
+    ~/.cache/paperbanana-cn/              (or PAPERBANANA_CACHE_DIR)
     ├── reference_sets/
     │   ├── index.json
     │   ├── dataset_info.json          (version + revision tracking)
@@ -35,14 +35,11 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-# Project-controlled mirror of the upstream dataset
-# (https://huggingface.co/datasets/dwzhu/PaperBananaBench).
-# The bench-data-v1 release tag mirrors its 2026-03-22 revision; serving the
-# archive from a GitHub release we control gives stable URLs and lets us pin
-# the exact bytes via checksum.
+# Pinned archive published by the upstream PaperBanana project from
+# https://huggingface.co/datasets/dwzhu/PaperBananaBench.
 DATASET_RELEASE_TAG = "bench-data-v1"
 DATASET_URL = (
-    "https://github.com/llmsresearch/paperbanana_cn/releases/download/"
+    "https://github.com/llmsresearch/paperbanana/releases/download/"
     f"{DATASET_RELEASE_TAG}/PaperBananaBench.zip"
 )
 DATASET_SHA256 = "a980d23954c0cb47017cdaa8a9029dbea3598791fd269a457482033821927e37"
@@ -53,7 +50,7 @@ def default_cache_dir() -> Path:
     """Get the default cache directory using platformdirs."""
     from platformdirs import user_cache_dir
 
-    return Path(user_cache_dir("paperbanana"))
+    return Path(user_cache_dir("paperbanana-cn"))
 
 
 def resolve_cache_dir(override: Optional[str] = None) -> Path:
@@ -79,7 +76,7 @@ class DatasetManager:
     Provides a clean API for:
     - Downloading the dataset from HuggingFace
     - Converting to PaperBanana's index.json format
-    - Caching in a user-local directory (~/.cache/paperbanana_cn/)
+    - Caching in a user-local directory (~/.cache/paperbanana-cn/)
     - Checking availability and version info
     """
 
@@ -88,7 +85,7 @@ class DatasetManager:
 
         Args:
             cache_dir: Override cache directory. Defaults to PAPERBANANA_CACHE_DIR
-                       env var or ~/.cache/paperbanana_cn/.
+                       env var or ~/.cache/paperbanana-cn/.
         """
         self._cache_dir = resolve_cache_dir(str(cache_dir) if cache_dir else None)
 
@@ -283,7 +280,7 @@ class DatasetManager:
         if not index_path.exists():
             raise RuntimeError(
                 f"Official test split for task '{task}' not found at {index_path}. "
-                "Run 'paperbanana data download --force' to fetch and cache it."
+                "Run 'paperbanana-cn data download --force' to fetch and cache it."
             )
 
         with open(index_path, encoding="utf-8") as f:
@@ -644,7 +641,7 @@ def resolve_reference_path(
 
     Priority:
     1. Explicit settings path (non-default, from config/env/YAML)
-    2. Cached expanded dataset (~/.cache/paperbanana_cn/reference_sets/)
+    2. Cached expanded dataset (~/.cache/paperbanana-cn/reference_sets/)
     3. Built-in reference set (data/reference_sets/)
 
     Args:

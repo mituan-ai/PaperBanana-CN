@@ -1,4 +1,4 @@
-"""Health-check logic for `paperbanana doctor`."""
+"""Health-check logic for `paperbanana-cn doctor`."""
 
 from __future__ import annotations
 
@@ -39,18 +39,23 @@ def check_python() -> CheckResult:
 
 def check_paperbanana() -> CheckResult:
     try:
-        v = pkg_version("paperbanana")
-        return CheckResult("paperbanana", True, v, critical=True)
+        v = pkg_version("paperbanana-cn")
+        return CheckResult("paperbanana-cn", True, v, critical=True)
     except PackageNotFoundError:
-        return CheckResult("paperbanana", False, "not found", critical=True)
+        return CheckResult("paperbanana-cn", False, "not found", critical=True)
 
 
-def check_optional_package(label: str, package: str, extra: str) -> CheckResult:
+def check_optional_package(label: str, package: str, extra: str | None) -> CheckResult:
     try:
         v = pkg_version(package)
         return CheckResult(label, True, v)
     except PackageNotFoundError:
-        return CheckResult(label, False, "not installed", f"pip install 'paperbanana[{extra}]'")
+        hint = (
+            f"pip install 'paperbanana-cn[{extra}]'"
+            if extra
+            else "pip install --upgrade paperbanana-cn"
+        )
+        return CheckResult(label, False, "not installed", hint)
 
 
 def check_env_key(env_var: str) -> CheckResult:
@@ -93,9 +98,9 @@ def check_expanded_refs() -> CheckResult:
 
         dm = DatasetManager()
     except Exception:
-        return CheckResult("Expanded set", False, "unable to check", "paperbanana data download")
+        return CheckResult("Expanded set", False, "unable to check", "paperbanana-cn data download")
     if not dm.is_downloaded():
-        return CheckResult("Expanded set", False, "not downloaded", "paperbanana data download")
+        return CheckResult("Expanded set", False, "not downloaded", "paperbanana-cn data download")
     info = dm.get_info() or {}
     count = info.get("example_count") or dm.get_example_count()
     datasets = info.get("datasets", [])
@@ -125,13 +130,18 @@ def _render_section(title: str, results: list[CheckResult]) -> None:
 
 # ── Orchestration ─────────────────────────────────────────────────────────────
 
+_DEFAULT_PACKAGES = [
+    ("PDF (pymupdf)", "pymupdf", None),
+    ("Studio (gradio)", "gradio", None),
+    ("MCP (fastmcp)", "fastmcp", None),
+    ("OpenAI", "openai", None),
+    ("Google (google-genai)", "google-genai", None),
+]
+
 _OPTIONAL_PACKAGES = [
-    ("PDF (pymupdf)", "pymupdf", "pdf"),
-    ("Studio (gradio)", "gradio", "studio"),
-    ("OpenAI", "openai", "openai"),
-    ("Google (google-genai)", "google-genai", "google"),
     ("Anthropic", "anthropic", "anthropic"),
     ("Bedrock (boto3)", "boto3", "bedrock"),
+    ("LiteLLM", "litellm", "litellm"),
 ]
 
 _API_KEYS = [
@@ -153,11 +163,12 @@ def run_doctor(output_json: bool = False) -> int:
     from paperbanana_cn import __version__
 
     runtime = [check_python(), check_paperbanana()]
+    bundled = [check_optional_package(*args) for args in _DEFAULT_PACKAGES]
     optional = [check_optional_package(*args) for args in _OPTIONAL_PACKAGES]
     api_keys = [check_env_key(k) for k in _API_KEYS] + [check_aws_credentials()]
     refs = [check_builtin_refs(), check_expanded_refs()]
 
-    all_results = runtime + optional + api_keys + refs
+    all_results = runtime + bundled + optional + api_keys + refs
 
     # ── JSON output for CI ────────────────────────────────────────────────
     if output_json:
@@ -179,10 +190,11 @@ def run_doctor(output_json: bool = False) -> int:
         return 0 if payload["ok"] else 1
 
     # ── Rich table output ─────────────────────────────────────────────────
-    console.print(f"\n[bold]PaperBanana v{__version__}[/bold] — System Check")
+    console.print(f"\n[bold]PaperBanana-CN v{__version__}[/bold] — System Check")
 
     _render_section("Runtime", runtime)
-    _render_section("Optional features", optional)
+    _render_section("Bundled features", bundled)
+    _render_section("Optional providers", optional)
     _render_section("API keys", api_keys)
     _render_section("Reference data", refs)
 

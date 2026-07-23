@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     venue_dir: Optional[str] = Field(
         default=None,
         alias="PAPERBANANA_VENUE_DIR",
-        description="User venue style pack directory (default: ~/.config/paperbanana_cn/venues)",
+        description="User venue style pack directory (default: ~/.config/paperbanana-cn/venues)",
     )
     vector_export: VectorExportMode = "none"
     num_candidates: int = Field(

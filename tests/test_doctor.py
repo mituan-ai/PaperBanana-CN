@@ -54,12 +54,25 @@ def test_check_optional_package_missing(monkeypatch):
     def _raise(name):
         raise metadata.PackageNotFoundError(name)
 
-    monkeypatch.setattr(metadata, "version", _raise)
+    monkeypatch.setattr("paperbanana_cn.doctor.pkg_version", _raise)
     r = check_optional_package("FakePkg", "fakepkg", "fake")
     assert not r.ok
     assert r.detail == "not installed"
-    assert "paperbanana[fake]" in r.hint
+    assert "paperbanana-cn[fake]" in r.hint
     assert not r.critical
+
+
+def test_check_bundled_package_missing_uses_default_install_hint(monkeypatch):
+    from importlib import metadata
+
+    def _raise(name):
+        raise metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr("paperbanana_cn.doctor.pkg_version", _raise)
+    result = check_optional_package("OpenAI", "openai", None)
+
+    assert not result.ok
+    assert result.hint == "pip install --upgrade paperbanana-cn"
 
 
 # ── API key checks ────────────────────────────────────────────────────────────
@@ -107,7 +120,7 @@ def test_check_expanded_refs_not_downloaded(tmp_path, monkeypatch):
     r = check_expanded_refs()
     assert not r.ok
     assert "not downloaded" in r.detail
-    assert "paperbanana data download" in r.hint
+    assert "paperbanana-cn data download" in r.hint
 
 
 def test_check_expanded_refs_downloaded(tmp_path, monkeypatch):
@@ -164,7 +177,12 @@ def test_run_doctor_exit_1_when_critical_fails():
 
 def test_run_doctor_exit_0_when_only_optional_fails():
     """Missing optional packages should NOT cause exit code 1."""
-    fail = CheckResult("OpenAI", False, "not installed", "pip install 'paperbanana[openai]'")
+    fail = CheckResult(
+        "Anthropic",
+        False,
+        "not installed",
+        "pip install 'paperbanana-cn[anthropic]'",
+    )
     with _patch_all_checks(check_optional_package=fail):
         assert run_doctor() == 0
 
@@ -190,7 +208,8 @@ def test_doctor_command_shows_all_sections():
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code in (0, 1)
     assert "Runtime" in result.output
-    assert "Optional features" in result.output
+    assert "Bundled features" in result.output
+    assert "Optional providers" in result.output
     assert "API keys" in result.output
     assert "Reference data" in result.output
 

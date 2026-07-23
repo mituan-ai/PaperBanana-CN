@@ -205,7 +205,7 @@ class TestDownload:
 
     def test_url_points_at_github_mirror(self):
         assert manager_mod.DATASET_URL == (
-            "https://github.com/llmsresearch/paperbanana_cn/releases/download/"
+            "https://github.com/llmsresearch/paperbanana/releases/download/"
             "bench-data-v1/PaperBananaBench.zip"
         )
         assert manager_mod.DATASET_RELEASE_TAG == "bench-data-v1"

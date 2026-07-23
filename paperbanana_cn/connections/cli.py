@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import typer
@@ -118,10 +119,24 @@ def connections_add(
         help="Image sizing: native_tier, explicit_pixels, fixed, or prompt_hint",
     ),
     no_api_key: bool = typer.Option(False, "--no-api-key", help="Store no API key"),
+    api_key_env: Optional[str] = typer.Option(
+        None,
+        "--api-key-env",
+        help="Read the API key from this environment variable (for CI)",
+    ),
 ) -> None:
     """Create and activate a connection profile."""
     parsed_role = connection_role(role)
-    api_key = None if no_api_key else typer.prompt("API key", hide_input=True)
+    if no_api_key and api_key_env:
+        console.print("[red]Error: --no-api-key and --api-key-env are mutually exclusive.[/red]")
+        raise typer.Exit(1)
+    if api_key_env:
+        api_key = os.environ.get(api_key_env)
+        if not api_key:
+            console.print(f"[red]Error: environment variable {api_key_env} is not set.[/red]")
+            raise typer.Exit(1)
+    else:
+        api_key = None if no_api_key else typer.prompt("API key", hide_input=True)
     profile = ConnectionProfile(
         name=name,
         role=parsed_role,

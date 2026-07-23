@@ -43,7 +43,7 @@ from paperbanana_cn.core.types import (
 from paperbanana_cn.core.utils import ensure_dir, generate_run_id, save_json
 
 app = typer.Typer(
-    name="paperbanana",
+    name="paperbanana-cn",
     help="Generate publication-quality academic illustrations from text.",
     no_args_is_help=True,
 )
@@ -56,7 +56,7 @@ def _version_callback(value: bool) -> None:
 
         from paperbanana_cn import __version__
 
-        console.print(f"paperbanana {__version__} (Python {platform.python_version()})")
+        console.print(f"paperbanana-cn {__version__} (Python {platform.python_version()})")
         raise typer.Exit()
 
 
@@ -66,7 +66,7 @@ def _main(
         False,
         "--version",
         "-V",
-        help="Show paperbanana and Python versions, then exit.",
+        help="Show paperbanana-cn and Python versions, then exit.",
         callback=_version_callback,
         is_eager=True,
     ),
@@ -135,7 +135,7 @@ def _require_pdf_dep() -> None:
     except ImportError:
         console.print(
             "[red]PDF input requires PyMuPDF.[/red] Install it with:\n"
-            r"  pip install 'paperbanana\[pdf]'"
+            "  pip install --upgrade paperbanana-cn"
         )
         raise typer.Exit(1)
 
@@ -153,7 +153,7 @@ def _require_studio_dep() -> None:
     except ImportError:
         console.print(
             "[red]PaperBanana Studio requires Gradio. Install with:[/red]\n"
-            r"  pip install 'paperbanana\[studio]'"
+            "  pip install --upgrade paperbanana-cn"
         )
         raise typer.Exit(1)
 
@@ -271,7 +271,7 @@ def generate(
         None,
         "--input",
         "-i",
-        help="Path to methodology text file or PDF (.pdf requires: pip install 'paperbanana[pdf]')",
+        help="Path to methodology text file or PDF",
     ),
     caption: Optional[str] = typer.Option(
         None, "--caption", "-c", help="Figure caption / communicative intent"
@@ -440,7 +440,7 @@ def generate(
         "--venue",
         help=(
             "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
-            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+            "(see 'paperbanana-cn venues list'), or 'custom' (flat guideline files)"
         ),
     ),
     venue_dir: Optional[str] = typer.Option(
@@ -448,7 +448,7 @@ def generate(
         "--venue-dir",
         help=(
             "User venue style pack directory "
-            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana_cn/venues)"
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana-cn/venues)"
         ),
     ),
     export_tikz: bool = typer.Option(
@@ -920,7 +920,7 @@ def generate(
                 "  [dim]Using built-in reference set"
                 f" ({ref_count} examples). For better results:[/dim]"
             )
-            console.print("  [dim]  paperbanana data download   # or --auto-download-data[/dim]")
+            console.print("  [dim]  paperbanana-cn data download   # or --auto-download-data[/dim]")
 
         def on_progress(event: PipelineProgressEvent) -> None:
             if event.stage == PipelineProgressStage.OPTIMIZER_START:
@@ -1110,7 +1110,7 @@ def regenerate_from_ir(
         ...,
         "--input",
         "-i",
-        help="Path to methodology text file or PDF (.pdf requires: pip install 'paperbanana[pdf]')",
+        help="Path to methodology text file or PDF",
     ),
     caption: str = typer.Option(
         ...,
@@ -1324,7 +1324,7 @@ def sweep(
         None,
         "--input",
         "-i",
-        help="Path to methodology text file or PDF (.pdf requires: pip install 'paperbanana[pdf]')",
+        help="Path to methodology text file or PDF",
     ),
     caption: Optional[str] = typer.Option(
         None,
@@ -1747,7 +1747,7 @@ def batch(
         "--venue",
         help=(
             "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
-            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+            "(see 'paperbanana-cn venues list'), or 'custom' (flat guideline files)"
         ),
     ),
     auto_download_data: bool = typer.Option(
@@ -2128,7 +2128,7 @@ def orchestrate(
         "--venue",
         help=(
             "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
-            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+            "(see 'paperbanana-cn venues list'), or 'custom' (flat guideline files)"
         ),
     ),
     concurrency: int = typer.Option(
@@ -2374,7 +2374,7 @@ def plot_batch(
         "--venue",
         help=(
             "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
-            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+            "(see 'paperbanana-cn venues list'), or 'custom' (flat guideline files)"
         ),
     ),
     aspect_ratio: Optional[str] = typer.Option(
@@ -2547,7 +2547,7 @@ def plot(
         "--venue",
         help=(
             "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
-            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+            "(see 'paperbanana-cn venues list'), or 'custom' (flat guideline files)"
         ),
     ),
     venue_dir: Optional[str] = typer.Option(
@@ -2555,7 +2555,7 @@ def plot(
         "--venue-dir",
         help=(
             "User venue style pack directory "
-            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana_cn/venues)"
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana-cn/venues)"
         ),
     ),
     cost_only: bool = typer.Option(
@@ -2781,7 +2781,7 @@ def tikz(
         "--venue",
         help=(
             "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
-            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+            "(see 'paperbanana-cn venues list'), or 'custom' (flat guideline files)"
         ),
     ),
     config: Optional[str] = typer.Option(None, "--config", help="Path to a YAML config file"),
@@ -3172,7 +3172,7 @@ def setup():
     """Interactive setup wizard — get generating in 2 minutes with FREE APIs."""
     console.print(
         Panel.fit(
-            "[bold]Welcome to PaperBanana Setup[/bold]\n\n"
+            "[bold]Welcome to PaperBanana-CN Setup[/bold]\n\n"
             "We'll set up FREE API keys so you can start generating diagrams.",
             border_style="yellow",
         )
@@ -3225,7 +3225,7 @@ def setup():
     console.print(f"\n[green]Setup complete![/green] Configuration saved to {env_path}")
     console.print("\nTry it out:")
     console.print(
-        "  [bold]paperbanana generate --input method.txt"
+        "  [bold]paperbanana-cn generate --input method.txt"
         " --caption 'Overview of our framework'[/bold]"
     )
 
@@ -3729,7 +3729,9 @@ def ablate_prompts(
         store = ReferenceStore.from_settings(settings)
         examples = store.get_all()
         if not examples:
-            raise ValueError("No benchmark entries found. Run 'paperbanana data download' first.")
+            raise ValueError(
+                "No benchmark entries found. Run 'paperbanana-cn data download' first."
+            )
         entries = filter_examples(examples, category=category, ids=id_list, limit=limit)
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -4367,7 +4369,7 @@ def info():
 
     if not dataset_info:
         console.print("No expanded reference set cached.")
-        console.print("\nDownload with: [bold]paperbanana data download[/bold]")
+        console.print("\nDownload with: [bold]paperbanana-cn data download[/bold]")
         return
 
     datasets = dataset_info.get("datasets", [])
@@ -4669,7 +4671,7 @@ def guidelines_synthesize(
     if not examples:
         console.print(
             "[red]Error: No reference examples found.[/red]\n"
-            "Download the reference set with: [bold]paperbanana data download[/bold]"
+            "Download the reference set with: [bold]paperbanana-cn data download[/bold]"
         )
         raise typer.Exit(1)
 
@@ -4740,7 +4742,7 @@ _VENUE_YAML_TEMPLATE = """\
 # PaperBanana venue style pack configuration.
 # All fields are optional — delete or comment out anything you don't need.
 
-# Human-readable name shown by `paperbanana venues list`.
+# Human-readable name shown by `paperbanana-cn venues list`.
 display_name: "{display_name}"
 
 # Default --aspect-ratio for runs with this venue (used when the CLI flag
@@ -4761,7 +4763,7 @@ def venues_list(
         "--venue-dir",
         help=(
             "User venue style pack directory "
-            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana_cn/venues)"
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana-cn/venues)"
         ),
     ),
 ):
@@ -4797,7 +4799,7 @@ def venues_list(
     console.print(table)
     console.print(
         f"\nUser venue directory: [bold]{resolve_user_venue_dir(venue_dir)}[/bold]\n"
-        "Scaffold a new pack with: [bold]paperbanana venues init <name>[/bold]"
+        "Scaffold a new pack with: [bold]paperbanana-cn venues init <name>[/bold]"
     )
 
 
@@ -4809,7 +4811,7 @@ def venues_init(
         "--venue-dir",
         help=(
             "User venue style pack directory "
-            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana_cn/venues)"
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana-cn/venues)"
         ),
     ),
 ):
@@ -4870,10 +4872,18 @@ def venues_init(
         f"  {VENUE_CONFIG_FILENAME}                  — optional venue metadata\n\n"
         "Next steps:\n"
         f"  1. Edit the two style guides (or generate them from example figures "
-        f"with 'paperbanana guidelines synthesize --output {target}/...').\n"
+        f"with 'paperbanana-cn guidelines synthesize --output {target}/...').\n"
         f"  2. Adjust {VENUE_CONFIG_FILENAME} (display name, aspect ratio, fonts).\n"
-        f"  3. Use it: [bold]paperbanana generate --venue {venue_name} ...[/bold]"
+        f"  3. Use it: [bold]paperbanana-cn generate --venue {venue_name} ...[/bold]"
     )
+
+
+@app.command("mcp")
+def run_mcp_server() -> None:
+    """Start the local MCP server over stdio."""
+    from mcp_server.server import main
+
+    main()
 
 
 @app.command()
@@ -4910,7 +4920,7 @@ def studio(
         help="Root URL path when behind a reverse proxy",
     ),
 ):
-    """Launch PaperBanana Studio — local web UI for diagrams, plots, and evaluation."""
+    """Launch PaperBanana-CN Studio — local web UI for diagrams, plots, and evaluation."""
     _require_studio_dep()
 
     from paperbanana_cn.studio.app import launch_studio as launch_studio_ui
@@ -4923,7 +4933,7 @@ def studio(
     url = f"http://{host}:{port}/"
     console.print(
         Panel.fit(
-            f"[bold]PaperBanana Studio[/bold]\n\n"
+            f"[bold]PaperBanana-CN Studio[/bold]\n\n"
             f"Open in browser: [link={url}]{url}[/link]\n"
             f"Default output directory: {output_dir}",
             border_style="green",

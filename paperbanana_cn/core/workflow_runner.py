@@ -42,7 +42,7 @@ def _require_pdf_dep() -> None:
         import fitz  # noqa: F401
     except ImportError as e:
         raise RuntimeError(
-            "PDF input requires PyMuPDF. Install with: pip install 'paperbanana[pdf]'"
+            "PDF input requires PyMuPDF. Install with: pip install --upgrade paperbanana-cn"
         ) from e
 
 
@@ -103,7 +103,7 @@ def run_methodology_batch(
     progress_callback: Callable[[str], None] | None = None,
     runtime_settings: Settings | None = None,
 ) -> dict[str, Any]:
-    """Run methodology batch; mirrors ``paperbanana batch``."""
+    """Run methodology batch; mirrors ``paperbanana-cn batch``."""
     from paperbanana_cn.core.pipeline import PaperBananaPipeline
     from paperbanana_cn.data.manager import DatasetManager
 
@@ -360,7 +360,7 @@ def run_plot_batch(
     progress_callback: Callable[[str], None] | None = None,
     runtime_settings: Settings | None = None,
 ) -> dict[str, Any]:
-    """Run statistical plot batch; mirrors ``paperbanana plot-batch``."""
+    """Run statistical plot batch; mirrors ``paperbanana-cn plot-batch``."""
     from paperbanana_cn.core.pipeline import PaperBananaPipeline
 
     manifest_path = Path(manifest_path).resolve()
@@ -587,7 +587,7 @@ def run_orchestration_package(
     after_plan_callback: Callable[[dict[str, Any]], None] | None = None,
     runtime_settings: Settings | None = None,
 ) -> dict[str, Any]:
-    """Plan and/or run figure-package orchestration; mirrors ``paperbanana orchestrate``."""
+    """Plan and/or run figure-package orchestration; mirrors ``paperbanana-cn orchestrate``."""
     is_resume = bool(resume_orchestrate)
     if format not in ("png", "jpeg", "webp"):
         raise ValueError(f"Format must be png, jpeg, or webp. Got: {format}")

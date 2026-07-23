@@ -123,7 +123,7 @@ def load_plot_batch_manifest(manifest_path: Path) -> list[dict[str, Any]]:
 
     Each item must include:
       - data: path to CSV or JSON (resolved relative to manifest parent)
-      - intent: communicative intent for the plot (like ``paperbanana plot --intent``)
+      - intent: communicative intent for the plot (like ``paperbanana-cn plot --intent``)
       - id: optional string identifier (default: index-based)
 
     Optional per-item fields (override CLI defaults when set):

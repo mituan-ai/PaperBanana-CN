@@ -83,7 +83,7 @@ class TestUserVenueDirResolution:
     def test_default_is_xdg_config_dir(self, monkeypatch):
         monkeypatch.delenv("PAPERBANANA_VENUE_DIR", raising=False)
         # Compare path components, not a string — separators differ on Windows.
-        assert resolve_user_venue_dir().parts[-3:] == (".config", "paperbanana", "venues")
+        assert resolve_user_venue_dir().parts[-3:] == (".config", "paperbanana-cn", "venues")
 
 
 # ── Listing & resolution precedence ──────────────────────────────────

@@ -76,7 +76,7 @@ def test_generate_exits_with_hint_when_fitz_missing(tmp_path, block_fitz):
     )
     assert result.exit_code == 1
     assert "PyMuPDF" in result.output
-    assert "paperbanana[pdf]" in result.output
+    assert "pip install --upgrade paperbanana-cn" in result.output
 
 
 def test_batch_exits_with_hint_when_manifest_has_pdf(tmp_path, block_fitz):
@@ -95,4 +95,4 @@ def test_studio_exits_with_hint_when_gradio_missing(block_gradio):
     result = runner.invoke(app, ["studio"])
     assert result.exit_code == 1
     assert "Gradio" in result.output
-    assert "paperbanana[studio]" in result.output
+    assert "pip install --upgrade paperbanana-cn" in result.output

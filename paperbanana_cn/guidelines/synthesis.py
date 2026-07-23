@@ -161,7 +161,7 @@ async def synthesize_style_guide(
     if not sampled:
         raise StyleGuideSynthesisError(
             "No reference examples with existing image files were found. "
-            "Run `paperbanana data download` or point --reference-set at a "
+            "Run `paperbanana-cn data download` or point --reference-set at a "
             "directory with an index.json and images."
         )
 

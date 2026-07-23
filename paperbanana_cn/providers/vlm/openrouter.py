@@ -51,8 +51,8 @@ class OpenRouterVLM(VLMProvider):
                 base_url=self._base_url,
                 headers={
                     "Authorization": f"Bearer {self._api_key}",
-                    "HTTP-Referer": "https://github.com/llmsresearch/paperbanana",
-                    "X-Title": "PaperBanana",
+                    "HTTP-Referer": "https://github.com/mituan-ai/PaperBanana-CN",
+                    "X-Title": "PaperBanana-CN",
                 },
                 timeout=self._timeout_seconds,
             )

@@ -6,7 +6,7 @@ __all__ = ["launch_studio", "build_studio_app", "build_studio_server_app"]
 
 
 def launch_studio(**kwargs):
-    """Start the Gradio studio (requires ``pip install 'paperbanana[studio]'``)."""
+    """Start the Gradio studio included in the default installation."""
     from paperbanana_cn.studio.app import launch_studio as _launch
 
     return _launch(**kwargs)

@@ -133,7 +133,7 @@ class ReferenceStore:
 
         Resolution priority:
         1. REFERENCE_SET_PATH env var (explicit override)
-        2. Cached expanded dataset (~/.cache/paperbanana_cn/reference_sets/)
+        2. Cached expanded dataset (~/.cache/paperbanana-cn/reference_sets/)
         3. Built-in reference set (data/reference_sets/)
 
         Args:

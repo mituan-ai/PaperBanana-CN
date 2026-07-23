@@ -68,7 +68,7 @@ def test_missing_google_api_key_raises_helpful_error():
         ProviderRegistry.create_vlm(settings)
     error_msg = str(exc_info.value)
     assert "makersuite.google.com" in error_msg
-    assert "paperbanana setup" in error_msg
+    assert "paperbanana-cn setup" in error_msg
     assert "export GOOGLE_API_KEY" in error_msg
 
 
@@ -153,7 +153,7 @@ def test_empty_api_key_raises_helpful_error():
         ProviderRegistry.create_vlm(settings)
     error_msg = str(exc_info.value)
     assert "makersuite.google.com" in error_msg
-    assert "paperbanana setup" in error_msg
+    assert "paperbanana-cn setup" in error_msg
     assert "export GOOGLE_API_KEY" in error_msg
 
 

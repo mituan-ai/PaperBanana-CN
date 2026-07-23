@@ -65,7 +65,7 @@ class GoogleImagenGen(ImageGenProvider):
             except ImportError:
                 raise ImportError(
                     "google-genai is required for Google Imagen provider. "
-                    "Install with: pip install 'paperbanana[google]'"
+                    "Install with: pip install --upgrade paperbanana-cn"
                 )
         return self._client
 

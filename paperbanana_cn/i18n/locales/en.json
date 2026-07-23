@@ -1,7 +1,7 @@
 {
   "app.title": "PaperBanana-CN Research Studio",
   "app.subtitle": "Academic illustration generation studio",
-  "app.tip": "Run `paperbanana data download` to install the expanded reference set.",
+  "app.tip": "Run `paperbanana-cn data download` to install the expanded reference set.",
   "app.disclaimer": "PaperBanana-CN, developed by mituan",
   "nav.generate": "Create",
   "nav.improve": "Improve",

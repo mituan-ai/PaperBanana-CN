@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -54,6 +56,109 @@ def test_connections_import_legacy_creates_role_profiles(tmp_path, monkeypatch):
     assert vlm.base_url == image.base_url == "https://legacy-gemini.example"
     assert manager.secret_store.get(vlm.credential_ref) == "legacy-google-secret"
     assert manager.secret_store.get(image.credential_ref) == "legacy-google-secret"
+
+
+def test_connections_add_reads_api_key_from_environment(tmp_path, monkeypatch):
+    from paperbanana_cn.connections import cli as connections_cli
+    from paperbanana_cn.connections.manager import ConnectionManager
+    from paperbanana_cn.connections.models import ConnectionRole
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    monkeypatch.setattr(connections_cli, "ConnectionManager", lambda: manager)
+    monkeypatch.setenv("TEST_VLM_API_KEY", "environment-secret")
+
+    result = runner.invoke(
+        app,
+        [
+            "connections",
+            "add",
+            "--role",
+            "vlm",
+            "--name",
+            "CI VLM",
+            "--provider",
+            "openai",
+            "--model",
+            "test-vlm",
+            "--base-url",
+            "https://vlm.example/v1",
+            "--api-key-env",
+            "TEST_VLM_API_KEY",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "environment-secret" not in result.output
+    config = manager.load()
+    profile = config.profile(config.active_vlm_profile_id, ConnectionRole.VLM)
+    assert profile.name == "CI VLM"
+    assert manager.secret_store.get(profile.credential_ref) == "environment-secret"
+
+
+def test_connections_add_rejects_missing_api_key_environment(tmp_path, monkeypatch):
+    from paperbanana_cn.connections import cli as connections_cli
+    from paperbanana_cn.connections.manager import ConnectionManager
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    monkeypatch.setattr(connections_cli, "ConnectionManager", lambda: manager)
+    monkeypatch.delenv("MISSING_API_KEY", raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "connections",
+            "add",
+            "--role",
+            "image",
+            "--name",
+            "CI Image",
+            "--provider",
+            "openai",
+            "--model",
+            "test-image",
+            "--api-key-env",
+            "MISSING_API_KEY",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "MISSING_API_KEY is not set" in result.output
+    assert manager.load().profiles == []
+
+
+def test_connections_add_rejects_conflicting_api_key_options():
+    result = runner.invoke(
+        app,
+        [
+            "connections",
+            "add",
+            "--role",
+            "vlm",
+            "--name",
+            "Invalid",
+            "--provider",
+            "openai",
+            "--model",
+            "test-vlm",
+            "--api-key-env",
+            "ANY_KEY",
+            "--no-api-key",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "mutually exclusive" in result.output
+
+
+def test_mcp_command_delegates_to_existing_server(monkeypatch):
+    calls = []
+    fake_server = SimpleNamespace(main=lambda: calls.append("started"))
+    monkeypatch.setitem(sys.modules, "mcp_server.server", fake_server)
+
+    result = runner.invoke(app, ["mcp"])
+
+    assert result.exit_code == 0
+    assert calls == ["started"]
 
 
 def test_generate_dry_run_valid_inputs():

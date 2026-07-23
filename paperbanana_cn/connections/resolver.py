@@ -71,7 +71,7 @@ def resolve_connection_settings(
         roles = " and ".join(sorted(missing))
         raise ValueError(
             f"Active {roles} connection profile(s) are required. "
-            "Configure them with `paperbanana connections` or use explicit legacy mode."
+            "Configure them with `paperbanana-cn connections` or use explicit legacy mode."
         )
 
     updates: dict[str, object] = {"connection_source": "profiles"}

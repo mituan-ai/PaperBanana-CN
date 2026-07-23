@@ -260,7 +260,9 @@ class BenchmarkRunner:
         examples = store.get_all()
 
         if not examples:
-            raise ValueError("No benchmark entries found. Run 'paperbanana data download' first.")
+            raise ValueError(
+                "No benchmark entries found. Run 'paperbanana-cn data download' first."
+            )
 
         filtered = filter_examples(examples, category=category, ids=ids, limit=limit)
         logger.info(
