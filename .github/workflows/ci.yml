@@ -45,7 +45,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         uses: codecov/codecov-action@v6
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
 
   studio-e2e:
@@ -63,7 +63,6 @@ jobs:
       - name: Run desktop Studio browser tests
         env:
           NO_PROXY: 127.0.0.1,localhost
-          no_proxy: 127.0.0.1,localhost
         run: pytest tests/studio/test_desktop_e2e.py -v --tb=short
 
   build:
