@@ -47,13 +47,13 @@ dependencies = [
 [project.optional-dependencies]
 google = ["google-genai>=1.65"]
 openai = ["openai>=1.0"]
-bedrock = ["boto3>=1.34"]
+bedrock = ["boto3>=1.43.54"]
 anthropic = ["anthropic>=0.83"]
 litellm = ["litellm>=1.67.0,<2.0"]
 all-providers = [
     "google-genai>=1.65",
     "openai>=1.0",
-    "boto3>=1.34",
+    "boto3>=1.43.54",
     "anthropic>=0.83",
     "litellm>=1.67.0,<2.0",
 ]
