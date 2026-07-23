@@ -1,4 +1,4 @@
-name: Release to PyPI
+name: Release PaperBanana-CN
 
 on:
   push:
@@ -6,12 +6,10 @@ on:
       - "v*"
 
 jobs:
-  release:
-    if: github.repository == 'llmsresearch/paperbanana'
+  verify:
+    if: github.repository == 'mituan-ai/PaperBanana-CN'
     runs-on: ubuntu-latest
-    environment: release
     permissions:
-      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v6
@@ -19,53 +17,202 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-      - name: Install build dependencies
-        run: pip install build
-      - name: Verify versions match the tag
+      - name: Install release dependencies
+        run: pip install -e ".[dev]"
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+      - name: Verify tag and package versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          python - "$TAG" <<'PY'
-          import json, sys, tomllib
+          python - <<'PY'
+          import json
+          import os
+          import tomllib
 
-          tag = sys.argv[1]
-          pkg = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
-          init = next(
-              line.split('"')[1]
-              for line in open("paperbanana_cn/__init__.py")
-              if line.startswith("__version__")
-          )
-          server = json.load(open("server.json"))["version"]
-          versions = {"tag": tag, "pyproject": pkg, "__init__": init, "server.json": server}
+          tag = os.environ["RELEASE_TAG"].removeprefix("v")
+          project = tomllib.load(open("pyproject.toml", "rb"))["project"]
+          namespace = {}
+          exec(open("paperbanana_cn/__init__.py", encoding="utf-8").read(), namespace)
+          manifest = json.load(open("server.json", encoding="utf-8"))
+          versions = {
+              "tag": tag,
+              "pyproject": project["version"],
+              "__init__": namespace["__version__"],
+              "server.json": manifest["version"],
+              "MCP package": manifest["packages"][0]["version"],
+          }
           print(versions)
           if len(set(versions.values())) != 1:
               raise SystemExit(f"version mismatch: {versions}")
+          if project["name"] != "paperbanana-cn":
+              raise SystemExit(f"unexpected distribution name: {project['name']}")
           PY
-      - name: Build package
-        run: python -m build
-      - name: Verify the built wheel installs and exposes the current CLI
+      - name: Run test and static-analysis gates
+        env:
+          NO_PROXY: 127.0.0.1,localhost
         run: |
-          python -m venv /tmp/verify-venv
-          /tmp/verify-venv/bin/pip install --quiet dist/*.whl
-          OUT=$(/tmp/verify-venv/bin/paperbanana --version)
-          echo "$OUT"
-          echo "$OUT" | grep -q "paperbanana ${GITHUB_REF_NAME#v}"
-          # Introspect the click command tree instead of grepping rendered
-          # help text — rich truncates flag names at narrow console widths.
-          /tmp/verify-venv/bin/python - <<'PY'
-          import typer.main
+          pytest tests/ -q
+          ruff check paperbanana_cn/ mcp_server/ tests/ scripts/
+          ruff format --check paperbanana_cn/ mcp_server/ tests/ scripts/
+      - name: Build once and validate package metadata
+        run: |
+          python -m build
+          python -m twine check dist/*
+          (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
+      - name: Verify clean wheel, unique command, and MCP handshake
+        run: |
+          python -m venv /tmp/paperbanana-cn-release
+          /tmp/paperbanana-cn-release/bin/pip install dist/*.whl
+          /tmp/paperbanana-cn-release/bin/paperbanana-cn --version
+          /tmp/paperbanana-cn-release/bin/python - <<'PY'
+          import importlib.util
+          import paperbanana_cn
 
-          from paperbanana_cn.cli import app
-
-          cmd = typer.main.get_command(app)
-          gen = cmd.commands["generate"]
-          flags = {opt for param in gen.params for opt in param.opts}
-          required = {"--budget", "--optimize", "--format", "--export-tikz"}
-          missing = required - flags
-          if missing:
-              raise SystemExit(f"wheel CLI is stale — missing flags: {sorted(missing)}")
-          print("CLI flags verified:", sorted(required))
+          assert paperbanana_cn.__version__ == "2.0.1"
+          assert importlib.util.find_spec("paperbanana") is None
           PY
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          test ! -e /tmp/paperbanana-cn-release/bin/paperbanana
+          test ! -e /tmp/paperbanana-cn-release/bin/paperbanana-mcp
+          /tmp/paperbanana-cn-release/bin/python scripts/smoke_mcp.py \
+            --command /tmp/paperbanana-cn-release/bin/paperbanana-cn
+      - name: Validate MCP Registry manifest with pinned publisher
+        run: |
+          curl -fsSL -o /tmp/mcp-publisher.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.0/mcp-publisher_linux_amd64.tar.gz
+          echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  /tmp/mcp-publisher.tar.gz" \
+            | sha256sum -c -
+          tar -xzf /tmp/mcp-publisher.tar.gz -C /tmp mcp-publisher
+          /tmp/mcp-publisher validate
+      - uses: actions/upload-artifact@v6
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          name: paperbanana-cn-${{ github.ref_name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish-pypi:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: paperbanana-cn-${{ github.ref_name }}
+          path: dist
+      - name: Reject conflicting PyPI versions
+        id: pypi
+        run: >-
+          python scripts/verify_pypi_release.py
+          --project paperbanana-cn
+          --version "${GITHUB_REF_NAME#v}"
+          --dist-dir dist
+      - name: Keep only Python distributions in the upload directory
+        if: steps.pypi.outputs.publish == 'true'
+        run: rm dist/SHA256SUMS
+      - name: Publish wheel and sdist with Trusted Publishing
+        if: steps.pypi.outputs.publish == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-mcp:
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Wait for the PyPI release to become visible
+        run: |
+          for attempt in {1..12}; do
+            if curl -fsSL \
+              "https://pypi.org/pypi/paperbanana-cn/${GITHUB_REF_NAME#v}/json" \
+              >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "PyPI release did not become visible in time"
+          exit 1
+      - name: Install pinned MCP publisher
+        run: |
+          curl -fsSL -o /tmp/mcp-publisher.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.0/mcp-publisher_linux_amd64.tar.gz
+          echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  /tmp/mcp-publisher.tar.gz" \
+            | sha256sum -c -
+          tar -xzf /tmp/mcp-publisher.tar.gz mcp-publisher
+      - name: Reject conflicting MCP Registry versions
+        id: registry
+        run: python scripts/verify_mcp_release.py --manifest server.json
+      - name: Publish to the MCP Registry with GitHub OIDC
+        if: steps.registry.outputs.publish == 'true'
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+  publish-docker:
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/mituan-ai/paperbanana-cn
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+
+  github-release:
+    needs: [publish-pypi, publish-mcp, publish-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: paperbanana-cn-${{ github.ref_name }}
+          path: dist
+      - name: Create or verify the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            mkdir -p /tmp/existing-release
+            gh release download "$GITHUB_REF_NAME" --dir /tmp/existing-release
+            cmp dist/SHA256SUMS /tmp/existing-release/SHA256SUMS
+            (cd /tmp/existing-release && sha256sum -c SHA256SUMS)
+            echo "Existing GitHub Release artifacts are byte-identical."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "PaperBanana-CN ${GITHUB_REF_NAME}" \
+              --notes-file docs/releases/v2.0.1.md \
+              dist/*.whl dist/*.tar.gz dist/SHA256SUMS
+          fi

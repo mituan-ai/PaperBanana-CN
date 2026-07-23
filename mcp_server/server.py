@@ -1162,7 +1162,7 @@ async def batch_plots(
 
 def main():
     """MCP server entry point."""
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

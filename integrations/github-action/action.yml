@@ -1,12 +1,11 @@
-name: "PaperBanana Figure"
+name: "PaperBanana-CN Figure"
 description: >-
-  Generate a publication-quality methodology diagram from your paper's LaTeX
-  source and commit it back to the repo. Pairs with Overleaf's GitHub sync:
-  push, generate, pull — the figure appears in your Overleaf project.
-author: "LLMs Research Inc."
+  Generate a publication-quality methodology diagram with independent VLM and
+  image connections, then optionally commit it to the repository.
+author: "mituan"
 branding:
   icon: "image"
-  color: "yellow"
+  color: "green"
 
 inputs:
   tex-file:
@@ -17,68 +16,92 @@ inputs:
     required: false
     default: "Method"
   caption:
-    description: "Figure caption / communicative intent (also used in the LaTeX snippet)"
+    description: "Figure caption or communicative intent"
     required: true
   output-path:
-    description: "Repo-relative path for the generated image (.png or .jpg)"
+    description: "Repo-relative output image path (.png, .jpg, or .jpeg)"
     required: false
     default: "figures/method_overview.png"
   snippet-path:
-    description: "Repo-relative path for the generated \\begin{figure} snippet (default: output-path with .tex extension)"
+    description: "Repo-relative LaTeX snippet path (defaults to output-path with .tex)"
     required: false
     default: ""
   figure-label:
-    description: "LaTeX \\label for the figure"
+    description: "LaTeX label for the generated figure"
     required: false
     default: "fig:method-overview"
   figure-width:
-    description: "Width argument for \\includegraphics"
+    description: "Width argument for LaTeX includegraphics"
     required: false
     default: '\columnwidth'
   vlm-provider:
-    description: "VLM provider (openai, gemini, atlas, openrouter, anthropic, bedrock, ollama, litellm)"
+    description: "VLM provider adapter"
+    required: false
+    default: "openai"
+  vlm-base-url:
+    description: "VLM API base URL; leave empty for the provider default"
     required: false
     default: ""
   vlm-model:
-    description: "VLM model override"
-    required: false
-    default: ""
+    description: "Exact VLM model identifier"
+    required: true
+  vlm-api-key:
+    description: "VLM API key; pass a GitHub Actions secret"
+    required: true
   image-provider:
-    description: "Image generation provider (openai_imagen, google_imagen, atlas_imagen, openrouter_imagen, bedrock_imagen)"
+    description: "Image generation provider adapter"
+    required: false
+    default: "openai_imagen"
+  image-base-url:
+    description: "Image API base URL; leave empty for the provider default"
     required: false
     default: ""
   image-model:
-    description: "Image generation model override"
+    description: "Exact image model identifier"
+    required: true
+  image-api-key:
+    description: "Image API key; pass a GitHub Actions secret"
+    required: true
+  image-size-mode:
+    description: "Image protocol: fixed, explicit_pixels, native_tier, or prompt_hint"
     required: false
-    default: ""
+    default: "fixed"
+  aspect-ratio:
+    description: "Output aspect ratio"
+    required: false
+    default: "3:2"
+  resolution:
+    description: "Output resolution tier: 1K, 2K, or 4K"
+    required: false
+    default: "1K"
   iterations:
-    description: "Refinement iterations (Visualizer/Critic loop)"
+    description: "Visualizer/Critic refinement iterations"
     required: false
-    default: ""
+    default: "3"
   optimize:
-    description: "Preprocess inputs for better generation (true/false)"
+    description: "Preprocess inputs for better generation"
     required: false
     default: "false"
   budget:
-    description: "Budget cap in USD; the pipeline aborts gracefully when exceeded"
+    description: "Optional budget cap in USD"
     required: false
     default: ""
   seed:
-    description: "Random seed for reproducible generation"
+    description: "Optional random seed"
     required: false
     default: ""
   paperbanana-version:
-    description: "PyPI version to install (empty = latest from the GitHub main branch; releases <=0.1.2 predate the budget/seed flags)"
+    description: "Exact paperbanana-cn version to install"
     required: false
-    default: ""
+    default: "2.0.1"
   commit:
-    description: "Commit and push the generated files (true/false)"
+    description: "Commit and push the generated files"
     required: false
     default: "true"
   commit-message:
-    description: "Commit message ([skip ci] prevents retrigger loops)"
+    description: "Commit message; keep [skip ci] to prevent loops"
     required: false
-    default: "chore: update methodology figure via PaperBanana [skip ci]"
+    default: "chore: update figure via PaperBanana-CN [skip ci]"
 
 outputs:
   image-path:
@@ -92,20 +115,15 @@ runs:
   using: "composite"
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: "3.11"
 
-    - name: Install PaperBanana
+    - name: Install PaperBanana-CN
       shell: bash
       env:
         PB_VERSION: ${{ inputs.paperbanana-version }}
-      run: |
-        if [ -n "$PB_VERSION" ]; then
-          python -m pip install --quiet "paperbanana==${PB_VERSION}"
-        else
-          python -m pip install --quiet "paperbanana @ git+https://github.com/llmsresearch/paperbanana.git@main"
-        fi
+      run: python -m pip install --quiet "paperbanana-cn==${PB_VERSION}"
 
     - name: Extract methodology section
       shell: bash
@@ -116,52 +134,69 @@ runs:
         python "${{ github.action_path }}/extract_section.py" \
           --tex "$TEX_FILE" \
           --section "$SECTION" \
-          --out "$RUNNER_TEMP/pb_methodology.txt"
+          --out "$RUNNER_TEMP/paperbanana-cn-methodology.txt"
+
+    - name: Configure independent model connections
+      shell: bash
+      env:
+        XDG_CONFIG_HOME: ${{ runner.temp }}/paperbanana-cn/config
+        XDG_DATA_HOME: ${{ runner.temp }}/paperbanana-cn/data
+        XDG_CACHE_HOME: ${{ runner.temp }}/paperbanana-cn/cache
+        PB_VLM_PROVIDER: ${{ inputs.vlm-provider }}
+        PB_VLM_BASE_URL: ${{ inputs.vlm-base-url }}
+        PB_VLM_MODEL: ${{ inputs.vlm-model }}
+        PB_VLM_API_KEY: ${{ inputs.vlm-api-key }}
+        PB_IMAGE_PROVIDER: ${{ inputs.image-provider }}
+        PB_IMAGE_BASE_URL: ${{ inputs.image-base-url }}
+        PB_IMAGE_MODEL: ${{ inputs.image-model }}
+        PB_IMAGE_API_KEY: ${{ inputs.image-api-key }}
+        PB_IMAGE_SIZE_MODE: ${{ inputs.image-size-mode }}
+      run: python "${{ github.action_path }}/configure_connections.py"
 
     - name: Generate figure
       id: generate
       shell: bash
       env:
+        XDG_CONFIG_HOME: ${{ runner.temp }}/paperbanana-cn/config
+        XDG_DATA_HOME: ${{ runner.temp }}/paperbanana-cn/data
+        XDG_CACHE_HOME: ${{ runner.temp }}/paperbanana-cn/cache
         CAPTION: ${{ inputs.caption }}
         OUTPUT_PATH: ${{ inputs.output-path }}
-        VLM_PROVIDER: ${{ inputs.vlm-provider }}
-        VLM_MODEL: ${{ inputs.vlm-model }}
-        IMAGE_PROVIDER: ${{ inputs.image-provider }}
-        IMAGE_MODEL: ${{ inputs.image-model }}
+        ASPECT_RATIO: ${{ inputs.aspect-ratio }}
+        RESOLUTION: ${{ inputs.resolution }}
         ITERATIONS: ${{ inputs.iterations }}
         OPTIMIZE: ${{ inputs.optimize }}
         BUDGET: ${{ inputs.budget }}
         SEED: ${{ inputs.seed }}
       run: |
         set -euo pipefail
-
         case "${OUTPUT_PATH##*.}" in
           png) FORMAT="png" ;;
           jpg|jpeg) FORMAT="jpeg" ;;
-          *) echo "error: output-path must end in .png, .jpg, or .jpeg (LaTeX-compatible)"; exit 1 ;;
+          *) echo "error: output-path must end in .png, .jpg, or .jpeg"; exit 1 ;;
         esac
 
         ARGS=(
-          --input "$RUNNER_TEMP/pb_methodology.txt"
+          --input "$RUNNER_TEMP/paperbanana-cn-methodology.txt"
           --caption "$CAPTION"
-          --output "$RUNNER_TEMP/pb_out/figure.$FORMAT"
+          --output-dir "$RUNNER_TEMP/paperbanana-cn-output"
           --format "$FORMAT"
+          --aspect-ratio "$ASPECT_RATIO"
+          --resolution "$RESOLUTION"
+          --iterations "$ITERATIONS"
         )
-        [ -n "$VLM_PROVIDER" ]   && ARGS+=(--vlm-provider "$VLM_PROVIDER")
-        [ -n "$VLM_MODEL" ]      && ARGS+=(--vlm-model "$VLM_MODEL")
-        [ -n "$IMAGE_PROVIDER" ] && ARGS+=(--image-provider "$IMAGE_PROVIDER")
-        [ -n "$IMAGE_MODEL" ]    && ARGS+=(--image-model "$IMAGE_MODEL")
-        [ -n "$ITERATIONS" ]     && ARGS+=(--iterations "$ITERATIONS")
         [ "$OPTIMIZE" = "true" ] && ARGS+=(--optimize)
-        [ -n "$BUDGET" ]         && ARGS+=(--budget "$BUDGET")
-        [ -n "$SEED" ]           && ARGS+=(--seed "$SEED")
+        [ -n "$BUDGET" ] && ARGS+=(--budget "$BUDGET")
+        [ -n "$SEED" ] && ARGS+=(--seed "$SEED")
 
-        paperbanana generate "${ARGS[@]}"
+        paperbanana-cn generate "${ARGS[@]}"
 
-        # The pipeline writes <output-dir>/<run_id>/final_output.<ext>
-        IMG=$(ls -t "$RUNNER_TEMP"/pb_out/*/final_output.* | head -1)
+        IMG=$(find "$RUNNER_TEMP/paperbanana-cn-output" -type f \
+          \( -name 'final_output.png' -o -name 'final_output.jpg' \) \
+          -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
         if [ -z "$IMG" ]; then
-          echo "error: no final_output image produced"; exit 1
+          echo "error: no final output image produced"
+          exit 1
         fi
         mkdir -p "$(dirname "$OUTPUT_PATH")"
         cp "$IMG" "$OUTPUT_PATH"
@@ -183,10 +218,9 @@ runs:
 
         output_path = os.environ["OUTPUT_PATH"]
         snippet_path = os.environ["SNIPPET_PATH"] or str(Path(output_path).with_suffix(".tex"))
-
         snippet = "\n".join(
             [
-                "% Generated by PaperBanana (https://github.com/llmsresearch/paperbanana)",
+                "% Generated by PaperBanana-CN (https://github.com/mituan-ai/PaperBanana-CN)",
                 f"% Usage: \\input{{{Path(snippet_path).with_suffix('')}}}",
                 "\\begin{figure}[t]",
                 "  \\centering",
@@ -199,9 +233,8 @@ runs:
         )
         Path(snippet_path).parent.mkdir(parents=True, exist_ok=True)
         Path(snippet_path).write_text(snippet, encoding="utf-8")
-
-        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-            fh.write(f"snippet-path={snippet_path}\n")
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+            handle.write(f"snippet-path={snippet_path}\n")
         PYEOF
 
     - name: Commit and push
@@ -217,7 +250,7 @@ runs:
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git add "$IMAGE_PATH" "$SNIPPET_PATH"
         if git diff --cached --quiet; then
-          echo "Figure unchanged — nothing to commit."
+          echo "Figure unchanged; nothing to commit."
         else
           git commit -m "$COMMIT_MESSAGE"
           git push

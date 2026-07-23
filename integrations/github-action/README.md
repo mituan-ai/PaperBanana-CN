@@ -1,86 +1,90 @@
-# PaperBanana GitHub Action — Overleaf Integration
+# PaperBanana-CN GitHub Action
 
-Generate a publication-quality methodology diagram from your paper's LaTeX source on every push, and have it appear in your Overleaf project via Overleaf's built-in GitHub sync.
-
-**The loop:**
-
-1. Your paper lives in a GitHub repo linked to Overleaf (Menu → GitHub in Overleaf).
-2. You edit your methodology section and push (or sync from Overleaf to GitHub).
-3. This action extracts the section, runs the PaperBanana pipeline (Retriever → Planner → Stylist → Visualizer ↔ Critic), and commits back the figure plus a ready-to-`\input` LaTeX snippet.
-4. In Overleaf, pull from GitHub — the figure is in your file tree.
+Generate a methodology figure from a LaTeX section with independent VLM and image-generation
+connections. The action stores both credentials in an isolated temporary XDG directory, passes only
+saved connection profiles to the CLI, and removes the directory with the GitHub runner.
 
 ## Quick start
 
-Add `.github/workflows/paperbanana.yml` to your paper repo:
-
 ```yaml
-name: PaperBanana figure
+name: Generate methodology figure
 
 on:
-  workflow_dispatch:        # run manually from the Actions tab
-  push:
-    paths:
-      - "sections/method.tex"   # only regenerate when the methodology changes
+  workflow_dispatch:
 
 permissions:
-  contents: write           # the action commits the figure back
+  contents: write
 
 jobs:
   figure:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: llmsresearch/paperbanana/integrations/github-action@main
+      - uses: actions/checkout@v6
+      - uses: mituan-ai/PaperBanana-CN/integrations/github-action@main
         with:
           tex-file: sections/method.tex
           caption: "Overview of our proposed framework"
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+          vlm-provider: openai
+          vlm-base-url: ${{ vars.VLM_BASE_URL }}
+          vlm-model: ${{ vars.VLM_MODEL }}
+          vlm-api-key: ${{ secrets.VLM_API_KEY }}
+
+          image-provider: openai_imagen
+          image-base-url: ${{ vars.IMAGE_BASE_URL }}
+          image-model: ${{ vars.IMAGE_MODEL }}
+          image-api-key: ${{ secrets.IMAGE_API_KEY }}
+          image-size-mode: explicit_pixels
+
+          aspect-ratio: "16:9"
+          resolution: "2K"
+          budget: "0.50"
 ```
 
-Then add your provider API key under **Settings → Secrets and variables → Actions** in your repo, and put this in your document body:
-
-```latex
-\input{figures/method_overview}
-```
-
-That's it. Edit your method section, push, pull in Overleaf.
+Use repository variables for non-secret URLs and model names, and GitHub Actions secrets for API
+keys. The VLM and image connections can point to one relay or two completely different services.
+The action never places a key on a command line.
 
 ## Inputs
 
 | Input | Default | Description |
-|-------|---------|-------------|
-| `tex-file` | *(required)* | Path to the `.tex` file containing the methodology |
-| `caption` | *(required)* | Figure caption / communicative intent |
-| `section` | `Method` | Section title to extract (case-insensitive substring match against `\section{...}` titles) |
-| `output-path` | `figures/method_overview.png` | Where the image is written (`.png`, `.jpg`) |
-| `snippet-path` | output-path with `.tex` | Where the `\begin{figure}` snippet is written |
-| `figure-label` | `fig:method-overview` | `\label` used in the snippet |
-| `figure-width` | `\columnwidth` | Width argument for `\includegraphics` |
-| `vlm-provider` | config default | `openai`, `gemini`, `atlas`, `openrouter`, `anthropic`, `bedrock`, `ollama`, `litellm` |
-| `image-provider` | config default | `openai_imagen`, `google_imagen`, `atlas_imagen`, `openrouter_imagen`, `bedrock_imagen` |
-| `vlm-model` / `image-model` | provider default | Model overrides |
-| `iterations` | config default | Visualizer ↔ Critic refinement iterations |
-| `optimize` | `false` | Preprocess inputs for better generation |
-| `budget` | none | USD cap per run — recommended for CI |
-| `seed` | none | Reproducible generation |
-| `paperbanana-version` | latest from `main` | Set a PyPI version to pin (use ≥ 0.1.3 — earlier releases predate the `budget`/`seed` flags) |
-| `commit` | `true` | Commit and push the generated files |
-| `commit-message` | `chore: update methodology figure via PaperBanana [skip ci]` | Keep `[skip ci]` to avoid retrigger loops |
+|---|---|---|
+| `tex-file` | required | LaTeX source containing the methodology section |
+| `caption` | required | Figure caption or communicative intent |
+| `section` | `Method` | Section-title substring to extract |
+| `output-path` | `figures/method_overview.png` | Generated PNG or JPEG path |
+| `snippet-path` | image path with `.tex` | Generated LaTeX snippet |
+| `figure-label` | `fig:method-overview` | LaTeX label |
+| `figure-width` | `\columnwidth` | `\includegraphics` width |
+| `vlm-provider` | `openai` | VLM provider adapter |
+| `vlm-base-url` | provider default | Independent VLM Base URL |
+| `vlm-model` | required | Exact VLM model identifier |
+| `vlm-api-key` | required | VLM API key from a secret |
+| `image-provider` | `openai_imagen` | Image provider adapter |
+| `image-base-url` | provider default | Independent image Base URL |
+| `image-model` | required | Exact image model identifier |
+| `image-api-key` | required | Image API key from a secret |
+| `image-size-mode` | `fixed` | `fixed`, `explicit_pixels`, `native_tier`, or `prompt_hint` |
+| `aspect-ratio` | `3:2` | One of the ten supported ratios |
+| `resolution` | `1K` | `1K`, `2K`, or `4K` |
+| `iterations` | `3` | Visualizer/Critic refinement rounds |
+| `optimize` | `false` | Enable input optimization |
+| `budget` | empty | Optional USD budget cap |
+| `seed` | empty | Optional random seed |
+| `paperbanana-version` | `2.0.1` | Exact PyPI release to install |
+| `commit` | `true` | Commit and push generated files |
+| `commit-message` | PaperBanana-CN update | Commit message |
 
-API keys are passed as `env:` on the action step (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ATLASCLOUD_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, or AWS credentials for Bedrock) — always from repo secrets, never inline.
+The selected provider must support the requested ratio and resolution. Unsupported combinations
+fail before generation instead of being silently resized or cropped.
 
 ## Outputs
 
 | Output | Description |
-|--------|-------------|
-| `image-path` | Repo-relative path of the generated image |
-| `snippet-path` | Repo-relative path of the generated LaTeX snippet |
+|---|---|
+| `image-path` | Repository-relative generated image path |
+| `snippet-path` | Repository-relative LaTeX snippet path |
 
-## Notes
-
-- **Avoiding workflow loops:** the default commit message contains `[skip ci]`, and the quick-start workflow uses a `paths:` filter so the action's own commit (a `.png` + `.tex` under `figures/`) can't retrigger it. Keep one of the two in place if you customize.
-- **Image paths in Overleaf:** the snippet references the image by its repo-relative path (e.g. `figures/method_overview.png`), which matches Overleaf's file tree after a pull. If your main `.tex` lives in a subdirectory, set `output-path`/`snippet-path` accordingly or use `\graphicspath`.
-- **Cost control:** set `budget` (e.g. `"0.50"`) so a runaway refinement loop aborts gracefully instead of burning credits.
-- **`\input`ed sections:** the extractor reads only the file you point it at — if your methodology is split across `\input` files, point `tex-file` at the file that holds the actual section body.
-- **Overleaf GitHub sync** requires an Overleaf premium plan. The action itself works with any LaTeX repo, Overleaf or not.
+The action uses `paperbanana-cn==2.0.1`, creates two saved profiles with
+`connections add --api-key-env`, and runs `paperbanana-cn generate` in profile mode. It does not use
+the legacy provider environment-variable merge path.

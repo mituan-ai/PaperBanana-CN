@@ -1,43 +1,76 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.llmsresearch/paperbanana",
-  "title": "PaperBanana",
-  "description": "Generate academic diagrams and statistical plots from text using multi-agent AI.",
-  "version": "0.3.0",
+  "name": "io.github.mituan-ai/paperbanana-cn",
+  "title": "PaperBanana-CN",
+  "description": "Generate and evaluate academic diagrams and plots with independent model connections.",
+  "version": "2.0.1",
+  "websiteUrl": "https://github.com/mituan-ai/PaperBanana-CN",
   "packages": [
     {
       "registryType": "pypi",
-      "identifier": "paperbanana",
-      "version": "0.3.0",
+      "identifier": "paperbanana-cn",
+      "version": "2.0.1",
+      "runtimeHint": "uvx",
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
       "transport": {
         "type": "stdio"
       }
     }
   ],
   "repository": {
-    "url": "https://github.com/llmsresearch/paperbanana",
-    "source": "github"
+    "url": "https://github.com/mituan-ai/PaperBanana-CN",
+    "source": "github",
+    "id": "1219765831"
   },
   "tools": [
     {
       "name": "generate_diagram",
-      "description": "Generate a methodology diagram from text context and caption"
+      "description": "Generate a methodology diagram from text context and a caption"
     },
     {
       "name": "continue_run",
-      "description": "Continue refinement for an existing run directory (optional critic feedback)"
+      "description": "Continue refinement for an existing diagram or plot run"
     },
     {
       "name": "generate_plot",
-      "description": "Generate a statistical plot from JSON data and intent description"
+      "description": "Generate a statistical plot from JSON data and an intent"
+    },
+    {
+      "name": "continue_diagram",
+      "description": "Continue a prior methodology diagram run"
+    },
+    {
+      "name": "continue_plot",
+      "description": "Continue a prior statistical plot run"
     },
     {
       "name": "evaluate_diagram",
-      "description": "Compare a generated diagram against a human reference on 4 dimensions"
+      "description": "Evaluate a diagram against a reference on four dimensions"
     },
     {
       "name": "evaluate_plot",
-      "description": "Compare a generated statistical plot against a human reference on 4 dimensions"
+      "description": "Evaluate a statistical plot against a reference"
+    },
+    {
+      "name": "download_references",
+      "description": "Download the PaperBananaBench reference set"
+    },
+    {
+      "name": "orchestrate_figures",
+      "description": "Plan or generate a full-paper figure package"
+    },
+    {
+      "name": "batch_diagrams",
+      "description": "Generate methodology diagrams from a batch manifest"
+    },
+    {
+      "name": "batch_plots",
+      "description": "Generate statistical plots from a batch manifest"
     }
   ]
 }
