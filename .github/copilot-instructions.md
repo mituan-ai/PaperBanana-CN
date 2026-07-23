@@ -1,53 +1,49 @@
-# Copilot Instructions for PaperBanana
+# Copilot Instructions for PaperBanana-CN
 
-## Build & Test
+## Product scope
 
-```bash
-# Install for development
-pip install -e ".[dev,openai,google]"
+Preserve the upstream PaperBanana scientific workflow. Repository-specific production work is
+limited to independent VLM/image connections, Chinese/English Studio support, and unified aspect
+ratio plus `1K`/`2K`/`4K` resolution controls.
 
-# Run full test suite
-pytest tests/ -v
-
-# Run a single test file
-pytest tests/test_pipeline/test_types.py -v
-
-# Run a single test by name
-pytest tests/ -k "test_critique_result_needs_revision" -v
-
-# Lint
-ruff check paperbanana/ mcp_server/ tests/ scripts/
-
-# Format
-ruff format paperbanana/ mcp_server/ tests/ scripts/
-```
-
-CI runs lint, tests (Python 3.10–3.12 on Linux/macOS/Windows), and package build. Tests must pass without a `GOOGLE_API_KEY`—all tests mock external providers.
+Do not modify the frozen `v1` branch or copy V1 configuration/session code.
 
 ## Architecture
 
-PaperBanana is an agentic framework that generates publication-quality academic diagrams from text. It implements a **two-phase multi-agent pipeline**:
+- `paperbanana_cn/core/`: upstream configuration types and workflow orchestration.
+- `paperbanana_cn/providers/`: protocol adapters and provider capability declarations.
+- `paperbanana_cn/connections/`: the only saved-profile, credential-reference, and runtime
+  connection resolution path.
+- `paperbanana_cn/studio/`: Gradio UI that consumes shared connection/configuration services.
+- `paperbanana_cn/i18n/`: stable English and Chinese locale catalogs.
+- `mcp_server/`: the existing FastMCP implementation launched by `paperbanana-cn mcp`.
 
-**Phase 1 — Linear Planning:** Retriever → Planner → Stylist  
-**Phase 2 — Iterative Refinement:** Visualizer ↔ Critic (up to N rounds)
+Never add a second provider factory, configuration merge path, ratio set, size conversion table, or
+translated prompt path. Core code must not recognize relay domains, channel vendors, or special
+model IDs.
 
-Key architectural layers:
+## Identity
 
-- **`paperbanana/core/`** — Pipeline orchestrator (`pipeline.py`), Pydantic data types (`types.py`), config via `pydantic-settings` (`config.py`). `Settings` loads from env vars, `.env` file, or YAML config.
-- **`paperbanana/agents/`** — Seven agents (Optimizer, Retriever, Planner, Stylist, Visualizer, Critic, plus InputOptimizer with parallel sub-tasks), all inheriting from `BaseAgent`. Each agent wraps a VLM provider and a prompt template loaded from `prompts/`.
-- **`paperbanana/providers/`** — Abstract `VLMProvider` and `ImageGenProvider` base classes in `base.py`. Concrete implementations in `vlm/` (OpenAI, Gemini, OpenRouter) and `image_gen/` (OpenAI, Google Imagen, OpenRouter). `ProviderRegistry` is the factory that creates providers from `Settings`.
-- **`prompts/`** — Text prompt templates organized by type (`diagram/`, `plot/`, `evaluation/`). Templates use `{placeholder}` formatting, loaded by `BaseAgent.load_prompt()`.
-- **`paperbanana/evaluation/`** — VLM-as-Judge system. Scores on 4 dimensions (Faithfulness, Readability, Conciseness, Aesthetics) with hierarchical aggregation.
-- **`mcp_server/`** — FastMCP server exposing tools including `generate_diagram`, `continue_run`, `generate_plot`, `evaluate_diagram`, and `evaluate_plot`.
-- **`data/reference_sets/`** — 13 curated methodology diagram examples used for in-context learning by the Retriever agent.
+- Distribution: `paperbanana-cn`
+- Python package: `paperbanana_cn`
+- Only command: `paperbanana-cn`
+- MCP: `paperbanana-cn mcp`
 
-## Conventions
+Do not reintroduce `paperbanana/`, `import paperbanana`, `paperbanana`, or `paperbanana-mcp` console
+scripts. Preserve `PAPERBANANA_*` environment variables for explicit legacy mode.
 
-- **Async everywhere**: The pipeline and all agents use `async/await`. Tests use `pytest-asyncio` with `asyncio_mode = "auto"`.
-- **Pydantic models for all data types**: Inputs, outputs, configs, and intermediate results are Pydantic `BaseModel` subclasses. Use `model_dump()` for serialization.
-- **Provider pattern**: To add a new provider, implement `VLMProvider` or `ImageGenProvider` from `providers/base.py`, then register it in `ProviderRegistry`.
-- **Prompt templates live in `prompts/`, not in code**: Agent prompts are `.txt` files with `{placeholder}` substitution. Don't inline prompts in Python.
-- **Config hierarchy**: `Settings` merges env vars → `.env` file → YAML config → CLI overrides. API keys come from environment only (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`).
-- **Ruff for all linting/formatting**: Line length 100, target Python 3.10. Select rules: E, F, I, N, W.
-- **structlog for logging**: Use `structlog.get_logger()` with keyword arguments, not f-strings in log calls.
-- **Entry points**: CLI via Typer (`paperbanana.cli:app`), MCP server via FastMCP (`mcp_server.server:main`).
+## Security
+
+API keys are `SecretStr` values resolved only at the provider construction boundary. Never place a
+key in repository YAML, CLI arguments, logs, exceptions, metadata, exports, screenshots, or tests.
+Use fake local servers for provider tests.
+
+## Checks
+
+```bash
+python -m pytest tests/ -q
+ruff check paperbanana_cn/ mcp_server/ tests/ scripts/
+ruff format --check paperbanana_cn/ mcp_server/ tests/ scripts/
+```
+
+Studio browser tests target desktop viewports only. No test may call a paid API.

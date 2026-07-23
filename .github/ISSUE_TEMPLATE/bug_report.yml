@@ -1,67 +1,66 @@
-name: Bug Report
-description: Something isn't working as expected
+name: Bug report
+description: Report a reproducible PaperBanana-CN problem
 title: "[Bug]: "
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove API keys, credential-bearing URLs, unpublished paper text, and private data.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - VLM connection
+        - Image connection
+        - Chinese or English Studio
+        - Aspect ratio or resolution
+        - CLI or MCP
+        - Upstream generation workflow
+        - Packaging, Action, or Docker
+    validations:
+      required: true
   - type: textarea
     id: description
     attributes:
       label: What happened?
-      description: A clear description of the bug.
+      description: Describe the observed behavior and why it is incorrect.
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
-      description: How can we reproduce this?
+      label: Minimal reproduction
       value: |
-        1. 
-        2. 
-        3. 
-    validations:
-      required: true
-  - type: textarea
-    id: input
-    attributes:
-      label: Input used
-      description: Paste your methodology text, caption, and the CLI command or Python code you ran.
-      render: bash
+        1.
+        2.
+        3.
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
       label: Expected behavior
-      description: What you expected to happen.
     validations:
-      required: false
+      required: true
   - type: textarea
-    id: output
+    id: logs
     attributes:
-      label: Actual output or error
-      description: Paste any error messages, tracebacks, or attach the generated image.
+      label: Redacted logs or screenshots
+      description: Do not include API keys, private URLs, papers, or datasets.
       render: text
-    validations:
-      required: true
-  - type: input
-    id: os
-    attributes:
-      label: Operating system
-      placeholder: "e.g. Ubuntu 22.04, macOS 14.2, Windows 11"
-    validations:
-      required: true
-  - type: input
-    id: python
-    attributes:
-      label: Python version
-      placeholder: "e.g. 3.11.5"
-    validations:
-      required: true
   - type: input
     id: version
     attributes:
-      label: PaperBanana version or commit hash
-      placeholder: "e.g. v0.1.0 or abc1234"
+      label: PaperBanana-CN version
+      placeholder: "paperbanana-cn 2.0.1"
     validations:
-      required: false
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python, OS, and installation method
+      placeholder: "Python 3.12, Ubuntu 24.04, pip"
+    validations:
+      required: true

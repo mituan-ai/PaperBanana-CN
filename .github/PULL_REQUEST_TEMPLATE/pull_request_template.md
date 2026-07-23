@@ -1,33 +1,22 @@
-## What does this PR do?
+## User-visible change
 
-<!-- Brief description of the change. Link to related issue if applicable: Fixes #123 -->
+<!-- What problem is solved and what behavior changes? -->
 
-## Type of change
+## Scope
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Reference dataset addition
-- [ ] Documentation update
-- [ ] Refactor (no functional change)
-- [ ] New provider support
+- [ ] Independent VLM/image connections
+- [ ] Chinese/English Studio
+- [ ] Aspect ratio or resolution
+- [ ] Packaging, MCP, Action, Docker, or documentation
+- [ ] Upstream synchronization (kept in a separate commit)
 
-## Changes made
+## Verification
 
-<!-- List the specific changes. Be concrete. -->
+<!-- List exact commands and fake-provider/browser scenarios exercised. -->
 
-- 
-
-## How to test
-
-<!-- How can a reviewer verify this works? -->
-
-1. 
-2. 
-
-## Checklist
-
-- [ ] `pytest tests/ -v` passes
-- [ ] `ruff check paperbanana/ mcp_server/ tests/ scripts/` passes
-- [ ] I've added/updated tests for new functionality (if applicable)
-- [ ] I've updated documentation (if applicable)
-- [ ] For reference dataset additions: verified methodology text matches diagram, aspect ratio is within [1.5, 2.5], metadata.json is complete
+- [ ] `python -m pytest tests/ -q`
+- [ ] `ruff check paperbanana_cn/ mcp_server/ tests/ scripts/`
+- [ ] `ruff format --check paperbanana_cn/ mcp_server/ tests/ scripts/`
+- [ ] No paid API was called
+- [ ] No API key, private URL, paper, dataset, output, or local state is included
+- [ ] No duplicate provider/configuration/size/i18n implementation was introduced

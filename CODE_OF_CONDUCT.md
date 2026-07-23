@@ -1,35 +1,38 @@
 # Code of Conduct
 
-## Our Pledge
+## Our commitment
 
-We are committed to making participation in this project a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
+PaperBanana-CN is committed to a professional, harassment-free community for everyone, regardless
+of background, identity, experience, or level of technical expertise.
 
-## Our Standards
+## Expected behavior
 
-**Behavior that contributes to a positive environment:**
+- Be direct about technical problems without attacking people.
+- Give reproducible evidence and receive technical criticism constructively.
+- Respect privacy, unpublished research, credentials, and confidential reports.
+- Keep issues, pull requests, and Discussions focused on the project.
+- Credit upstream work and contributors accurately.
 
-- Using welcoming and inclusive language
-- Being respectful of differing viewpoints and experiences
-- Accepting constructive criticism gracefully
-- Focusing on what is best for the project and community
-- Showing empathy toward other community members
+## Unacceptable behavior
 
-**Unacceptable behavior:**
+- Harassment, threats, discrimination, sexualized conduct, or personal attacks.
+- Publishing another person's private information, credentials, papers, or datasets.
+- Deliberately misleading bug reports, fabricated evidence, or malicious test payloads.
+- Sustained disruption of issues, pull requests, Discussions, or release infrastructure.
 
-- The use of sexualized language or imagery and unwelcome sexual attention or advances
-- Trolling, insulting or derogatory comments, and personal or political attacks
-- Public or private harassment
-- Publishing others' private information without explicit permission
-- Other conduct which could reasonably be considered inappropriate in a professional setting
+## Scope and enforcement
 
-## Scope
+This policy applies to repository issues, pull requests, Discussions, security reports, and other
+spaces where someone represents PaperBanana-CN.
 
-This Code of Conduct applies within all project spaces, including issues, pull requests, discussions, and any other communication channels associated with this project. It also applies when an individual is representing the project in public spaces.
-
-## Enforcement
-
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project maintainers at **dip@llmsresearch.com**. All complaints will be reviewed and investigated and will result in a response deemed necessary and appropriate to the circumstances. The project team is obligated to maintain confidentiality with regard to the reporter of an incident.
+For ordinary moderation, flag the relevant content to the repository maintainer. When a report
+requires confidentiality, use the repository's
+[private reporting form](https://github.com/mituan-ai/PaperBanana-CN/security/advisories/new) and
+state that it is a conduct report. Maintainers may remove content, close interactions, restrict
+participation, or ban accounts when necessary. Report details will be shared only with people needed
+to investigate and respond.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1.
+This policy is adapted from the
+[Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html).
