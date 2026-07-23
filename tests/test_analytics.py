@@ -6,9 +6,9 @@ import json
 
 from typer.testing import CliRunner
 
-from paperbanana.analytics import load_analytics_records, summarize_records
-from paperbanana.analytics.reporting import summary_to_dict
-from paperbanana.cli import app
+from paperbanana_cn.analytics import load_analytics_records, summarize_records
+from paperbanana_cn.analytics.reporting import summary_to_dict
+from paperbanana_cn.cli import app
 
 runner = CliRunner()
 

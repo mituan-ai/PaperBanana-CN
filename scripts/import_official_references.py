@@ -243,7 +243,7 @@ def main():
         "--output",
         type=str,
         default=None,
-        help="Output directory (default: ~/.cache/paperbanana/reference_sets)",
+        help="Output directory (default: ~/.cache/paperbanana_cn/reference_sets)",
     )
     parser.add_argument(
         "--keep-existing",
@@ -256,7 +256,7 @@ def main():
     if args.output:
         output_dir = Path(args.output)
     else:
-        from paperbanana.data.manager import default_cache_dir
+        from paperbanana_cn.data.manager import default_cache_dir
 
         output_dir = default_cache_dir() / "reference_sets"
 

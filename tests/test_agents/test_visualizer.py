@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.agents.visualizer import VisualizerAgent
-from paperbanana.core.config import OUTPUT_RESOLUTION_VALUES
-from paperbanana.core.types import ASPECT_RATIO_VALUES
+from paperbanana_cn.agents.visualizer import VisualizerAgent
+from paperbanana_cn.core.config import OUTPUT_RESOLUTION_VALUES
+from paperbanana_cn.core.types import ASPECT_RATIO_VALUES
 
 
 class _DummyImageGen:
@@ -190,7 +190,7 @@ class _CapturingImageGen:
 
 async def test_generate_diagram_notes_user_sketch_when_guided(tmp_path):
     """sketch_guided=True adds a one-line mention to the diagram prompt."""
-    from paperbanana.core.utils import find_prompt_dir
+    from paperbanana_cn.core.utils import find_prompt_dir
 
     gen = _CapturingImageGen()
     agent = VisualizerAgent(

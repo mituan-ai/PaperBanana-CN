@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
-from paperbanana.providers.vlm.ollama import OllamaVLM
+from paperbanana_cn.providers.vlm.ollama import OllamaVLM
 
 
 class _FakeResponse:
@@ -69,7 +69,7 @@ async def test_generate_text_only(vlm: OllamaVLM):
 
 @pytest.mark.asyncio
 async def test_generate_with_image(vlm: OllamaVLM, monkeypatch):
-    monkeypatch.setattr("paperbanana.providers.vlm.ollama.image_to_base64", lambda _: "b64data")
+    monkeypatch.setattr("paperbanana_cn.providers.vlm.ollama.image_to_base64", lambda _: "b64data")
     client = _FakeClient("described")
     vlm._client = client
     result = await vlm.generate("Describe", images=[Image.new("RGB", (4, 4))])

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.core.pdf_text import parse_pdf_pages_spec
+from paperbanana_cn.core.pdf_text import parse_pdf_pages_spec
 
 
 def test_parse_all_pages_when_empty() -> None:

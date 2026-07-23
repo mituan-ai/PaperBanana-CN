@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.agents.tikz_exporter import TikZExporterAgent
-from paperbanana.core.types import DiagramType
+from paperbanana_cn.agents.tikz_exporter import TikZExporterAgent
+from paperbanana_cn.core.types import DiagramType
 
 
 class MockVLM:

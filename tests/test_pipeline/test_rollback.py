@@ -12,11 +12,11 @@ from pathlib import Path
 
 from PIL import Image
 
-from paperbanana.core import pipeline as pipeline_mod
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.resume import ResumeState
-from paperbanana.core.types import (
+from paperbanana_cn.core import pipeline as pipeline_mod
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.resume import ResumeState
+from paperbanana_cn.core.types import (
     DiagramType,
     GenerationInput,
 )
@@ -200,7 +200,7 @@ async def test_critic_crash_mid_loop_keeps_best_image(tmp_path):
     vlm = _MockVLM(responses=["Plan description", "Styled description"])
     pipeline = PaperBananaPipeline(settings=settings, vlm_client=vlm, image_gen_fn=_MockImageGen())
 
-    from paperbanana.core.types import CritiqueResult
+    from paperbanana_cn.core.types import CritiqueResult
 
     critic_calls = 0
 

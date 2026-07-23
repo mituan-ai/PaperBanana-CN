@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.resume import load_resume_state
-from paperbanana.core.types import CritiqueResult, DiagramType, GenerationInput
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.resume import load_resume_state
+from paperbanana_cn.core.types import CritiqueResult, DiagramType, GenerationInput
 
 # ── Settings tests ───────────────────────────────────────────────
 
@@ -173,7 +173,7 @@ def test_critic_agent_accepts_user_feedback():
     # Verify the parameter exists in the signature
     import inspect
 
-    from paperbanana.agents.critic import CriticAgent
+    from paperbanana_cn.agents.critic import CriticAgent
 
     sig = inspect.signature(CriticAgent.run)
     assert "user_feedback" in sig.parameters
@@ -200,7 +200,7 @@ def test_optimizer_agent_signature():
     """InputOptimizerAgent.run() accepts expected parameters."""
     import inspect
 
-    from paperbanana.agents.optimizer import InputOptimizerAgent
+    from paperbanana_cn.agents.optimizer import InputOptimizerAgent
 
     sig = inspect.signature(InputOptimizerAgent.run)
     params = list(sig.parameters.keys())
@@ -265,7 +265,7 @@ def test_visualizer_run_signature_has_vector_formats():
     """VisualizerAgent.run() exposes a vector_formats parameter."""
     import inspect
 
-    from paperbanana.agents.visualizer import VisualizerAgent
+    from paperbanana_cn.agents.visualizer import VisualizerAgent
 
     sig = inspect.signature(VisualizerAgent.run)
     assert "vector_formats" in sig.parameters
@@ -706,8 +706,8 @@ async def test_auto_refine_early_stop_on_first_iteration(tmp_path):
 
 def test_openai_vlm_provider_creation():
     """Registry creates OpenAIVLM with correct model and base_url from settings."""
-    from paperbanana.providers.registry import ProviderRegistry
-    from paperbanana.providers.vlm.openai import OpenAIVLM
+    from paperbanana_cn.providers.registry import ProviderRegistry
+    from paperbanana_cn.providers.vlm.openai import OpenAIVLM
 
     settings = Settings(
         vlm_provider="openai",
@@ -726,8 +726,8 @@ def test_openai_vlm_provider_creation():
 
 def test_atlas_vlm_provider_creation():
     """Registry creates AtlasVLM with Atlas-specific settings."""
-    from paperbanana.providers.registry import ProviderRegistry
-    from paperbanana.providers.vlm.atlas import AtlasVLM
+    from paperbanana_cn.providers.registry import ProviderRegistry
+    from paperbanana_cn.providers.vlm.atlas import AtlasVLM
 
     settings = Settings(
         vlm_provider="atlas",
@@ -746,8 +746,8 @@ def test_atlas_vlm_provider_creation():
 
 def test_openai_vlm_falls_back_to_vlm_model():
     """When openai_vlm_model is not set, OpenAI VLM uses the generic vlm_model."""
-    from paperbanana.providers.registry import ProviderRegistry
-    from paperbanana.providers.vlm.openai import OpenAIVLM
+    from paperbanana_cn.providers.registry import ProviderRegistry
+    from paperbanana_cn.providers.vlm.openai import OpenAIVLM
 
     settings = Settings(
         vlm_provider="openai",
@@ -763,8 +763,8 @@ def test_openai_vlm_falls_back_to_vlm_model():
 
 def test_openai_imagen_provider_creation():
     """Registry creates OpenAIImageGen with correct model and base_url."""
-    from paperbanana.providers.image_gen.openai_imagen import OpenAIImageGen
-    from paperbanana.providers.registry import ProviderRegistry
+    from paperbanana_cn.providers.image_gen.openai_imagen import OpenAIImageGen
+    from paperbanana_cn.providers.registry import ProviderRegistry
 
     settings = Settings(
         image_provider="openai_imagen",
@@ -783,8 +783,8 @@ def test_openai_imagen_provider_creation():
 
 def test_atlas_imagen_provider_creation():
     """Registry creates AtlasImageGen with Atlas-specific image settings."""
-    from paperbanana.providers.image_gen.atlas_imagen import AtlasImageGen
-    from paperbanana.providers.registry import ProviderRegistry
+    from paperbanana_cn.providers.image_gen.atlas_imagen import AtlasImageGen
+    from paperbanana_cn.providers.registry import ProviderRegistry
 
     settings = Settings(
         image_provider="atlas_imagen",
@@ -803,7 +803,7 @@ def test_atlas_imagen_provider_creation():
 
 def test_openai_missing_api_key_raises_helpful_error():
     """Missing OPENAI_API_KEY raises ValueError with setup instructions."""
-    from paperbanana.providers.registry import ProviderRegistry
+    from paperbanana_cn.providers.registry import ProviderRegistry
 
     settings = Settings(vlm_provider="openai", openai_api_key=None)
     with pytest.raises(ValueError, match="OPENAI_API_KEY not found") as exc_info:
@@ -815,7 +815,7 @@ def test_openai_missing_api_key_raises_helpful_error():
 
 def test_atlas_missing_api_key_raises_helpful_error():
     """Missing ATLASCLOUD_API_KEY raises ValueError with setup instructions."""
-    from paperbanana.providers.registry import ProviderRegistry
+    from paperbanana_cn.providers.registry import ProviderRegistry
 
     settings = Settings(vlm_provider="atlas", atlascloud_api_key=None)
     with pytest.raises(ValueError, match="ATLASCLOUD_API_KEY not found") as exc_info:
@@ -827,7 +827,7 @@ def test_atlas_missing_api_key_raises_helpful_error():
 
 def test_openai_vlm_not_available_without_key():
     """OpenAIVLM.is_available() returns False when no API key is provided."""
-    from paperbanana.providers.vlm.openai import OpenAIVLM
+    from paperbanana_cn.providers.vlm.openai import OpenAIVLM
 
     vlm = OpenAIVLM(api_key=None)
     assert vlm.is_available() is False
@@ -836,7 +836,7 @@ def test_openai_vlm_not_available_without_key():
 @pytest.mark.asyncio
 async def test_openai_vlm_generate_builds_correct_messages():
     """OpenAIVLM.generate() builds the correct message payload for the SDK."""
-    from paperbanana.providers.vlm.openai import OpenAIVLM
+    from paperbanana_cn.providers.vlm.openai import OpenAIVLM
 
     # Create a mock async client
     mock_response = MagicMock()
@@ -873,7 +873,7 @@ async def test_openai_vlm_generate_builds_correct_messages():
 @pytest.mark.asyncio
 async def test_openai_vlm_generate_omits_temperature_for_gpt5_models():
     """GPT-5 family chat models use the API default temperature."""
-    from paperbanana.providers.vlm.openai import OpenAIVLM
+    from paperbanana_cn.providers.vlm.openai import OpenAIVLM
 
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]
@@ -897,7 +897,7 @@ async def test_openai_vlm_generate_omits_temperature_for_gpt5_models():
 @pytest.mark.asyncio
 async def test_openai_vlm_generate_encodes_images_as_base64():
     """OpenAIVLM.generate() encodes images as base64 data URIs in the payload."""
-    from paperbanana.providers.vlm.openai import OpenAIVLM
+    from paperbanana_cn.providers.vlm.openai import OpenAIVLM
 
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]
@@ -932,7 +932,7 @@ async def test_openai_imagen_generate_returns_pil_image():
     import base64
     from io import BytesIO
 
-    from paperbanana.providers.image_gen.openai_imagen import OpenAIImageGen
+    from paperbanana_cn.providers.image_gen.openai_imagen import OpenAIImageGen
 
     # Create a real base64-encoded image for the mock to return
     img = Image.new("RGB", (64, 64), color=(0, 128, 255))
@@ -964,7 +964,7 @@ async def test_openai_imagen_generate_returns_pil_image():
 
 def test_openai_imagen_size_mapping():
     """OpenAIImageGen maps pixel dimensions to the correct OpenAI size strings."""
-    from paperbanana.providers.image_gen.openai_imagen import OpenAIImageGen
+    from paperbanana_cn.providers.image_gen.openai_imagen import OpenAIImageGen
 
     gen = OpenAIImageGen(api_key="test-key")
 
@@ -984,8 +984,8 @@ async def test_openai_imagen_gpt_image_2_uses_custom_size_and_quality():
     import base64
     from io import BytesIO
 
-    from paperbanana.providers.base import ImageSizeMode
-    from paperbanana.providers.image_gen.openai_imagen import OpenAIImageGen
+    from paperbanana_cn.providers.base import ImageSizeMode
+    from paperbanana_cn.providers.image_gen.openai_imagen import OpenAIImageGen
 
     img = Image.new("RGB", (64, 64), color=(0, 128, 255))
     buf = BytesIO()
@@ -1025,7 +1025,7 @@ async def test_openai_imagen_appends_negative_prompt():
     import base64
     from io import BytesIO
 
-    from paperbanana.providers.image_gen.openai_imagen import OpenAIImageGen
+    from paperbanana_cn.providers.image_gen.openai_imagen import OpenAIImageGen
 
     img = Image.new("RGB", (64, 64), color=(0, 0, 0))
     buf = BytesIO()
@@ -1058,7 +1058,7 @@ async def test_atlas_imagen_generate_polls_and_downloads_image():
     """AtlasImageGen polls async predictions and downloads the final image."""
     from io import BytesIO
 
-    from paperbanana.providers.image_gen.atlas_imagen import AtlasImageGen
+    from paperbanana_cn.providers.image_gen.atlas_imagen import AtlasImageGen
 
     img = Image.new("RGB", (64, 64), color=(12, 34, 56))
     buf = BytesIO()

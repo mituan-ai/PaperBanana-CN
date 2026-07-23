@@ -19,8 +19,8 @@ jobs:
         run: pip install ruff
       - name: Lint
         run: |
-          ruff check paperbanana/ mcp_server/ tests/ scripts/
-          ruff format --check paperbanana/ mcp_server/ tests/ scripts/
+          ruff check paperbanana_cn/ mcp_server/ tests/ scripts/
+          ruff format --check paperbanana_cn/ mcp_server/ tests/ scripts/
 
   test:
     runs-on: ${{ matrix.os }}
@@ -40,7 +40,7 @@ jobs:
       - name: Run tests with coverage
         run: >-
           pytest tests/ -v --tb=short -m "not studio_e2e"
-          --cov=paperbanana --cov-report=xml
+          --cov=paperbanana_cn --cov-report=xml
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         uses: codecov/codecov-action@v6

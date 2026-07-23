@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from paperbanana.core.orchestrate import split_paper_sections
+from paperbanana_cn.core.orchestrate import split_paper_sections
 
 
 def test_split_paper_sections_ignores_pdf_running_headers_and_page_numbers():

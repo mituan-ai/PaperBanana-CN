@@ -12,10 +12,10 @@ from pathlib import Path
 
 from PIL import Image
 
-from paperbanana.core import pipeline as pipeline_mod
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.types import (
+from paperbanana_cn.core import pipeline as pipeline_mod
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.types import (
     CritiqueResult,
     DiagramType,
     GenerationInput,

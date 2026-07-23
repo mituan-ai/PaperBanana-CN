@@ -6,10 +6,10 @@ import json
 
 import pytest
 
-from paperbanana.core.config import Settings
-from paperbanana.core.types import ReferenceExample
-from paperbanana.core.utils import extract_json
-from paperbanana.providers.registry import ProviderRegistry
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.types import ReferenceExample
+from paperbanana_cn.core.utils import extract_json
+from paperbanana_cn.providers.registry import ProviderRegistry
 
 
 class TestExtractJson:
@@ -90,7 +90,7 @@ class _MockVLM:
 class TestAgentJsonMode:
     @pytest.mark.asyncio
     async def test_retriever_skips_json(self):
-        from paperbanana.agents.retriever import RetrieverAgent
+        from paperbanana_cn.agents.retriever import RetrieverAgent
 
         vlm = _MockVLM('```json\n{"selected_ids": ["ref_001"]}\n```', json_mode=False)
         agent = RetrieverAgent(vlm)
@@ -116,7 +116,7 @@ class TestAgentJsonMode:
     async def test_critic_skips_json(self, tmp_path):
         from PIL import Image
 
-        from paperbanana.agents.critic import CriticAgent
+        from paperbanana_cn.agents.critic import CriticAgent
 
         vlm = _MockVLM('```json\n{"critic_suggestions": ["fix"]}\n```', json_mode=False)
         agent = CriticAgent(vlm)

@@ -12,10 +12,10 @@ from pathlib import Path
 
 from PIL import Image
 
-from paperbanana.core import pipeline as pipeline_mod
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.types import DiagramType, GenerationInput
+from paperbanana_cn.core import pipeline as pipeline_mod
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.types import DiagramType, GenerationInput
 
 # ── Shared mocks ─────────────────────────────────────────────────
 
@@ -242,7 +242,7 @@ async def test_progress_events_include_candidate_index(tmp_path):
 
     await pipeline.generate(_default_input(), progress_callback=on_progress)
 
-    from paperbanana.core.types import PipelineProgressStage
+    from paperbanana_cn.core.types import PipelineProgressStage
 
     visualizer_starts = [e for e in events if e.stage == PipelineProgressStage.VISUALIZER_START]
     assert sorted((e.extra or {}).get("candidate") for e in visualizer_starts) == [1, 2]
@@ -255,7 +255,7 @@ async def test_progress_events_include_candidate_index(tmp_path):
 async def test_budget_guard_stops_fanout_branches(tmp_path):
     """Once the shared tracker is over budget, every branch stops at its
     next between-iterations checkpoint instead of running to total_iters."""
-    from paperbanana.core.cost_tracker import CostTracker
+    from paperbanana_cn.core.cost_tracker import CostTracker
 
     settings = _make_settings(
         tmp_path, num_candidates=2, refinement_iterations=3, budget_usd=0.0000001
@@ -312,7 +312,7 @@ def test_settings_rejects_invalid_num_candidates(tmp_path):
 def test_cli_rejects_out_of_range_num_candidates(tmp_path):
     from typer.testing import CliRunner
 
-    from paperbanana.cli import app
+    from paperbanana_cn.cli import app
 
     runner = CliRunner()
     input_file = tmp_path / "method.txt"
@@ -343,7 +343,7 @@ def test_cli_rejects_out_of_range_num_candidates(tmp_path):
 def test_cli_accepts_valid_num_candidates(tmp_path):
     from typer.testing import CliRunner
 
-    from paperbanana.cli import app
+    from paperbanana_cn.cli import app
 
     runner = CliRunner()
     input_file = tmp_path / "method.txt"

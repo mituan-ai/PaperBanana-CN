@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.core.diagram_ir import format_diagram_ir_for_regeneration
-from paperbanana.core.types import DiagramIR, DiagramIREdge, DiagramIRLocks, DiagramIRNode
+from paperbanana_cn.core.diagram_ir import format_diagram_ir_for_regeneration
+from paperbanana_cn.core.types import DiagramIR, DiagramIREdge, DiagramIRLocks, DiagramIRNode
 
 
 def test_diagram_ir_locks_validate_known_references() -> None:

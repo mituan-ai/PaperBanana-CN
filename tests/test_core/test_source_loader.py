@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from paperbanana.core.source_loader import load_methodology_source
+from paperbanana_cn.core.source_loader import load_methodology_source
 
 
 def test_load_methodology_source_txt_utf8_non_ascii(tmp_path: Path) -> None:

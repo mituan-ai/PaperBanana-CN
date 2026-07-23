@@ -9,7 +9,7 @@ import click
 import pytest
 from typer.testing import CliRunner
 
-from paperbanana.cli import _check_pdf_dep, _require_pdf_dep, app
+from paperbanana_cn.cli import _check_pdf_dep, _require_pdf_dep, app
 
 runner = CliRunner()
 _real_import = builtins.__import__
@@ -51,7 +51,7 @@ def test_check_pdf_dep_ignores_non_pdf():
 
 def test_check_pdf_dep_delegates_for_pdf(monkeypatch):
     called = []
-    monkeypatch.setattr("paperbanana.cli._require_pdf_dep", lambda: called.append(True))
+    monkeypatch.setattr("paperbanana_cn.cli._require_pdf_dep", lambda: called.append(True))
     _check_pdf_dep(Path("paper.pdf"))
     assert called
 

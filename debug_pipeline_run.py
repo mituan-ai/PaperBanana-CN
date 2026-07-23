@@ -2,8 +2,8 @@ import asyncio
 
 from PIL import Image
 
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.types import DiagramType, GenerationInput
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.types import DiagramType, GenerationInput
 
 
 # -------- Fake VLM --------

@@ -35,20 +35,20 @@ from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
 from PIL import Image as PILImage
 
-from paperbanana.connections.models import ConnectionRole
-from paperbanana.connections.resolver import load_runtime_settings
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.resume import load_resume_state
-from paperbanana.core.types import DiagramType, GenerationInput
-from paperbanana.core.utils import detect_image_mime_type, find_prompt_dir
-from paperbanana.core.workflow_runner import (
+from paperbanana_cn.connections.models import ConnectionRole
+from paperbanana_cn.connections.resolver import load_runtime_settings
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.resume import load_resume_state
+from paperbanana_cn.core.types import DiagramType, GenerationInput
+from paperbanana_cn.core.utils import detect_image_mime_type, find_prompt_dir
+from paperbanana_cn.core.workflow_runner import (
     run_methodology_batch,
     run_orchestration_package,
     run_plot_batch,
 )
-from paperbanana.evaluation.judge import VLMJudge
-from paperbanana.providers.registry import ProviderRegistry
+from paperbanana_cn.evaluation.judge import VLMJudge
+from paperbanana_cn.providers.registry import ProviderRegistry
 
 logger = structlog.get_logger()
 
@@ -730,7 +730,7 @@ async def download_references(
     Returns:
         Status message with cache location and example count.
     """
-    from paperbanana.data.manager import DatasetManager
+    from paperbanana_cn.data.manager import DatasetManager
 
     dm = DatasetManager()
 

@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from paperbanana.agents.retriever import RetrieverAgent
-from paperbanana.core.types import ReferenceExample
+from paperbanana_cn.agents.retriever import RetrieverAgent
+from paperbanana_cn.core.types import ReferenceExample
 
 
 class MockVLM:

@@ -36,7 +36,7 @@ run_*/
 *.png
 *.jpg
 *.jpeg
-!paperbanana/studio/assets/paperbanana-cn-logo.jpg
+!paperbanana_cn/studio/assets/paperbanana-cn-logo.jpg
 !data/reference_sets/**/*.png
 !data/reference_sets/**/*.jpg
 !assets/img/hero_image.png

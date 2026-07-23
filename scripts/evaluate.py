@@ -31,10 +31,10 @@ async def evaluate_single(
     caption: str,
 ):
     """Evaluate a single generated image against a human reference."""
-    from paperbanana.core.config import Settings
-    from paperbanana.evaluation.judge import VLMJudge
-    from paperbanana.evaluation.metrics import format_scores
-    from paperbanana.providers.registry import ProviderRegistry
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.evaluation.judge import VLMJudge
+    from paperbanana_cn.evaluation.metrics import format_scores
+    from paperbanana_cn.providers.registry import ProviderRegistry
 
     settings = Settings()
     vlm = ProviderRegistry.create_vlm(settings)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.core.config import Settings
-from paperbanana.core.types import (
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.types import (
     CritiqueResult,
     DimensionResult,
     EvaluationScore,
@@ -14,7 +14,7 @@ from paperbanana.core.types import (
     IterationRecord,
     ReferenceExample,
 )
-from paperbanana.evaluation.benchmark import (
+from paperbanana_cn.evaluation.benchmark import (
     BenchmarkEntryResult,
     BenchmarkRunner,
     aggregate_results,
@@ -440,7 +440,7 @@ async def test_benchmark_runner_eval_only_rejects_path_traversal(tmp_path):
 
 
 def _make_test_cases() -> list:
-    from paperbanana.core.types import TestCase
+    from paperbanana_cn.core.types import TestCase
 
     return [
         TestCase(

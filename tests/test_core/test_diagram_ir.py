@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from paperbanana.core.diagram_ir import _balanced_port, _select_ports, save_svg_from_ir
-from paperbanana.core.types import DiagramIR, DiagramIREdge, DiagramIRGroup, DiagramIRNode
+from paperbanana_cn.core.diagram_ir import _balanced_port, _select_ports, save_svg_from_ir
+from paperbanana_cn.core.types import DiagramIR, DiagramIREdge, DiagramIRGroup, DiagramIRNode
 
 
 def test_save_svg_from_ir_renders_lanes_and_labels(tmp_path):

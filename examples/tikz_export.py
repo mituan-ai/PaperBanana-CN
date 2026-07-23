@@ -38,9 +38,9 @@ async def generate_with_tikz_export(
 
     load_dotenv()
 
-    from paperbanana.core.config import Settings
-    from paperbanana.core.pipeline import PaperBananaPipeline
-    from paperbanana.core.types import DiagramType, GenerationInput
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.core.pipeline import PaperBananaPipeline
+    from paperbanana_cn.core.types import DiagramType, GenerationInput
 
     settings = Settings(export_tikz=True)
 
@@ -88,10 +88,10 @@ async def export_existing_image(
 
     load_dotenv()
 
-    from paperbanana.agents.tikz_exporter import TikZExporterAgent
-    from paperbanana.core.config import Settings
-    from paperbanana.core.types import DiagramType
-    from paperbanana.providers.registry import ProviderRegistry
+    from paperbanana_cn.agents.tikz_exporter import TikZExporterAgent
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.core.types import DiagramType
+    from paperbanana_cn.providers.registry import ProviderRegistry
 
     settings = Settings()
     vlm = ProviderRegistry.create_vlm(settings)
@@ -134,10 +134,10 @@ async def generate_plot_with_pgfplots(
 
     load_dotenv()
 
-    from paperbanana.core.config import Settings
-    from paperbanana.core.pipeline import PaperBananaPipeline
-    from paperbanana.core.plot_data import load_statistical_plot_payload
-    from paperbanana.core.types import DiagramType, GenerationInput
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.core.pipeline import PaperBananaPipeline
+    from paperbanana_cn.core.plot_data import load_statistical_plot_payload
+    from paperbanana_cn.core.types import DiagramType, GenerationInput
 
     source_context, raw_data = load_statistical_plot_payload(Path(data_path))
 

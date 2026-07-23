@@ -9,7 +9,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from paperbanana.core.config import Settings
+from paperbanana_cn.core.config import Settings
 
 
 def test_output_format_default_is_png():

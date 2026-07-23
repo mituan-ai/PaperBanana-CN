@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.types import DiagramType, GenerationInput
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.types import DiagramType, GenerationInput
 
 
 class _SeqVLM:

@@ -4,8 +4,8 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from paperbanana import DiagramType, GenerationInput, PaperBananaPipeline
-from paperbanana.core.config import Settings
+from paperbanana_cn import DiagramType, GenerationInput, PaperBananaPipeline
+from paperbanana_cn.core.config import Settings
 
 load_dotenv()
 

@@ -22,11 +22,11 @@ WORKDIR /build
 
 # Everything the hatchling wheel build needs:
 #  - pyproject.toml (build config), README.md (project.readme), LICENSE (SPDX license file)
-#  - paperbanana/ and mcp_server/ (wheel packages)
+#  - paperbanana_cn/ and mcp_server/ (wheel packages)
 #  - prompts/, data/, configs/ (force-included package data, resolved at runtime
 #    relative to the installed package)
 COPY pyproject.toml README.md LICENSE ./
-COPY paperbanana/ paperbanana/
+COPY paperbanana_cn/ paperbanana_cn/
 COPY mcp_server/ mcp_server/
 COPY prompts/ prompts/
 COPY data/ data/

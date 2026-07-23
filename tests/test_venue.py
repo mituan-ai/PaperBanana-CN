@@ -8,16 +8,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-from paperbanana.core.config import Settings
-from paperbanana.guidelines.methodology import (
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.guidelines.methodology import (
     DEFAULT_METHODOLOGY_GUIDELINES,
     load_methodology_guidelines,
 )
-from paperbanana.guidelines.plots import (
+from paperbanana_cn.guidelines.plots import (
     DEFAULT_PLOT_GUIDELINES,
     load_plot_guidelines,
 )
-from paperbanana.guidelines.venues import UnknownVenueError
+from paperbanana_cn.guidelines.venues import UnknownVenueError
 
 # ── Settings & Validation ────────────────────────────────────────────
 

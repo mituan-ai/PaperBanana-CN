@@ -7,11 +7,11 @@ from importlib.resources import files
 
 import pytest
 
-from paperbanana.i18n import SUPPORTED_LOCALES, get_translator
+from paperbanana_cn.i18n import SUPPORTED_LOCALES, get_translator
 
 
 def _catalog(locale: str) -> dict[str, str]:
-    path = files("paperbanana.i18n").joinpath("locales", f"{locale}.json")
+    path = files("paperbanana_cn.i18n").joinpath("locales", f"{locale}.json")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -40,7 +40,7 @@ def test_chinese_connection_copy_uses_plain_product_language():
 
 
 def test_interface_locale_does_not_enter_runtime_settings():
-    from paperbanana.core.config import Settings
+    from paperbanana_cn.core.config import Settings
 
     assert "locale" not in Settings.model_fields
 
@@ -53,7 +53,7 @@ def test_interface_locale_does_not_enter_runtime_settings():
     ],
 )
 def test_interface_locale_does_not_change_figure_language(locale, caption):
-    from paperbanana.core.types import GenerationInput
+    from paperbanana_cn.core.types import GenerationInput
 
     _ = get_translator(locale)("app.title")
     request = GenerationInput(
@@ -64,7 +64,7 @@ def test_interface_locale_does_not_change_figure_language(locale, caption):
 
 
 def test_connection_setup_error_is_actionable_in_chinese():
-    from paperbanana.i18n import localize_error
+    from paperbanana_cn.i18n import localize_error
 
     message = localize_error(
         ValueError("Active image and vlm connection profile(s) are required."),

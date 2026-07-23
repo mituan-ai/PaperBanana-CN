@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.core.config import Settings
-from paperbanana.core.types import (
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.types import (
     CritiqueResult,
     DimensionResult,
     EvaluationScore,
@@ -13,7 +13,7 @@ from paperbanana.core.types import (
     GenerationOutput,
     IterationRecord,
 )
-from paperbanana.evaluation.retrieval_ablation import (
+from paperbanana_cn.evaluation.retrieval_ablation import (
     RetrievalAblationRunner,
     parse_top_k_values,
 )

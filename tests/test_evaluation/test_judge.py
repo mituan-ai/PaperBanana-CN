@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.core.types import DiagramType, DimensionResult
-from paperbanana.evaluation.judge import VLMJudge
+from paperbanana_cn.core.types import DiagramType, DimensionResult
+from paperbanana_cn.evaluation.judge import VLMJudge
 
 
 class MockVLM:
@@ -122,7 +122,7 @@ def test_parse_result_invalid_winner():
 
 
 def _dim(winner: str) -> DimensionResult:
-    from paperbanana.core.types import WINNER_SCORE_MAP
+    from paperbanana_cn.core.types import WINNER_SCORE_MAP
 
     return DimensionResult(
         winner=winner,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
-from paperbanana.agents.polish import MAX_SUGGESTIONS, PolishAgent
+from paperbanana_cn.agents.polish import MAX_SUGGESTIONS, PolishAgent
 
 
 class _FakeVLM:
@@ -227,7 +227,7 @@ def test_supports_guided_edit_detection():
 
 
 def test_google_imagen_supports_guided_edit():
-    from paperbanana.providers.image_gen.google_imagen import GoogleImagenGen
+    from paperbanana_cn.providers.image_gen.google_imagen import GoogleImagenGen
 
     assert PolishAgent.supports_guided_edit(GoogleImagenGen(api_key="test"))
 

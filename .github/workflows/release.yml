@@ -31,7 +31,7 @@ jobs:
           pkg = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
           init = next(
               line.split('"')[1]
-              for line in open("paperbanana/__init__.py")
+              for line in open("paperbanana_cn/__init__.py")
               if line.startswith("__version__")
           )
           server = json.load(open("server.json"))["version"]
@@ -54,7 +54,7 @@ jobs:
           /tmp/verify-venv/bin/python - <<'PY'
           import typer.main
 
-          from paperbanana.cli import app
+          from paperbanana_cn.cli import app
 
           cmd = typer.main.get_command(app)
           gen = cmd.commands["generate"]

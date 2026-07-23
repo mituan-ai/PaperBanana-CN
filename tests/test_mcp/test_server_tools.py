@@ -77,9 +77,9 @@ def test_model_tools_expose_connection_controls(tool_name, expected):
 
 def test_mcp_profile_resolution_and_vlm_only_role(tmp_path, monkeypatch):
     from mcp_server.server import _mcp_runtime_settings
-    from paperbanana.connections import resolver
-    from paperbanana.connections.manager import ConnectionManager
-    from paperbanana.connections.models import ConnectionProfile, ConnectionRole
+    from paperbanana_cn.connections import resolver
+    from paperbanana_cn.connections.manager import ConnectionManager
+    from paperbanana_cn.connections.models import ConnectionProfile, ConnectionRole
 
     manager = ConnectionManager(
         config_path=tmp_path / "connections.json",

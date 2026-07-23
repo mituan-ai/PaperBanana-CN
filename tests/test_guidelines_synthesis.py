@@ -8,9 +8,9 @@ import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
-from paperbanana.core.types import ReferenceExample
-from paperbanana.guidelines.synthesis import (
+from paperbanana_cn.cli import app
+from paperbanana_cn.core.types import ReferenceExample
+from paperbanana_cn.guidelines.synthesis import (
     StyleGuideSynthesisError,
     sample_examples,
     synthesize_style_guide,

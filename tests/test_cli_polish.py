@@ -8,8 +8,8 @@ from pathlib import Path
 from PIL import Image
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
-from paperbanana.providers.registry import ProviderRegistry
+from paperbanana_cn.cli import app
+from paperbanana_cn.providers.registry import ProviderRegistry
 
 runner = CliRunner()
 

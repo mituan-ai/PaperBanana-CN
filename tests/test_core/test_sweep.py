@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.core.sweep import (
+from paperbanana_cn.core.sweep import (
     SWEEP_REPORT_FILENAME,
     build_sweep_variants,
     generate_sweep_report_html,

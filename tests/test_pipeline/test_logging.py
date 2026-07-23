@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import structlog
 
-from paperbanana.core.logging import configure_logging
+from paperbanana_cn.core.logging import configure_logging
 
 
 def test_configure_logging_default_suppresses_info():

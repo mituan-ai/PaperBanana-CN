@@ -8,15 +8,15 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.guidelines.methodology import (
+from paperbanana_cn.cli import app
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.guidelines.methodology import (
     DEFAULT_METHODOLOGY_GUIDELINES,
     load_methodology_guidelines,
 )
-from paperbanana.guidelines.plots import DEFAULT_PLOT_GUIDELINES, load_plot_guidelines
-from paperbanana.guidelines.venues import (
+from paperbanana_cn.guidelines.plots import DEFAULT_PLOT_GUIDELINES, load_plot_guidelines
+from paperbanana_cn.guidelines.venues import (
     UnknownVenueError,
     VenueConfig,
     list_venues,

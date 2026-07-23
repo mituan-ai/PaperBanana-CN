@@ -6,7 +6,7 @@ import json
 
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
+from paperbanana_cn.cli import app
 
 runner = CliRunner()
 

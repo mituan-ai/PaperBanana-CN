@@ -76,11 +76,11 @@ Repository = "https://github.com/mituan-ai/PaperBanana-CN"
 Issues = "https://github.com/mituan-ai/PaperBanana-CN/issues"
 
 [project.scripts]
-paperbanana = "paperbanana.cli:app"
+paperbanana = "paperbanana_cn.cli:app"
 paperbanana-mcp = "mcp_server.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["paperbanana", "mcp_server"]
+packages = ["paperbanana_cn", "mcp_server"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "prompts" = "prompts"

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.core.types import ReferenceExample
-from paperbanana.reference.store import ReferenceStore
+from paperbanana_cn.core.types import ReferenceExample
+from paperbanana_cn.reference.store import ReferenceStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INDEX_DIR = REPO_ROOT / "data" / "reference_sets"

@@ -11,9 +11,9 @@ import pytest
 from PIL import Image
 from tenacity import stop_after_attempt, wait_none
 
-from paperbanana.core.config import Settings
-from paperbanana.providers.registry import ProviderRegistry
-from paperbanana.providers.vlm.claude_code import ClaudeCodeVLM
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.providers.registry import ProviderRegistry
+from paperbanana_cn.providers.vlm.claude_code import ClaudeCodeVLM
 
 
 @pytest.fixture(autouse=True)
@@ -526,7 +526,7 @@ async def test_generate_warns_on_non_default_temperature() -> None:
 
     with (
         patch("asyncio.create_subprocess_exec", factory),
-        patch("paperbanana.providers.vlm.claude_code.logger") as mock_logger,
+        patch("paperbanana_cn.providers.vlm.claude_code.logger") as mock_logger,
     ):
         vlm = ClaudeCodeVLM(model="sonnet")
         await vlm.generate("hi", temperature=0.5, max_tokens=1024)

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
-from paperbanana.core.config import Settings
-from paperbanana.providers.registry import ProviderRegistry
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.providers.registry import ProviderRegistry
 
 
 def test_create_gemini_vlm():
@@ -173,7 +173,7 @@ def test_unknown_image_provider_raises():
 
 def test_none_image_provider_returns_dummy():
     """image_provider='none' resolves to DummyImageGen without any credentials."""
-    from paperbanana.providers.image_gen.dummy import DummyImageGen
+    from paperbanana_cn.providers.image_gen.dummy import DummyImageGen
 
     settings = Settings(image_provider="none")
     provider = ProviderRegistry.create_image_gen(settings)
@@ -199,7 +199,7 @@ def test_profile_ollama_ignores_legacy_model_and_uses_profile_timeout():
 
 def test_profile_litellm_uses_role_specific_connection(monkeypatch):
     monkeypatch.setattr(
-        "paperbanana.providers.vlm.litellm.LiteLLMVLM.is_available",
+        "paperbanana_cn.providers.vlm.litellm.LiteLLMVLM.is_available",
         lambda self: True,
     )
     settings = Settings(
@@ -222,7 +222,7 @@ def test_profile_litellm_uses_role_specific_connection(monkeypatch):
 
 async def test_dummy_image_gen_raises_if_called():
     """DummyImageGen must never actually be asked to generate an image."""
-    from paperbanana.providers.image_gen.dummy import DummyImageGen
+    from paperbanana_cn.providers.image_gen.dummy import DummyImageGen
 
     with pytest.raises(RuntimeError, match="should never be called"):
         await DummyImageGen().generate(prompt="anything")
@@ -232,7 +232,7 @@ def test_plot_hardcodes_none_image_provider():
     """The plot command must not require image-gen credentials (issue #201)."""
     import inspect
 
-    from paperbanana import cli
+    from paperbanana_cn import cli
 
     src = inspect.getsource(cli.plot)
     assert 'overrides["image_provider"] = "none"' in src

@@ -14,21 +14,21 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from paperbanana.connections.manager import ConnectionManager
-from paperbanana.connections.models import ConnectionProfile, ConnectionRole
-from paperbanana.connections.resolver import load_runtime_settings, resolve_connection_settings
-from paperbanana.connections.storage import (
+from paperbanana_cn.connections.manager import ConnectionManager
+from paperbanana_cn.connections.models import ConnectionProfile, ConnectionRole
+from paperbanana_cn.connections.resolver import load_runtime_settings, resolve_connection_settings
+from paperbanana_cn.connections.storage import (
     ConnectionRevisionError,
     CorruptConnectionConfigError,
     MissingCredentialError,
 )
-from paperbanana.connections.testing import (
+from paperbanana_cn.connections.testing import (
     ConnectionErrorKind,
     ConnectionTestError,
     classify_connection_error,
 )
-from paperbanana.core.config import Settings
-from paperbanana.providers.registry import ProviderRegistry
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.providers.registry import ProviderRegistry
 
 
 @pytest.fixture
@@ -390,7 +390,7 @@ class _FakeRelay:
 
 
 def test_two_fake_relays_receive_independent_urls_keys_and_models(manager):
-    from paperbanana.connections.testing import test_connection as run_connection_test
+    from paperbanana_cn.connections.testing import test_connection as run_connection_test
 
     with _FakeRelay() as vlm_relay, _FakeRelay(image_response=True) as image_relay:
         vlm = _profile(
@@ -426,7 +426,7 @@ def test_two_fake_relays_receive_independent_urls_keys_and_models(manager):
 
 
 def test_authentication_failure_is_structured_redacted_and_not_retried(manager):
-    from paperbanana.connections.testing import test_connection as run_connection_test
+    from paperbanana_cn.connections.testing import test_connection as run_connection_test
 
     with _FakeRelay(status=401) as relay:
         profile = _profile(

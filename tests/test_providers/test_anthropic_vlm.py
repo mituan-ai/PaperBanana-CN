@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from paperbanana.providers.vlm.anthropic import AnthropicVLM
+from paperbanana_cn.providers.vlm.anthropic import AnthropicVLM
 
 
 @pytest.mark.asyncio
@@ -73,7 +73,7 @@ async def test_generate_with_images_and_json(monkeypatch: pytest.MonkeyPatch) ->
         return "base64-image-data"
 
     monkeypatch.setattr(
-        "paperbanana.providers.vlm.anthropic.image_to_base64",
+        "paperbanana_cn.providers.vlm.anthropic.image_to_base64",
         _fake_image_to_base64,
     )
 

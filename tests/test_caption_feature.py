@@ -22,10 +22,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.resume import load_resume_state
-from paperbanana.core.types import (
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.resume import load_resume_state
+from paperbanana_cn.core.types import (
     DiagramType,
     GenerationInput,
     PipelineProgressStage,
@@ -102,7 +102,7 @@ def test_generate_caption_from_yaml():
 
 
 def test_caption_agent_has_correct_name():
-    from paperbanana.agents.caption import CaptionAgent
+    from paperbanana_cn.agents.caption import CaptionAgent
 
     assert CaptionAgent.__name__ == "CaptionAgent"
     mock_vlm = MagicMock()
@@ -111,7 +111,7 @@ def test_caption_agent_has_correct_name():
 
 
 def test_caption_agent_run_signature():
-    from paperbanana.agents.caption import CaptionAgent
+    from paperbanana_cn.agents.caption import CaptionAgent
 
     sig = inspect.signature(CaptionAgent.run)
     params = list(sig.parameters.keys())
@@ -142,8 +142,8 @@ def test_caption_prompt_has_required_placeholders():
 @pytest.mark.asyncio
 async def test_caption_agent_strips_surrounding_quotes(tmp_path):
     """CaptionAgent strips surrounding double/single quotes from model output."""
-    from paperbanana.agents.caption import CaptionAgent
-    from paperbanana.core.utils import find_prompt_dir
+    from paperbanana_cn.agents.caption import CaptionAgent
+    from paperbanana_cn.core.utils import find_prompt_dir
 
     # Create a tiny test image
     img_path = str(tmp_path / "test.png")
@@ -166,8 +166,8 @@ async def test_caption_agent_strips_surrounding_quotes(tmp_path):
 @pytest.mark.asyncio
 async def test_caption_agent_no_strip_when_no_quotes(tmp_path):
     """CaptionAgent returns the response unchanged when no surrounding quotes."""
-    from paperbanana.agents.caption import CaptionAgent
-    from paperbanana.core.utils import find_prompt_dir
+    from paperbanana_cn.agents.caption import CaptionAgent
+    from paperbanana_cn.core.utils import find_prompt_dir
 
     img_path = str(tmp_path / "test.png")
     Image.new("RGB", (64, 64)).save(img_path)
@@ -189,8 +189,8 @@ async def test_caption_agent_no_strip_when_no_quotes(tmp_path):
 @pytest.mark.asyncio
 async def test_caption_agent_uses_plot_prompt_for_statistical_type(tmp_path):
     """CaptionAgent loads the 'plot' prompt when diagram_type is STATISTICAL_PLOT."""
-    from paperbanana.agents.caption import CaptionAgent
-    from paperbanana.core.utils import find_prompt_dir
+    from paperbanana_cn.agents.caption import CaptionAgent
+    from paperbanana_cn.core.utils import find_prompt_dir
 
     img_path = str(tmp_path / "test.png")
     Image.new("RGB", (64, 64)).save(img_path)
@@ -258,8 +258,8 @@ async def test_caption_generated_when_enabled(tmp_path):
 @pytest.mark.asyncio
 async def test_caption_uses_final_output_image(tmp_path):
     """CaptionAgent receives the final_output image path, not a per-iteration path."""
-    from paperbanana.agents.caption import CaptionAgent
-    from paperbanana.core.utils import find_prompt_dir
+    from paperbanana_cn.agents.caption import CaptionAgent
+    from paperbanana_cn.core.utils import find_prompt_dir
 
     called_with_paths = []
 
@@ -290,8 +290,8 @@ async def test_caption_uses_final_output_image(tmp_path):
 @pytest.mark.asyncio
 async def test_caption_failure_is_graceful(tmp_path):
     """If CaptionAgent raises, the pipeline still returns a valid result with None caption."""
-    from paperbanana.agents.caption import CaptionAgent
-    from paperbanana.core.utils import find_prompt_dir
+    from paperbanana_cn.agents.caption import CaptionAgent
+    from paperbanana_cn.core.utils import find_prompt_dir
 
     class _FailingCaptionAgent(CaptionAgent):
         async def run(self, **kwargs):
@@ -545,7 +545,7 @@ async def test_no_caption_in_continue_run_when_disabled(tmp_path):
 
 def test_generation_output_generated_caption_field():
     """GenerationOutput has generated_caption as an optional field defaulting to None."""
-    from paperbanana.core.types import GenerationOutput
+    from paperbanana_cn.core.types import GenerationOutput
 
     out = GenerationOutput(image_path="a.png", description="desc")
     assert out.generated_caption is None
@@ -571,7 +571,7 @@ def test_pipeline_progress_stage_has_caption_stages():
 
 def test_generate_command_has_generate_caption_flag():
     """The 'generate' CLI command exposes --generate-caption."""
-    from paperbanana import cli
+    from paperbanana_cn import cli
 
     src = inspect.getsource(cli.generate)
     assert "generate_caption" in src
@@ -580,7 +580,7 @@ def test_generate_command_has_generate_caption_flag():
 
 def test_plot_command_has_generate_caption_flag():
     """The 'plot' CLI command exposes --generate-caption."""
-    from paperbanana import cli
+    from paperbanana_cn import cli
 
     src = inspect.getsource(cli.plot)
     assert "generate_caption" in src
@@ -589,7 +589,7 @@ def test_plot_command_has_generate_caption_flag():
 
 def test_generate_caption_flag_sets_settings_override():
     """When --generate-caption is passed, overrides include generate_caption=True."""
-    from paperbanana import cli
+    from paperbanana_cn import cli
 
     src = inspect.getsource(cli.generate)
     # The override must only be set when flag is truthy
@@ -598,7 +598,7 @@ def test_generate_caption_flag_sets_settings_override():
 
 def test_plot_settings_includes_generate_caption():
     """The plot command passes generate_caption into Settings via overrides."""
-    from paperbanana import cli
+    from paperbanana_cn import cli
 
     src = inspect.getsource(cli.plot)
     assert 'overrides["generate_caption"] = True' in src

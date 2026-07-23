@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
-from paperbanana.doctor import (
+from paperbanana_cn.cli import app
+from paperbanana_cn.doctor import (
     CheckResult,
     check_aws_credentials,
     check_env_key,
@@ -41,7 +41,7 @@ def _patch_all_checks(**overrides):
     defaults.update(overrides)
     stack = ExitStack()
     for name, rv in defaults.items():
-        stack.enter_context(patch(f"paperbanana.doctor.{name}", return_value=rv))
+        stack.enter_context(patch(f"paperbanana_cn.doctor.{name}", return_value=rv))
     return stack
 
 
@@ -143,7 +143,7 @@ def test_check_paperbanana_is_critical():
 def test_optional_package_is_not_critical():
     from importlib.metadata import PackageNotFoundError
 
-    with patch("paperbanana.doctor.pkg_version", side_effect=PackageNotFoundError("fakepkg")):
+    with patch("paperbanana_cn.doctor.pkg_version", side_effect=PackageNotFoundError("fakepkg")):
         r = check_optional_package("FakePkg", "fakepkg", "fake")
     assert not r.critical
 

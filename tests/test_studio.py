@@ -17,7 +17,7 @@ import pytest
     ],
 )
 def test_runs_helpers_smoke(fn: str, tmp_path):
-    from paperbanana.studio import runs as runs_mod
+    from paperbanana_cn.studio import runs as runs_mod
 
     f = getattr(runs_mod, fn)
     if fn.startswith("load_"):
@@ -29,7 +29,7 @@ def test_runs_helpers_smoke(fn: str, tmp_path):
 
 
 def test_build_settings_merge(tmp_path):
-    from paperbanana.studio.runner import build_settings
+    from paperbanana_cn.studio.runner import build_settings
 
     s = build_settings(
         config_path=None,
@@ -52,9 +52,9 @@ def test_build_settings_merge(tmp_path):
 
 
 def test_vlm_only_settings_do_not_require_image_connection(tmp_path):
-    from paperbanana.connections.manager import ConnectionManager
-    from paperbanana.connections.models import ConnectionProfile, ConnectionRole
-    from paperbanana.studio.runner import build_settings
+    from paperbanana_cn.connections.manager import ConnectionManager
+    from paperbanana_cn.connections.models import ConnectionProfile, ConnectionRole
+    from paperbanana_cn.studio.runner import build_settings
 
     manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
     vlm = ConnectionProfile(
@@ -88,8 +88,8 @@ def test_vlm_only_settings_do_not_require_image_connection(tmp_path):
 
 
 def test_workflow_specs_and_dynamic_roles(tmp_path):
-    from paperbanana.connections.models import ConnectionRole
-    from paperbanana.studio.models import (
+    from paperbanana_cn.connections.models import ConnectionRole
+    from paperbanana_cn.studio.models import (
         WORKFLOW_BY_KEY,
         roles_for_batch_type,
         roles_for_saved_run,
@@ -113,7 +113,7 @@ def test_workflow_specs_and_dynamic_roles(tmp_path):
 
 def test_build_studio_app():
     gradio = pytest.importorskip("gradio")
-    from paperbanana.studio.app import build_studio_app
+    from paperbanana_cn.studio.app import build_studio_app
 
     _ = gradio
     demo = build_studio_app(default_output_dir="outputs", config_path=None)
@@ -123,9 +123,9 @@ def test_build_studio_app():
 def test_studio_server_mounts_one_single_page_app(tmp_path):
     from fastapi.testclient import TestClient
 
-    from paperbanana.connections.manager import ConnectionManager
-    from paperbanana.studio.app import build_studio_server_app
-    from paperbanana.studio.branding import BRAND_LOGO_PATH
+    from paperbanana_cn.connections.manager import ConnectionManager
+    from paperbanana_cn.studio.app import build_studio_server_app
+    from paperbanana_cn.studio.branding import BRAND_LOGO_PATH
 
     manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
     app = build_studio_server_app(connection_manager=manager, server_port=7788)
@@ -150,7 +150,7 @@ def test_launch_studio_share_uses_gradio_620_tunnel_signature(monkeypatch):
     import gradio.networking
     import uvicorn
 
-    from paperbanana.studio import app as app_module
+    from paperbanana_cn.studio import app as app_module
 
     tunnel_args = {}
 
@@ -182,7 +182,7 @@ def test_launch_studio_share_uses_gradio_620_tunnel_signature(monkeypatch):
 
 
 def test_studio_defaults_persist_without_form_state(tmp_path):
-    from paperbanana.connections.manager import ConnectionManager
+    from paperbanana_cn.connections.manager import ConnectionManager
 
     manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
     manager.save_studio_defaults(output_dir="/tmp/paperbanana-runs", config_path="config.yaml")
@@ -192,10 +192,10 @@ def test_studio_defaults_persist_without_form_state(tmp_path):
 
 
 def test_image_options_follow_provider_capabilities(tmp_path):
-    from paperbanana.connections.manager import ConnectionManager
-    from paperbanana.connections.models import ConnectionProfile, ConnectionRole
-    from paperbanana.i18n import get_translator
-    from paperbanana.studio.connections_ui import resolve_image_options
+    from paperbanana_cn.connections.manager import ConnectionManager
+    from paperbanana_cn.connections.models import ConnectionProfile, ConnectionRole
+    from paperbanana_cn.i18n import get_translator
+    from paperbanana_cn.studio.connections_ui import resolve_image_options
 
     manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
     fixed = ConnectionProfile(
@@ -227,8 +227,8 @@ def test_image_options_follow_provider_capabilities(tmp_path):
 
 
 def test_studio_batch_reuses_shared_runner_and_localizes_summary(tmp_path, monkeypatch):
-    from paperbanana.core.config import Settings
-    from paperbanana.studio.runner import run_batch
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.studio.runner import run_batch
 
     captured = {}
 
@@ -243,7 +243,7 @@ def test_studio_batch_reuses_shared_runner_and_localizes_summary(tmp_path, monke
             "skipped": 0,
         }
 
-    monkeypatch.setattr("paperbanana.core.workflow_runner.run_methodology_batch", _fake_shared)
+    monkeypatch.setattr("paperbanana_cn.core.workflow_runner.run_methodology_batch", _fake_shared)
     settings = Settings(output_dir=str(tmp_path))
     log, batch_dir = run_batch(
         settings,
@@ -260,7 +260,7 @@ def test_studio_batch_reuses_shared_runner_and_localizes_summary(tmp_path, monke
 def test_run_composite_smoke(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p1 = tmp_path / "a.png"
     p2 = tmp_path / "b.png"
@@ -280,7 +280,7 @@ def test_run_composite_smoke(tmp_path):
 
 
 def test_run_composite_no_files_returns_error(tmp_path):
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     log, output_path = run_composite(
         [],
@@ -293,7 +293,7 @@ def test_run_composite_no_files_returns_error(tmp_path):
 def test_run_composite_invalid_label_position(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p = tmp_path / "x.png"
     Image.new("RGB", (50, 50), (0, 0, 255)).save(str(p))
@@ -309,7 +309,7 @@ def test_run_composite_invalid_label_position(tmp_path):
 def test_run_composite_explicit_labels(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p1 = tmp_path / "a.png"
     p2 = tmp_path / "b.png"
@@ -329,7 +329,7 @@ def test_run_composite_explicit_labels(tmp_path):
 def test_run_composite_disable_labels(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p = tmp_path / "x.png"
     Image.new("RGB", (60, 60), (0, 0, 255)).save(str(p))
@@ -345,7 +345,7 @@ def test_run_composite_disable_labels(tmp_path):
 def test_run_composite_zero_spacing_allowed(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p1 = tmp_path / "a.png"
     p2 = tmp_path / "b.png"
@@ -365,7 +365,7 @@ def test_run_composite_zero_spacing_allowed(tmp_path):
 def test_run_composite_negative_spacing_rejected(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p = tmp_path / "x.png"
     Image.new("RGB", (40, 40), (255, 0, 0)).save(str(p))
@@ -381,7 +381,7 @@ def test_run_composite_negative_spacing_rejected(tmp_path):
 def test_run_composite_invalid_font_size_rejected(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p = tmp_path / "x.png"
     Image.new("RGB", (40, 40), (255, 0, 0)).save(str(p))
@@ -397,7 +397,7 @@ def test_run_composite_invalid_font_size_rejected(tmp_path):
 def test_run_composite_path_traversal_sanitized(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p = tmp_path / "x.png"
     Image.new("RGB", (40, 40), (255, 0, 0)).save(str(p))
@@ -418,7 +418,7 @@ def test_run_composite_path_traversal_sanitized(tmp_path):
 def test_run_composite_dotdot_filename_falls_back(tmp_path):
     from PIL import Image
 
-    from paperbanana.studio.runner import run_composite
+    from paperbanana_cn.studio.runner import run_composite
 
     p = tmp_path / "x.png"
     Image.new("RGB", (40, 40), (255, 0, 0)).save(str(p))
@@ -434,8 +434,8 @@ def test_run_composite_dotdot_filename_falls_back(tmp_path):
 
 
 def test_run_orchestration_requires_paper_or_resume(tmp_path):
-    from paperbanana.core.config import Settings
-    from paperbanana.studio.runner import run_orchestration
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.studio.runner import run_orchestration
 
     s = Settings().model_copy(update={"output_dir": str(tmp_path)})
     log, orch, plan, pkg = run_orchestration(
@@ -459,8 +459,8 @@ def test_run_orchestration_requires_paper_or_resume(tmp_path):
 
 
 def test_run_orchestration_rejects_paper_plus_resume(tmp_path):
-    from paperbanana.core.config import Settings
-    from paperbanana.studio.runner import run_orchestration
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.studio.runner import run_orchestration
 
     paper = tmp_path / "p.txt"
     paper.write_text("hello", encoding="utf-8")
@@ -486,7 +486,7 @@ def test_run_orchestration_rejects_paper_plus_resume(tmp_path):
 
 
 def test_preview_json_file_truncates(tmp_path):
-    from paperbanana.studio import runner as runner_mod
+    from paperbanana_cn.studio import runner as runner_mod
 
     p = tmp_path / "big.json"
     p.write_text('{"x": "' + ("a" * 20_000) + '"}', encoding="utf-8")
@@ -497,9 +497,9 @@ def test_preview_json_file_truncates(tmp_path):
 
 def test_run_evaluate_plot_requires_data_file(tmp_path):
     """Plot evaluation mode validates data path before provider setup."""
-    from paperbanana.core.config import Settings
-    from paperbanana.core.types import DiagramType
-    from paperbanana.studio.runner import run_evaluate
+    from paperbanana_cn.core.config import Settings
+    from paperbanana_cn.core.types import DiagramType
+    from paperbanana_cn.studio.runner import run_evaluate
 
     generated = tmp_path / "g.png"
     reference = tmp_path / "r.png"

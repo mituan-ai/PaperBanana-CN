@@ -6,8 +6,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
-from paperbanana.core.types import (
+from paperbanana_cn.cli import app
+from paperbanana_cn.core.types import (
     DiagramIR,
     DiagramIREdge,
     DiagramIRLocks,
@@ -95,9 +95,9 @@ def test_regenerate_runs_pipeline_and_passes_locks(tmp_path, monkeypatch):
                 metadata={"run_id": "run_regen"},
             )
 
-    monkeypatch.setattr("paperbanana.cli.PaperBananaPipeline", _FakePipeline)
+    monkeypatch.setattr("paperbanana_cn.cli.PaperBananaPipeline", _FakePipeline)
     monkeypatch.setattr(
-        "paperbanana.core.source_loader.load_methodology_source",
+        "paperbanana_cn.core.source_loader.load_methodology_source",
         lambda *args, **kwargs: "Loaded source context",
     )
 

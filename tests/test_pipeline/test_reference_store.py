@@ -6,8 +6,8 @@ import json
 import tempfile
 from pathlib import Path
 
-from paperbanana.core.types import ReferenceExample
-from paperbanana.reference.store import ReferenceStore
+from paperbanana_cn.core.types import ReferenceExample
+from paperbanana_cn.reference.store import ReferenceStore
 
 
 def test_load_from_directory():

@@ -1,4 +1,4 @@
-"""Tests for paperbanana.core.utils — image save/detect helpers."""
+"""Tests for paperbanana_cn.core.utils — image save/detect helpers."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from paperbanana.core.utils import (
+from paperbanana_cn.core.utils import (
     _ensure_pil_image,
     detect_image_mime_type,
     save_image,
@@ -298,7 +298,7 @@ class TestMcpContinueRun:
     @pytest.mark.asyncio
     async def test_continue_diagram_rejects_plot_run(self, tmp_path: Path):
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType
+        from paperbanana_cn.core.types import DiagramType
 
         out = self._write_resumable_run(tmp_path, diagram_type="statistical_plot")
         raw = await _continue_run_mcp(
@@ -313,7 +313,7 @@ class TestMcpContinueRun:
     @pytest.mark.asyncio
     async def test_continue_plot_rejects_methodology_run(self, tmp_path: Path):
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType
+        from paperbanana_cn.core.types import DiagramType
 
         out = self._write_resumable_run(tmp_path, diagram_type="methodology")
         raw = await _continue_run_mcp(
@@ -328,7 +328,7 @@ class TestMcpContinueRun:
     @pytest.mark.asyncio
     async def test_continue_diagram_missing_run(self, tmp_path: Path):
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType
+        from paperbanana_cn.core.types import DiagramType
 
         out = tmp_path / "empty_outputs"
         out.mkdir()
@@ -345,7 +345,7 @@ class TestMcpContinueRun:
     async def test_continue_diagram_success_mocked_pipeline(self, tmp_path: Path, monkeypatch):
         import mcp_server.server as mcp_server_mod
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType, GenerationOutput
+        from paperbanana_cn.core.types import DiagramType, GenerationOutput
 
         out = self._write_resumable_run(tmp_path, diagram_type="methodology")
 
@@ -389,7 +389,7 @@ class TestMcpContinueRun:
         """continue_run accepts any resumable run and returns an Image (not JSON)."""
         import mcp_server.server as mcp_server_mod
         from mcp_server.server import continue_run as continue_run_mcp
-        from paperbanana.core.types import GenerationOutput
+        from paperbanana_cn.core.types import GenerationOutput
 
         self._write_resumable_run(tmp_path, diagram_type="methodology")
         monkeypatch.chdir(tmp_path)
