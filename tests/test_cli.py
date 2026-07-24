@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
+from paperbanana_cn.cli import app
 
 runner = CliRunner()
 HELP_TERMINAL_WIDTH = 200
@@ -33,9 +35,9 @@ def invoke_help(*args: str) -> str:
 
 
 def test_connections_import_legacy_creates_role_profiles(tmp_path, monkeypatch):
-    from paperbanana.connections import cli as connections_cli
-    from paperbanana.connections.manager import ConnectionManager
-    from paperbanana.connections.models import ConnectionRole
+    from paperbanana_cn.connections import cli as connections_cli
+    from paperbanana_cn.connections.manager import ConnectionManager
+    from paperbanana_cn.connections.models import ConnectionRole
 
     manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
     monkeypatch.setattr(connections_cli, "ConnectionManager", lambda: manager)
@@ -56,8 +58,111 @@ def test_connections_import_legacy_creates_role_profiles(tmp_path, monkeypatch):
     assert manager.secret_store.get(image.credential_ref) == "legacy-google-secret"
 
 
+def test_connections_add_reads_api_key_from_environment(tmp_path, monkeypatch):
+    from paperbanana_cn.connections import cli as connections_cli
+    from paperbanana_cn.connections.manager import ConnectionManager
+    from paperbanana_cn.connections.models import ConnectionRole
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    monkeypatch.setattr(connections_cli, "ConnectionManager", lambda: manager)
+    monkeypatch.setenv("TEST_VLM_API_KEY", "environment-secret")
+
+    result = runner.invoke(
+        app,
+        [
+            "connections",
+            "add",
+            "--role",
+            "vlm",
+            "--name",
+            "CI VLM",
+            "--provider",
+            "openai",
+            "--model",
+            "test-vlm",
+            "--base-url",
+            "https://vlm.example/v1",
+            "--api-key-env",
+            "TEST_VLM_API_KEY",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "environment-secret" not in result.output
+    config = manager.load()
+    profile = config.profile(config.active_vlm_profile_id, ConnectionRole.VLM)
+    assert profile.name == "CI VLM"
+    assert manager.secret_store.get(profile.credential_ref) == "environment-secret"
+
+
+def test_connections_add_rejects_missing_api_key_environment(tmp_path, monkeypatch):
+    from paperbanana_cn.connections import cli as connections_cli
+    from paperbanana_cn.connections.manager import ConnectionManager
+
+    manager = ConnectionManager(tmp_path / "connections.json", tmp_path / "secrets.json")
+    monkeypatch.setattr(connections_cli, "ConnectionManager", lambda: manager)
+    monkeypatch.delenv("MISSING_API_KEY", raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "connections",
+            "add",
+            "--role",
+            "image",
+            "--name",
+            "CI Image",
+            "--provider",
+            "openai",
+            "--model",
+            "test-image",
+            "--api-key-env",
+            "MISSING_API_KEY",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "MISSING_API_KEY is not set" in result.output
+    assert manager.load().profiles == []
+
+
+def test_connections_add_rejects_conflicting_api_key_options():
+    result = runner.invoke(
+        app,
+        [
+            "connections",
+            "add",
+            "--role",
+            "vlm",
+            "--name",
+            "Invalid",
+            "--provider",
+            "openai",
+            "--model",
+            "test-vlm",
+            "--api-key-env",
+            "ANY_KEY",
+            "--no-api-key",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "mutually exclusive" in result.output
+
+
+def test_mcp_command_delegates_to_existing_server(monkeypatch):
+    calls = []
+    fake_server = SimpleNamespace(main=lambda: calls.append("started"))
+    monkeypatch.setitem(sys.modules, "mcp_server.server", fake_server)
+
+    result = runner.invoke(app, ["mcp"])
+
+    assert result.exit_code == 0
+    assert calls == ["started"]
+
+
 def test_generate_dry_run_valid_inputs():
-    """paperbanana generate --input file.txt --caption 'test' --dry-run works."""
+    """paperbanana-cn generate --input file.txt --caption 'test' --dry-run works."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("Sample methodology text for testing.")
         input_path = f.name
@@ -97,7 +202,7 @@ def test_generate_dry_run_invalid_input():
 
 
 def test_generate_accepts_progress_json_flag():
-    """paperbanana generate accepts --progress-json flag in dry-run mode."""
+    """paperbanana-cn generate accepts --progress-json flag in dry-run mode."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("Sample methodology text for testing.")
         input_path = f.name
@@ -190,7 +295,7 @@ def test_orchestrate_generates_package_with_mocked_pipeline(tmp_path, monkeypatc
             self.run_id = "run_fake"
 
         async def generate(self, gen_input):
-            from paperbanana.core.types import GenerationOutput
+            from paperbanana_cn.core.types import GenerationOutput
 
             call_state["n"] += 1
             out = tmp_path / f"fake_{call_state['n']}.png"
@@ -202,7 +307,7 @@ def test_orchestrate_generates_package_with_mocked_pipeline(tmp_path, monkeypatc
                 metadata={"run_id": f"run_{call_state['n']}"},
             )
 
-    monkeypatch.setattr("paperbanana.core.pipeline.PaperBananaPipeline", _FakePipeline)
+    monkeypatch.setattr("paperbanana_cn.core.pipeline.PaperBananaPipeline", _FakePipeline)
 
     result = runner.invoke(
         app,
@@ -254,7 +359,7 @@ def test_orchestrate_resume_retry_failed_item(tmp_path, monkeypatch):
             self.run_id = "run_flaky"
 
         async def generate(self, gen_input):
-            from paperbanana.core.types import GenerationOutput
+            from paperbanana_cn.core.types import GenerationOutput
 
             call_state["n"] += 1
             if call_state["n"] == 1:
@@ -268,7 +373,7 @@ def test_orchestrate_resume_retry_failed_item(tmp_path, monkeypatch):
                 metadata={"run_id": "run_success"},
             )
 
-    monkeypatch.setattr("paperbanana.core.pipeline.PaperBananaPipeline", _FlakyPipeline)
+    monkeypatch.setattr("paperbanana_cn.core.pipeline.PaperBananaPipeline", _FlakyPipeline)
 
     first = runner.invoke(
         app,
@@ -411,7 +516,7 @@ def test_sweep_writes_report_with_mocked_pipeline(tmp_path, monkeypatch):
 
         async def generate(self, gen_input):
             call_state["n"] += 1
-            from paperbanana.core.types import (
+            from paperbanana_cn.core.types import (
                 CritiqueResult,
                 GenerationOutput,
                 IterationRecord,
@@ -434,7 +539,7 @@ def test_sweep_writes_report_with_mocked_pipeline(tmp_path, monkeypatch):
                 metadata={"run_id": f"run_{call_state['n']}"},
             )
 
-    monkeypatch.setattr("paperbanana.core.pipeline.PaperBananaPipeline", _FakePipeline)
+    monkeypatch.setattr("paperbanana_cn.core.pipeline.PaperBananaPipeline", _FakePipeline)
 
     result = runner.invoke(
         app,
@@ -558,7 +663,7 @@ def test_generate_accepts_valid_reference_category():
 
 def test_generate_accepts_multiple_valid_reference_categories(monkeypatch):
     """Comma-separated categories parse into a list and propagate to Settings."""
-    import paperbanana.core.config as config_mod
+    import paperbanana_cn.core.config as config_mod
 
     captured: dict[str, object] = {}
     real_init = config_mod.Settings.__init__
@@ -646,7 +751,7 @@ def test_generate_no_vector_flag_accepted():
 
 def test_ablate_retrieval_writes_report(monkeypatch):
     """ablate-retrieval writes a JSON report and exits cleanly."""
-    from paperbanana.evaluation.retrieval_ablation import AblationReport, AblationVariantResult
+    from paperbanana_cn.evaluation.retrieval_ablation import AblationReport, AblationVariantResult
 
     captured: dict[str, object] = {}
 
@@ -704,7 +809,7 @@ def test_ablate_retrieval_writes_report(monkeypatch):
             return output_path
 
     monkeypatch.setattr(
-        "paperbanana.evaluation.retrieval_ablation.RetrievalAblationRunner",
+        "paperbanana_cn.evaluation.retrieval_ablation.RetrievalAblationRunner",
         _FakeRunner,
     )
 
@@ -764,7 +869,7 @@ def test_setup_official_api_flow_writes_key_and_clears_base_url(monkeypatch):
             "test-gemini-key",
         ]
     )
-    monkeypatch.setattr("paperbanana.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("paperbanana_cn.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
 
     with runner.isolated_filesystem():
         result = runner.invoke(app, ["setup"])
@@ -783,7 +888,7 @@ def test_setup_updates_existing_env_without_overwrite(monkeypatch):
             "new-gemini-key",
         ]
     )
-    monkeypatch.setattr("paperbanana.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("paperbanana_cn.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
 
     with runner.isolated_filesystem():
         Path(".env").write_text(
@@ -807,7 +912,7 @@ def test_setup_custom_endpoint_flow_writes_url_and_key(monkeypatch):
             "key-custom",
         ]
     )
-    monkeypatch.setattr("paperbanana.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("paperbanana_cn.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
 
     with runner.isolated_filesystem():
         result = runner.invoke(app, ["setup"])
@@ -827,7 +932,7 @@ def test_setup_custom_endpoint_requires_non_empty_url(monkeypatch):
             "key-custom",
         ]
     )
-    monkeypatch.setattr("paperbanana.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr("paperbanana_cn.cli.Prompt.ask", lambda *args, **kwargs: next(answers))
 
     with runner.isolated_filesystem():
         result = runner.invoke(app, ["setup"])
@@ -863,7 +968,7 @@ def test_batch_resume_retry_failed(tmp_path, monkeypatch):
             self.settings = settings
 
         async def generate(self, gen_input):
-            from paperbanana.core.types import GenerationOutput, IterationRecord
+            from paperbanana_cn.core.types import GenerationOutput, IterationRecord
 
             if "fails once" in gen_input.communicative_intent:
                 call_state["flaky_calls"] += 1
@@ -877,7 +982,7 @@ def test_batch_resume_retry_failed(tmp_path, monkeypatch):
                 metadata={"run_id": f"run_{gen_input.communicative_intent.replace(' ', '_')}"},
             )
 
-    monkeypatch.setattr("paperbanana.core.pipeline.PaperBananaPipeline", _FakePipeline)
+    monkeypatch.setattr("paperbanana_cn.core.pipeline.PaperBananaPipeline", _FakePipeline)
 
     first = runner.invoke(
         app,
@@ -944,7 +1049,7 @@ def test_plot_batch_supports_concurrency_and_retries(tmp_path, monkeypatch):
             self.settings = settings
 
         async def generate(self, gen_input):
-            from paperbanana.core.types import GenerationOutput, IterationRecord
+            from paperbanana_cn.core.types import GenerationOutput, IterationRecord
 
             if "flaky" in gen_input.communicative_intent:
                 state["flaky_calls"] += 1
@@ -958,7 +1063,7 @@ def test_plot_batch_supports_concurrency_and_retries(tmp_path, monkeypatch):
                 metadata={"run_id": "run_plot"},
             )
 
-    monkeypatch.setattr("paperbanana.core.pipeline.PaperBananaPipeline", _FakePipeline)
+    monkeypatch.setattr("paperbanana_cn.core.pipeline.PaperBananaPipeline", _FakePipeline)
 
     result = runner.invoke(
         app,
@@ -988,7 +1093,7 @@ def test_plot_batch_supports_concurrency_and_retries(tmp_path, monkeypatch):
 
 
 def test_generate_dry_run_accepts_export_tikz_flag():
-    """paperbanana generate accepts --export-tikz in dry-run mode."""
+    """paperbanana-cn generate accepts --export-tikz in dry-run mode."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("Sample methodology text for testing.")
         input_path = f.name
@@ -1093,14 +1198,14 @@ def test_tikz_subcommand_help():
 
 
 def test_plot_accepts_export_pgfplots_flag(tmp_path):
-    """paperbanana plot --help shows --export-pgfplots flag."""
+    """paperbanana-cn plot --help shows --export-pgfplots flag."""
     output = invoke_help("plot")
     assert "--export-pgfplots" in output
 
 
 def test_batch_prints_status_table_on_partial_failure(tmp_path, monkeypatch):
     """batch prints per-item table, correct counts, and exits 1 when any item fails."""
-    from paperbanana.core.types import CritiqueResult, GenerationOutput, IterationRecord
+    from paperbanana_cn.core.types import CritiqueResult, GenerationOutput, IterationRecord
 
     txt = tmp_path / "input.txt"
     txt.write_text("methodology text", encoding="utf-8")
@@ -1135,7 +1240,7 @@ def test_batch_prints_status_table_on_partial_failure(tmp_path, monkeypatch):
                 metadata={"run_id": "r1"},
             )
 
-    monkeypatch.setattr("paperbanana.core.pipeline.PaperBananaPipeline", _FakePipeline)
+    monkeypatch.setattr("paperbanana_cn.core.pipeline.PaperBananaPipeline", _FakePipeline)
     result = runner.invoke(
         app,
         [
@@ -1348,7 +1453,7 @@ def _make_run_dir(base: Path, run_id: str = "run_20260518_190654_814b57") -> Pat
 
 
 def _fake_continue_pipeline(tmp_path: Path, captured: dict):
-    from paperbanana.core.types import GenerationOutput
+    from paperbanana_cn.core.types import GenerationOutput
 
     class _FakePipeline:
         def __init__(self, settings=None, **kwargs):
@@ -1381,7 +1486,7 @@ def test_continue_run_with_custom_output_dir(tmp_path, monkeypatch):
     run_dir = _make_run_dir(custom_out)
     captured: dict = {}
     monkeypatch.setattr(
-        "paperbanana.core.pipeline.PaperBananaPipeline",
+        "paperbanana_cn.core.pipeline.PaperBananaPipeline",
         _fake_continue_pipeline(tmp_path, captured),
     )
 
@@ -1412,7 +1517,7 @@ def test_continue_run_accepts_run_dir_path(tmp_path, monkeypatch):
     run_dir = _make_run_dir(tmp_path / "elsewhere")
     captured: dict = {}
     monkeypatch.setattr(
-        "paperbanana.core.pipeline.PaperBananaPipeline",
+        "paperbanana_cn.core.pipeline.PaperBananaPipeline",
         _fake_continue_pipeline(tmp_path, captured),
     )
 
@@ -1433,7 +1538,7 @@ def test_continue_latest_uses_custom_output_dir(tmp_path, monkeypatch):
     run_dir = _make_run_dir(custom_out)
     captured: dict = {}
     monkeypatch.setattr(
-        "paperbanana.core.pipeline.PaperBananaPipeline",
+        "paperbanana_cn.core.pipeline.PaperBananaPipeline",
         _fake_continue_pipeline(tmp_path, captured),
     )
 
@@ -1513,7 +1618,7 @@ def _write_png(path: Path, size=(4, 4)) -> Path:
 
 def test_generate_image_flag_round_trip(tmp_path, monkeypatch):
     """Repeatable --image paths propagate into GenerationInput.input_images."""
-    import paperbanana.core.types as types_mod
+    import paperbanana_cn.core.types as types_mod
 
     captured: dict[str, object] = {}
     real_init = types_mod.GenerationInput.__init__

@@ -1,4 +1,4 @@
-"""Tests for paperbanana.core.utils — image save/detect helpers."""
+"""Tests for paperbanana_cn.core.utils — image save/detect helpers."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from paperbanana.core.utils import (
+from paperbanana_cn.core.utils import (
     _ensure_pil_image,
     detect_image_mime_type,
     save_image,
@@ -232,12 +232,13 @@ class TestCompressForApi:
         from mcp_server import server
         from mcp_server.server import _compress_for_api
 
-        # Set a very low limit so our test image exceeds it.
-        monkeypatch.setattr(server, "_MAX_IMAGE_BYTES", 100)
+        # Keep the limit below the PNG size but above the minimum JPEG
+        # container overhead across supported Pillow versions.
+        monkeypatch.setattr(server, "_MAX_IMAGE_BYTES", 550)
 
         p = tmp_path / "big.png"
         Image.new("RGB", (200, 200), color=(128, 64, 32)).save(p, format="PNG")
-        assert p.stat().st_size > 100
+        assert p.stat().st_size > 550
 
         path, fmt = _compress_for_api(str(p))
         assert fmt == "jpeg"
@@ -298,7 +299,7 @@ class TestMcpContinueRun:
     @pytest.mark.asyncio
     async def test_continue_diagram_rejects_plot_run(self, tmp_path: Path):
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType
+        from paperbanana_cn.core.types import DiagramType
 
         out = self._write_resumable_run(tmp_path, diagram_type="statistical_plot")
         raw = await _continue_run_mcp(
@@ -313,7 +314,7 @@ class TestMcpContinueRun:
     @pytest.mark.asyncio
     async def test_continue_plot_rejects_methodology_run(self, tmp_path: Path):
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType
+        from paperbanana_cn.core.types import DiagramType
 
         out = self._write_resumable_run(tmp_path, diagram_type="methodology")
         raw = await _continue_run_mcp(
@@ -328,7 +329,7 @@ class TestMcpContinueRun:
     @pytest.mark.asyncio
     async def test_continue_diagram_missing_run(self, tmp_path: Path):
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType
+        from paperbanana_cn.core.types import DiagramType
 
         out = tmp_path / "empty_outputs"
         out.mkdir()
@@ -345,7 +346,8 @@ class TestMcpContinueRun:
     async def test_continue_diagram_success_mocked_pipeline(self, tmp_path: Path, monkeypatch):
         import mcp_server.server as mcp_server_mod
         from mcp_server.server import _continue_run_mcp
-        from paperbanana.core.types import DiagramType, GenerationOutput
+        from paperbanana_cn.core.config import Settings
+        from paperbanana_cn.core.types import DiagramType, GenerationOutput
 
         out = self._write_resumable_run(tmp_path, diagram_type="methodology")
 
@@ -371,6 +373,16 @@ class TestMcpContinueRun:
                 )
 
         monkeypatch.setattr(mcp_server_mod, "PaperBananaPipeline", _FakePipeline)
+        monkeypatch.setattr(
+            mcp_server_mod,
+            "_mcp_settings_for_continue",
+            lambda output_dir, *_args, **_kwargs: Settings(
+                output_dir=output_dir,
+                connection_source="legacy",
+                vlm_provider="none",
+                image_provider="none",
+            ),
+        )
 
         raw = await _continue_run_mcp(
             expected=DiagramType.METHODOLOGY,
@@ -389,9 +401,11 @@ class TestMcpContinueRun:
         """continue_run accepts any resumable run and returns an Image (not JSON)."""
         import mcp_server.server as mcp_server_mod
         from mcp_server.server import continue_run as continue_run_mcp
-        from paperbanana.core.types import GenerationOutput
+        from paperbanana_cn.connections.models import ConnectionRole
+        from paperbanana_cn.core.config import Settings
+        from paperbanana_cn.core.types import GenerationOutput
 
-        self._write_resumable_run(tmp_path, diagram_type="methodology")
+        self._write_resumable_run(tmp_path, diagram_type="statistical_plot")
         monkeypatch.chdir(tmp_path)
         captured: dict = {}
 
@@ -414,7 +428,17 @@ class TestMcpContinueRun:
                 _write_png(final)
                 return GenerationOutput(image_path=str(final), description="done", iterations=[])
 
+        def _fake_runtime_settings(*, overrides, required_roles, **_kwargs):
+            captured["required_roles"] = required_roles
+            return Settings(
+                **overrides,
+                connection_source="legacy",
+                vlm_provider="none",
+                image_provider="none",
+            )
+
         monkeypatch.setattr(mcp_server_mod, "PaperBananaPipeline", _FakePipeline)
+        monkeypatch.setattr(mcp_server_mod, "_mcp_runtime_settings", _fake_runtime_settings)
 
         img = await continue_run_mcp(
             run_id="run_mcp_test",
@@ -427,5 +451,6 @@ class TestMcpContinueRun:
         assert captured["additional_iterations"] is None
         assert captured["settings_auto"] is True
         assert captured["settings_iters"] == 2
+        assert captured["required_roles"] == (ConnectionRole.VLM,)
         assert img.path is not None
         assert Path(img.path).exists()

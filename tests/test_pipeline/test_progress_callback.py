@@ -9,9 +9,9 @@ import pytest
 pytest.importorskip("PIL", reason="PIL/Pillow required for pipeline image mock")
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.types import (
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.types import (
     DiagramType,
     GenerationInput,
     PipelineProgressEvent,

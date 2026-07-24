@@ -8,15 +8,15 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from paperbanana.cli import app
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.guidelines.methodology import (
+from paperbanana_cn.cli import app
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.guidelines.methodology import (
     DEFAULT_METHODOLOGY_GUIDELINES,
     load_methodology_guidelines,
 )
-from paperbanana.guidelines.plots import DEFAULT_PLOT_GUIDELINES, load_plot_guidelines
-from paperbanana.guidelines.venues import (
+from paperbanana_cn.guidelines.plots import DEFAULT_PLOT_GUIDELINES, load_plot_guidelines
+from paperbanana_cn.guidelines.venues import (
     UnknownVenueError,
     VenueConfig,
     list_venues,
@@ -83,7 +83,7 @@ class TestUserVenueDirResolution:
     def test_default_is_xdg_config_dir(self, monkeypatch):
         monkeypatch.delenv("PAPERBANANA_VENUE_DIR", raising=False)
         # Compare path components, not a string — separators differ on Windows.
-        assert resolve_user_venue_dir().parts[-3:] == (".config", "paperbanana", "venues")
+        assert resolve_user_venue_dir().parts[-3:] == (".config", "paperbanana-cn", "venues")
 
 
 # ── Listing & resolution precedence ──────────────────────────────────

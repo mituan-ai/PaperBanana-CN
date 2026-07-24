@@ -1,48 +1,45 @@
-name: Feature Request
-description: Suggest a new feature or improvement
+name: Feature request
+description: Propose a scoped PaperBanana-CN improvement
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
+  - type: dropdown
+    id: product-area
+    attributes:
+      label: Product area
+      options:
+        - Independent VLM/image connections
+        - Chinese or English Studio
+        - Aspect ratio or resolution
+        - Packaging, MCP, Action, or Docker
+        - Upstream workflow change
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:
-      label: Problem or motivation
-      description: What problem does this solve? What are you trying to do that isn't currently possible or is harder than it should be?
+      label: User problem
+      description: Describe the current workflow and the concrete limitation.
     validations:
       required: true
   - type: textarea
-    id: solution
+    id: proposal
     attributes:
-      label: Proposed solution
-      description: How would you like this to work? Include CLI examples, API usage, or workflow descriptions if applicable.
-    validations:
-      required: true
-  - type: dropdown
-    id: area
-    attributes:
-      label: Area
-      options:
-        - Pipeline / agents
-        - Reference dataset
-        - MCP server
-        - CLI
-        - Python API
-        - Evaluation
-        - New provider support (OpenAI, Anthropic, local models, etc.)
-        - Documentation
-        - Other
+      label: Proposed behavior
+      description: Explain the user-visible behavior, not only an implementation.
     validations:
       required: true
   - type: textarea
-    id: alternatives
+    id: reuse
     attributes:
-      label: Alternatives considered
-      description: Any alternative approaches you've thought about.
-    validations:
-      required: false
+      label: Existing capability to reuse
+      description: Identify an upstream adapter, setting, size control, or workflow that can be extended.
   - type: checkboxes
-    id: contribution
+    id: scope
     attributes:
-      label: Willingness to contribute
+      label: Scope check
       options:
-        - label: I'd be willing to submit a PR for this feature
+        - label: This does not require a second configuration or provider creation path.
+          required: true
+        - label: I have checked whether the change belongs in upstream PaperBanana first.
+          required: true

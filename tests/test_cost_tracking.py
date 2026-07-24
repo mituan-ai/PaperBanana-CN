@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.core.cost_estimator import estimate_cost
-from paperbanana.core.cost_tracker import CostTracker
-from paperbanana.core.pricing import lookup_image_price, lookup_vlm_price
+from paperbanana_cn.core.cost_estimator import estimate_cost
+from paperbanana_cn.core.cost_tracker import CostTracker
+from paperbanana_cn.core.pricing import lookup_image_price, lookup_vlm_price
 
 # ── Pricing lookup ──────────────────────────────────────────────────
 
@@ -231,7 +231,7 @@ class TestBudgetGuard:
         """Settings should reject negative or zero budget values."""
         from pydantic import ValidationError
 
-        from paperbanana.core.config import Settings
+        from paperbanana_cn.core.config import Settings
 
         with pytest.raises(ValidationError):
             Settings(budget_usd=-5.0)
@@ -244,7 +244,7 @@ class TestBudgetGuard:
 
 class TestCostEstimator:
     def test_basic_estimation(self):
-        from paperbanana.core.config import Settings
+        from paperbanana_cn.core.config import Settings
 
         settings = Settings(
             vlm_provider="gemini",
@@ -263,7 +263,7 @@ class TestCostEstimator:
         assert result["estimated_total_usd"] == pytest.approx(3 * 0.134)
 
     def test_paid_provider_estimation(self):
-        from paperbanana.core.config import Settings
+        from paperbanana_cn.core.config import Settings
 
         settings = Settings(
             vlm_provider="openai",
@@ -278,7 +278,7 @@ class TestCostEstimator:
         assert result["image_calls"] == 3
 
     def test_auto_refine_estimation(self):
-        from paperbanana.core.config import Settings
+        from paperbanana_cn.core.config import Settings
 
         settings = Settings(
             vlm_provider="openai",
@@ -294,7 +294,7 @@ class TestCostEstimator:
         assert "auto" in result["pricing_note"].lower()
 
     def test_optimize_adds_vlm_call(self):
-        from paperbanana.core.config import Settings
+        from paperbanana_cn.core.config import Settings
 
         settings_no_opt = Settings(
             vlm_provider="openai",
@@ -317,7 +317,7 @@ class TestCostEstimator:
         assert with_opt["estimated_total_usd"] > no_opt["estimated_total_usd"]
 
     def test_unknown_model_note(self):
-        from paperbanana.core.config import Settings
+        from paperbanana_cn.core.config import Settings
 
         settings = Settings(
             vlm_provider="unknown_provider",
@@ -331,7 +331,7 @@ class TestCostEstimator:
         assert "unknown" in result["pricing_note"].lower()
 
     def test_multi_candidate_scales_phase2_costs(self):
-        from paperbanana.core.config import Settings
+        from paperbanana_cn.core.config import Settings
 
         base_kwargs = dict(
             vlm_provider="openai",

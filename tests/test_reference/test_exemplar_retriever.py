@@ -8,14 +8,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-from paperbanana.core.types import DiagramType
-from paperbanana.reference.exemplar_retrieval import (
+from paperbanana_cn.core.types import DiagramType
+from paperbanana_cn.reference.exemplar_retrieval import (
     ExemplarHit,
     ExemplarRetrievalError,
     ExternalExemplarRetriever,
     map_external_hits_to_examples,
 )
-from paperbanana.reference.store import ReferenceStore
+from paperbanana_cn.reference.store import ReferenceStore
 
 
 class _FakeResponse:
@@ -67,7 +67,7 @@ async def test_external_retriever_parses_and_dedupes(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "paperbanana.reference.exemplar_retrieval.httpx.AsyncClient",
+        "paperbanana_cn.reference.exemplar_retrieval.httpx.AsyncClient",
         lambda *args, **kwargs: _FakeAsyncClient(response),
     )
 
@@ -87,7 +87,7 @@ async def test_external_retriever_parses_and_dedupes(monkeypatch):
 async def test_external_retriever_raises_on_http_error(monkeypatch):
     response = _FakeResponse(500, {"error": "server error"})
     monkeypatch.setattr(
-        "paperbanana.reference.exemplar_retrieval.httpx.AsyncClient",
+        "paperbanana_cn.reference.exemplar_retrieval.httpx.AsyncClient",
         lambda *args, **kwargs: _FakeAsyncClient(response),
     )
 
@@ -116,7 +116,7 @@ async def test_external_retriever_retries_transient_http_error(monkeypatch):
         return next(responses)
 
     monkeypatch.setattr(
-        "paperbanana.reference.exemplar_retrieval.httpx.AsyncClient",
+        "paperbanana_cn.reference.exemplar_retrieval.httpx.AsyncClient",
         lambda *args, **kwargs: _FakeAsyncClient(_next_response),
     )
 
@@ -145,7 +145,7 @@ async def test_external_retriever_does_not_retry_non_retryable_4xx(monkeypatch):
         return _FakeResponse(400, {"error": "bad request"})
 
     monkeypatch.setattr(
-        "paperbanana.reference.exemplar_retrieval.httpx.AsyncClient",
+        "paperbanana_cn.reference.exemplar_retrieval.httpx.AsyncClient",
         lambda *args, **kwargs: _FakeAsyncClient(_resp),
     )
 

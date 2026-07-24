@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-import paperbanana.data.manager as manager_mod
-from paperbanana.data.manager import (
+import paperbanana_cn.data.manager as manager_mod
+from paperbanana_cn.data.manager import (
     DatasetManager,
     _merge_index,
     _verify_sha256,
@@ -240,7 +240,7 @@ class TestDownload:
         def fake_download(url, dest):
             dest.write_bytes(b"definitely not the real dataset")
 
-        with patch("paperbanana.data.manager._download_file", side_effect=fake_download):
+        with patch("paperbanana_cn.data.manager._download_file", side_effect=fake_download):
             with pytest.raises(RuntimeError, match="SHA256 mismatch"):
                 tmp_cache.download(force=True)
 
@@ -275,9 +275,9 @@ class TestDownload:
             )
 
         with (
-            patch("paperbanana.data.manager._download_file", side_effect=fake_download),
+            patch("paperbanana_cn.data.manager._download_file", side_effect=fake_download),
             patch(
-                "paperbanana.data.manager._import_from_bench",
+                "paperbanana_cn.data.manager._import_from_bench",
                 return_value=bench_examples,
             ),
         ):
@@ -310,9 +310,9 @@ class TestDownload:
             )
 
         with (
-            patch("paperbanana.data.manager._download_file", side_effect=fake_download),
+            patch("paperbanana_cn.data.manager._download_file", side_effect=fake_download),
             patch(
-                "paperbanana.data.manager._import_from_bench",
+                "paperbanana_cn.data.manager._import_from_bench",
                 return_value=bench_examples,
             ),
         ):
@@ -380,7 +380,7 @@ class TestResolveImageUnicode:
     def test_nfd_filename_resolves_via_nfc_comparison(self, tmp_path):
         import unicodedata
 
-        from paperbanana.data.manager import _resolve_image
+        from paperbanana_cn.data.manager import _resolve_image
 
         images = tmp_path / "images"
         images.mkdir()
@@ -395,7 +395,7 @@ class TestResolveImageUnicode:
         assert resolved.read_bytes() == b"fake"
 
     def test_exact_match_still_preferred(self, tmp_path):
-        from paperbanana.data.manager import _resolve_image
+        from paperbanana_cn.data.manager import _resolve_image
 
         images = tmp_path / "images"
         images.mkdir()
@@ -404,7 +404,7 @@ class TestResolveImageUnicode:
         assert resolved == images / "plain.jpg"
 
     def test_missing_image_returns_none(self, tmp_path):
-        from paperbanana.data.manager import _resolve_image
+        from paperbanana_cn.data.manager import _resolve_image
 
         images = tmp_path / "images"
         images.mkdir()
@@ -457,7 +457,7 @@ class TestOfficialTestSplit:
         return bench
 
     def test_import_and_load_round_trip(self, tmp_path):
-        from paperbanana.data.manager import DatasetManager, _import_test_split
+        from paperbanana_cn.data.manager import DatasetManager, _import_test_split
 
         bench = self._make_bench_dir(tmp_path)
         dm = DatasetManager(cache_dir=tmp_path / "cache")
@@ -478,14 +478,14 @@ class TestOfficialTestSplit:
         assert plot_cases[0].raw_data == {"x": [1, 2], "y": [3, 4]}
 
     def test_load_missing_split_raises_with_hint(self, tmp_path):
-        from paperbanana.data.manager import DatasetManager
+        from paperbanana_cn.data.manager import DatasetManager
 
         dm = DatasetManager(cache_dir=tmp_path / "cache")
         with pytest.raises(RuntimeError, match="data download"):
             dm.load_test_split("diagram")
 
     def test_load_rejects_unknown_task(self, tmp_path):
-        from paperbanana.data.manager import DatasetManager
+        from paperbanana_cn.data.manager import DatasetManager
 
         dm = DatasetManager(cache_dir=tmp_path / "cache")
         with pytest.raises(ValueError, match="diagram"):

@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from paperbanana.core.config import Settings
-from paperbanana.core.types import (
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.types import (
     CritiqueResult,
     DimensionResult,
     EvaluationScore,
@@ -16,7 +16,7 @@ from paperbanana.core.types import (
     IterationRecord,
     ReferenceExample,
 )
-from paperbanana.evaluation.prompt_ablation import (
+from paperbanana_cn.evaluation.prompt_ablation import (
     PromptAblationRunner,
     PromptComparisonEntry,
     PromptVariantResult,

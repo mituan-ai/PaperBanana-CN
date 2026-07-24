@@ -1,0 +1,53 @@
+"""Dummy image generation provider for when no image generation is needed."""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from PIL import Image
+
+from paperbanana_cn.core.config import OUTPUT_RESOLUTION_VALUES
+from paperbanana_cn.core.types import ASPECT_RATIO_VALUES
+from paperbanana_cn.providers.base import ImageGenProvider, ImageSizeMode
+
+
+class DummyImageGen(ImageGenProvider):
+    """Dummy image generation provider that doesn't actually generate images.
+
+    Used for statistical plots where the visualization is done via matplotlib
+    code generation rather than image models.
+    """
+
+    @property
+    def name(self) -> str:
+        return "none"
+
+    @property
+    def model_name(self) -> str:
+        return "dummy"
+
+    @property
+    def supported_ratios(self) -> list[str]:
+        return list(ASPECT_RATIO_VALUES)
+
+    @property
+    def supported_resolutions(self) -> list[str]:
+        return list(OUTPUT_RESOLUTION_VALUES)
+
+    @property
+    def size_mode(self) -> ImageSizeMode:
+        return ImageSizeMode.EXPLICIT_PIXELS
+
+    async def generate(
+        self,
+        prompt: str,
+        negative_prompt: Optional[str] = None,
+        width: int = 1024,
+        height: int = 1024,
+        seed: Optional[int] = None,
+        aspect_ratio: Optional[str] = None,
+    ) -> Image.Image:
+        raise RuntimeError(
+            "DummyImageGen should never be called. "
+            "This provider is only for statistical plot generation."
+        )

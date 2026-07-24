@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock
 import pytest
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.types import DiagramType, GenerationInput
-from paperbanana.reference.exemplar_retrieval import ExemplarHit, ExemplarRetrievalError
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.types import DiagramType, GenerationInput
+from paperbanana_cn.reference.exemplar_retrieval import ExemplarHit, ExemplarRetrievalError
 
 
 class _MockVLM:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.core.workflow_runner import run_orchestration_package
+from paperbanana_cn.core.workflow_runner import run_orchestration_package
 
 
 def test_orchestration_dry_run_writes_plan(tmp_path: Path) -> None:
@@ -47,7 +47,7 @@ def test_orchestration_dry_run_writes_plan(tmp_path: Path) -> None:
 
 
 def test_methodology_batch_missing_manifest_raises() -> None:
-    from paperbanana.core.workflow_runner import run_methodology_batch
+    from paperbanana_cn.core.workflow_runner import run_methodology_batch
 
     with pytest.raises(FileNotFoundError):
         run_methodology_batch(

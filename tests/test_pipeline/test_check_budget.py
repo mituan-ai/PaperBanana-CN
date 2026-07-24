@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from paperbanana.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
 
 
 def _call(cost_tracker, context: str, iteration: int | None = None) -> bool:

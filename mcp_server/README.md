@@ -1,6 +1,7 @@
-# PaperBanana MCP Server
+# PaperBanana-CN MCP Server
 
-MCP server that exposes PaperBanana's diagram and plot generation as tools for Claude Code, Cursor, or any MCP-compatible client.
+MCP server that exposes PaperBanana-CN diagram and plot workflows to Claude Code, Cursor, and
+other MCP-compatible clients.
 
 ## Tools
 
@@ -14,9 +15,9 @@ MCP server that exposes PaperBanana's diagram and plot generation as tools for C
 | `evaluate_diagram` | Compare a generated diagram against a human reference (4 dimensions) |
 | `evaluate_plot` | Compare a generated statistical plot against a human reference (4 dimensions) |
 | `download_references` | Download the expanded reference set for stronger retrieval |
-| `orchestrate_figures` | Plan / generate a full-paper figure package (same workflow as `paperbanana orchestrate`); returns JSON paths and status |
-| `batch_diagrams` | Run a methodology batch from a manifest path (`paperbanana batch`) |
-| `batch_plots` | Run a statistical plot batch from a manifest path (`paperbanana plot-batch`) |
+| `orchestrate_figures` | Plan / generate a full-paper figure package (same workflow as `paperbanana-cn orchestrate`); returns JSON paths and status |
+| `batch_diagrams` | Run a methodology batch from a manifest path (`paperbanana-cn batch`) |
+| `batch_plots` | Run a statistical plot batch from a manifest path (`paperbanana-cn plot-batch`) |
 
 ### Batch and orchestration tools
 
@@ -28,16 +29,15 @@ On validation errors (missing manifest, bad flags), the JSON body includes `"err
 
 ### Continue tools
 
-`continue_diagram` and `continue_plot` mirror ``paperbanana generate --continue-run`` / Studio continue: they load `run_input.json` and the latest iteration under `output_dir` / `run_id`, then run more visualizer–critic rounds. Pick the tool that matches the run’s `diagram_type` (`methodology` vs `statistical_plot`); otherwise the response is `strict_success: false` with a hint to use the other tool. Successful responses include `final_image_path`, `run_dir`, and `metadata_path` when present.
+`continue_diagram` and `continue_plot` mirror ``paperbanana-cn generate --continue-run`` / Studio continue: they load `run_input.json` and the latest iteration under `output_dir` / `run_id`, then run more visualizer–critic rounds. Pick the tool that matches the run’s `diagram_type` (`methodology` vs `statistical_plot`); otherwise the response is `strict_success: false` with a hint to use the other tool. Successful responses include `final_image_path`, `run_dir`, and `metadata_path` when present.
 
 ## Installation
 
-Install PaperBanana-CN from this repository with the `mcp` extra, then create and activate the VLM
-and image profiles used by the server:
+Install PaperBanana-CN, then create and activate the VLM and image profiles used by the server:
 
 ```bash
-pip install -e ".[mcp]"
-paperbanana connections list
+pip install paperbanana-cn
+paperbanana-cn connections list
 ```
 
 ### Claude Code
@@ -47,8 +47,9 @@ Add to `.claude/claude_code_config.json` (or project-level):
 ```json
 {
   "mcpServers": {
-    "paperbanana": {
-      "command": "paperbanana-mcp"
+    "paperbanana-cn": {
+      "command": "uvx",
+      "args": ["paperbanana-cn", "mcp"]
     }
   }
 }
@@ -61,21 +62,22 @@ Add to `.cursor/mcp.json` in your project:
 ```json
 {
   "mcpServers": {
-    "paperbanana": {
-      "command": "paperbanana-mcp"
+    "paperbanana-cn": {
+      "command": "uvx",
+      "args": ["paperbanana-cn", "mcp"]
     }
   }
 }
 ```
 
-For a source checkout without an activated environment, point the client at `uv`:
+For an activated environment where PaperBanana-CN is already installed, the equivalent command is:
 
 ```json
 {
   "mcpServers": {
-    "paperbanana": {
-      "command": "uv",
-      "args": ["run", "paperbanana-mcp"]
+    "paperbanana-cn": {
+      "command": "paperbanana-cn",
+      "args": ["mcp"]
     }
   }
 }

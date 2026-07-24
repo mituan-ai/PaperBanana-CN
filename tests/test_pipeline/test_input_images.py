@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 import pytest
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.types import CritiqueResult, DiagramType, GenerationInput
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.types import CritiqueResult, DiagramType, GenerationInput
 
 
 class _MockVLM:

@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.resume import load_resume_state
-from paperbanana.core.types import (
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.resume import load_resume_state
+from paperbanana_cn.core.types import (
     DiagramIR,
     DiagramIREdge,
     DiagramIRNode,
@@ -267,7 +267,7 @@ def test_cli_invalid_format_rejected():
     """Invalid format via CLI is rejected cleanly."""
     from typer.testing import CliRunner
 
-    from paperbanana.cli import app
+    from paperbanana_cn.cli import app
 
     runner = CliRunner()
     result = runner.invoke(

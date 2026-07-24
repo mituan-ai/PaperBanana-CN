@@ -1,0 +1,339 @@
+{
+  "app.title": "PaperBanana-CN Research Studio",
+  "app.subtitle": "Academic illustration generation studio",
+  "app.tip": "Run `paperbanana-cn data download` to install the expanded reference set.",
+  "app.disclaimer": "PaperBanana-CN, developed by mituan",
+  "nav.generate": "Create",
+  "nav.improve": "Improve",
+  "nav.automation": "Automate",
+  "nav.tools": "Tools",
+  "nav.system": "System",
+  "studio.advanced_settings": "Advanced settings",
+  "studio.recovery_settings": "Recovery and retries",
+  "studio.result_canvas": "Result canvas",
+  "studio.status_ready": "Ready",
+  "studio.status_running": "Running",
+  "studio.status_complete": "Complete",
+  "studio.status_error": "Failed",
+  "studio.connections_heading": "Connection management",
+  "studio.connections_help": "Manage VLM and image-generation connections here. Browsing does not change the runtime connection; only Save & use activates one.",
+  "studio.connection_required": "Diagram generation requires both a vision language model and an image connection.",
+  "studio.runtime_heading": "Runtime and storage",
+  "studio.runtime_help": "Save the Studio output directory and optional YAML here. Workflows only read saved values.",
+  "studio.runs_browse": "Run browser",
+  "studio.runs_compare": "Run comparison",
+  "empty.generated_result": "The result will appear here when generation completes",
+  "empty.selected_run": "Select a saved run to preview its result",
+  "empty.composite_result": "The composite will appear here when processing completes",
+  "empty.evaluation_result": "The four-dimension evaluation will appear here when complete",
+  "empty.iterations": "Iteration images will appear after generation",
+  "empty.output_path": "The output location will appear here when the task completes",
+  "empty.orchestration_preview": "Plans and figure-package content will appear here after orchestration",
+  "empty.compare_result": "Select two saved runs to compare their results",
+  "settings.title": "Settings",
+  "settings.general": "General",
+  "settings.locale": "Interface language",
+  "settings.locale_saved": "Language saved and applied.",
+  "settings.output_dir": "Output directory",
+  "settings.output_dir_help": "Run and batch folders are created here.",
+  "settings.config_yaml": "Pipeline YAML (optional)",
+  "settings.config_yaml_help": "Leave blank to use the built-in workflow defaults.",
+  "settings.output_format": "Output format",
+  "settings.resolution": "Resolution",
+  "settings.resolution_help": "The selected image connection determines supported tiers.",
+  "settings.iterations": "Refinement iterations",
+  "settings.max_iterations": "Maximum auto-refine iterations",
+  "settings.optimize": "Optimize inputs",
+  "settings.auto_refine": "Auto-refine until satisfied",
+  "settings.save_prompts": "Save prompts in the run directory",
+  "settings.seed": "Random seed (optional)",
+  "settings.seed_help": "Empty uses the provider default.",
+  "settings.save_defaults": "Save defaults",
+  "settings.defaults_saved": "Studio defaults saved.",
+  "connection.vlm": "VLM connection",
+  "connection.image": "Image connection",
+  "connection.profile": "Saved profile",
+  "connection.name": "Profile name",
+  "connection.provider": "Protocol / provider",
+  "connection.base_url": "Base URL",
+  "connection.model": "Model",
+  "connection.timeout": "Timeout (seconds)",
+  "connection.api_key": "API key (leave empty to keep saved key)",
+  "connection.key_saved": "API key saved",
+  "connection.key_missing": "No API key saved",
+  "connection.size_mode": "Image size parameter mode",
+  "connection.size_mode_native_tier": "Native resolution tier",
+  "connection.size_mode_explicit_pixels": "Explicit pixel dimensions",
+  "connection.size_mode_fixed": "Service-defined fixed size",
+  "connection.size_mode_prompt_hint": "Prompt-based size hint",
+  "connection.new": "New",
+  "connection.copy": "Copy",
+  "connection.copied": "Copied: {name}",
+  "connection.save_only": "Save",
+  "connection.save": "Save & use",
+  "connection.delete": "Delete",
+  "connection.delete_confirm": "This cannot be undone. Delete this connection?",
+  "connection.delete_apply": "Delete connection",
+  "connection.cancel": "Cancel",
+  "connection.clear_key": "Clear saved API key",
+  "connection.clear_key_confirm": "The connection cannot run until a new API key is saved.",
+  "connection.clear_key_apply": "Clear API key",
+  "connection.key_cleared": "API key cleared.",
+  "connection.test": "Test VLM",
+  "connection.test_image": "Generate paid test image",
+  "connection.paid_confirm": "The next step sends a real image request and may incur a charge.",
+  "connection.paid_apply": "Generate test image",
+  "connection.unsaved": "Unsaved draft. Runs continue to use the last saved profile.",
+  "connection.saved": "Saved and selected: {name}",
+  "connection.deleted": "Connection deleted.",
+  "connection.select_first": "Select or save a connection first.",
+  "connection.test_ok": "Connection test succeeded.",
+  "connection.test_local_ok": "Configuration is valid. Enable the paid confirmation to send an image request.",
+  "connection.test_failed": "Connection test failed: {error}",
+  "connection.copy_suffix": "copy",
+  "tab.diagram": "Diagram",
+  "tab.plot": "Plot",
+  "tab.evaluate": "Evaluate",
+  "tab.continue": "Continue",
+  "tab.batch": "Batch",
+  "tab.orchestrate": "Orchestrate",
+  "tab.composite": "Composite",
+  "tab.sweep": "Sweep",
+  "tab.runs": "Runs",
+  "field.aspect_ratio": "Aspect ratio",
+  "field.progress": "Progress",
+  "field.context": "Methodology / context",
+  "field.context_file": "Context file (optional)",
+  "field.caption": "Figure caption / communicative intent",
+  "field.final_diagram": "Final diagram",
+  "field.final_plot": "Final plot",
+  "field.iterations": "Iteration images",
+  "button.generate_diagram": "Generate diagram",
+  "button.generate_plot": "Generate plot",
+  "button.open_settings": "Open settings"
+  ,"button.continue_selected": "Continue selected run"
+  ,"progress.optimizer_start": "Phase 0 - Optimizing input..."
+  ,"progress.optimizer_end": "Phase 0 - Input optimization complete{seconds}"
+  ,"progress.retriever_start": "Phase 1 - Selecting reference examples..."
+  ,"progress.retriever_end": "Phase 1 - Selected {count} examples{seconds}"
+  ,"progress.planner_start": "Phase 1 - Planning the figure..."
+  ,"progress.planner_end": "Phase 1 - Plan complete{seconds}{ratio}"
+  ,"progress.stylist_start": "Phase 1 - Refining visual style..."
+  ,"progress.stylist_end": "Phase 1 - Style complete{seconds}"
+  ,"progress.structurer_start": "Vector - Building diagram IR..."
+  ,"progress.structurer_failed": "Vector - Diagram IR failed{seconds}"
+  ,"progress.structurer_end": "Vector - Export complete{seconds}"
+  ,"progress.visualizer_start": "Phase 2 - Generating iteration {iteration}{total}..."
+  ,"progress.visualizer_end": "Phase 2 - Image saved{seconds}"
+  ,"progress.critic_start": "Phase 2 - Reviewing the image..."
+  ,"progress.critic_revision": "Phase 2 - Revision requested{seconds}"
+  ,"progress.critic_satisfied": "Phase 2 - Review passed{seconds}"
+  ,"progress.ratio": ", suggested ratio {ratio}"
+  ,"run.methodology_start": "Starting methodology diagram pipeline..."
+  ,"run.plot_start": "Starting statistical plot pipeline..."
+  ,"run.complete": "Complete. Run ID: {run_id}"
+  ,"run.final_image": "Final image: {path}"
+  ,"run.actual_size": "Actual image size: {size}"
+  ,"run.failed": "FAILED"
+  ,"error.context_empty": "Context is empty."
+  ,"error.caption_required": "Caption is required."
+  ,"error.data_required": "Upload a data file."
+  ,"error.intent_required": "Communicative intent is required."
+  ,"error.run_id_required": "Run ID is required."
+  ,"error.images_required": "Upload both the generated image and the reference image."
+  ,"error.output_dir_required": "Output directory is required."
+  ,"error.paper_or_resume_required": "Upload a paper or enter an orchestration ID to resume."
+  ,"error.connections_required": "Configure and activate both model connections before running, or explicitly use legacy mode."
+  ,"error.credential_missing": "The saved credential is missing. Edit the connection and save its API key again. Details: {error}"
+  ,"error.connection_config": "The saved connection configuration is invalid and was not reset. Repair or remove the reported file. Details: {error}"
+  ,"error.connection_conflict": "Another process changed the connection configuration. Reload the page and save again. Details: {error}"
+  ,"error.connection_test": "Connection test failed ({kind}). Check the endpoint, credential, model, and protocol. Details: {error}"
+  ,"error.validation": "The submitted settings are invalid. Check the highlighted values. Details: {error}"
+  ,"error.profile_yaml": "Profile mode cannot read provider fields from this YAML. Remove its VLM/image connection fields or use explicit legacy mode. Details: {error}"
+  ,"error.unsupported_option": "The selected image connection does not support this ratio or resolution. Choose one of its declared options. Details: {error}"
+  ,"error.unexpected": "Operation failed ({type}). Check the connection and input settings. Details: {error}"
+  ,"size.configure_connection": "Save and select an image connection to load supported ratios and resolutions."
+  ,"size.capability_error": "Could not load image connection capabilities: {error}"
+  ,"size.choose_supported": "The current selection is unsupported by this image connection. Choose a ratio and resolution."
+  ,"size.preview": "Request: {request_size}; provider: {provider}; size mode: {mode}."
+  ,"help.diagram": "Paste methodology text or upload a `.txt` / `.md` file. The uploaded file takes precedence when both are provided."
+  ,"help.plot": "Upload a **CSV** or **JSON** data file and describe the plot you want."
+  ,"help.evaluate": "Compare a generated image with a human reference using the project's four-dimension VLM judge protocol."
+  ,"help.continue": "Restore a previous **run_*** task from the output directory and continue visualizer-critic iterations."
+  ,"help.batch": "Upload a **YAML** or **JSON** manifest. Diagram items use `input` and `caption`; plot items use `data` and `intent`. Relative paths resolve from the manifest directory."
+  ,"help.orchestrate": "Plan and generate a full-paper figure package. Upload a paper for a new task or enter an orchestration ID to resume, but not both. Dry run writes only the plan."
+  ,"help.composite": "Combine images into a labeled multi-panel figure. This is local processing and makes no model API calls."
+  ,"help.sweep": "Run methodology variants with the active saved connections and rank them with the built-in quality proxy score."
+  ,"help.runs": "Inspect existing **run_*** and **batch_*** directories."
+  ,"help.reference_category": "Limit reference retrieval to selected domains; empty means all."
+  ,"help.reference_ids": "Leave empty to use automatic retrieval."
+  ,"help.additional_iterations": "Empty uses the pipeline default from settings."
+  ,"placeholder.context": "Describe your method or architecture, or paste a paper excerpt"
+  ,"placeholder.caption": "Example: Encoder-decoder overview with sparse routing"
+  ,"placeholder.intent": "Example: Bar chart comparing accuracy across benchmarks"
+  ,"placeholder.reference_ids": "Comma-separated, for example 2404.15806v1,2312.00001v1"
+  ,"placeholder.feedback": "Example: Make arrows thicker and increase color contrast"
+  ,"placeholder.data_directory": "Directory containing CSV/JSON files"
+  ,"placeholder.labels": "For example: (a), (b), (c); empty is automatic"
+  ,"field.reference_category": "Reference category filter"
+  ,"field.reference_ids": "Reference IDs (optional)"
+  ,"field.data_file": "Data file"
+  ,"field.intent": "Communicative intent"
+  ,"field.evaluation_target": "Evaluation target"
+  ,"field.generated_image": "Generated image"
+  ,"field.human_reference": "Human reference"
+  ,"field.source_context": "Source context"
+  ,"field.plot_evaluation_data": "Plot data file (required for plot evaluation)"
+  ,"field.figure_caption": "Figure caption"
+  ,"field.log": "Log"
+  ,"field.run_id": "Run ID"
+  ,"field.feedback": "Feedback for critic (optional)"
+  ,"field.additional_iterations": "Additional iterations (optional)"
+  ,"field.latest_result": "Latest result"
+  ,"field.new_iterations": "New iteration images"
+  ,"field.batch_type": "Batch type"
+  ,"field.manifest": "Manifest"
+  ,"field.default_plot_ratio": "Default plot aspect ratio"
+  ,"field.resume_batch": "Resume batch (ID or path)"
+  ,"field.retry_failed": "Retry failed items"
+  ,"field.max_retries_item": "Maximum retries per item"
+  ,"field.concurrency": "Concurrency"
+  ,"field.batch_log": "Batch log"
+  ,"field.batch_output": "Batch output directory"
+  ,"field.paper_source": "Paper source (.txt, .md, .pdf)"
+  ,"field.data_directory": "Data directory (optional, new tasks only)"
+  ,"field.pdf_pages": "PDF pages (optional)"
+  ,"field.max_method_figures": "Maximum methodology figures"
+  ,"field.max_plot_figures": "Maximum plots"
+  ,"field.dry_run": "Dry run (plan only, no image generation)"
+  ,"field.venue": "Venue style"
+  ,"field.resume_orchestration": "Resume orchestration (ID or directory path)"
+  ,"field.retry_failed_tasks": "Retry failed tasks"
+  ,"field.max_retries_task": "Maximum retries per task"
+  ,"field.orchestration_log": "Orchestration log"
+  ,"field.orchestration_directory": "Orchestration directory"
+  ,"field.orchestration_plan": "Orchestration plan"
+  ,"field.figure_package": "Figure package"
+  ,"field.panel_images": "Panel images"
+  ,"field.layout": "Layout"
+  ,"field.label_position": "Label position"
+  ,"field.labels": "Labels"
+  ,"field.spacing": "Spacing (px)"
+  ,"field.label_font_size": "Label font size"
+  ,"field.output_filename": "Output filename"
+  ,"field.composite_output": "Composite output"
+  ,"field.methodology_source": "Methodology source file"
+  ,"field.vlm_providers": "VLM providers"
+  ,"field.vlm_models": "VLM models"
+  ,"field.image_providers": "Image providers"
+  ,"field.image_models": "Image models"
+  ,"field.iteration_axis": "Iteration axis"
+  ,"field.optimize_axis": "Optimize axis"
+  ,"field.auto_refine_axis": "Auto-refine axis"
+  ,"field.max_variants": "Maximum variants (optional)"
+  ,"field.dry_run_plan": "Dry run (plan only)"
+  ,"field.sweep_log": "Sweep log"
+  ,"field.sweep_output": "Sweep output directory"
+  ,"field.sweep_report": "Sweep report path"
+  ,"field.runs": "Runs"
+  ,"field.batches": "Batches"
+  ,"field.selected_run_output": "Final output for selected run"
+  ,"field.metadata_preview": "Run metadata"
+  ,"field.run_input_preview": "Original run input"
+  ,"field.iteration_thumbnails": "Iteration thumbnails"
+  ,"field.batch_report_preview": "Batch report preview"
+  ,"field.left_run": "Left run"
+  ,"field.right_run": "Right run"
+  ,"field.left_output": "Left final output"
+  ,"field.right_output": "Right final output"
+  ,"field.left_details": "Left run details"
+  ,"field.right_details": "Right run details"
+  ,"choice.methodology": "Methodology diagram"
+  ,"choice.statistical_plot": "Statistical plot"
+  ,"choice.bottom": "Bottom"
+  ,"choice.top": "Top"
+  ,"choice.default": "Default"
+  ,"button.evaluate": "Run evaluation"
+  ,"button.continue": "Continue run"
+  ,"button.batch": "Run batch"
+  ,"button.orchestrate": "Run orchestration"
+  ,"button.composite": "Compose figure"
+  ,"button.sweep": "Run sweep"
+  ,"button.refresh": "Refresh lists"
+  ,"button.compare": "Compare runs"
+  ,"heading.run_compare": "### Run comparison"
+  ,"error.manifest_required": "Upload a manifest file."
+  ,"error.methodology_source_required": "Upload a methodology source file."
+  ,"common.done": "Done."
+  ,"evaluate.start": "Starting comparative evaluation ({task}, VLM judge)..."
+  ,"evaluate.generated_missing": "Generated image not found: {path}"
+  ,"evaluate.reference_missing": "Reference image not found: {path}"
+  ,"evaluate.plot_data_missing": "Plot data file not found: {path}"
+  ,"evaluate.plot_data_invalid": "Invalid plot data: {error}"
+  ,"evaluate.results": "Results"
+  ,"evaluate.score": "score {score:.0f}"
+  ,"evaluate.overall": "Overall"
+  ,"evaluate.dimension.faithfulness": "Faithfulness"
+  ,"evaluate.dimension.conciseness": "Conciseness"
+  ,"evaluate.dimension.readability": "Readability"
+  ,"evaluate.dimension.aesthetics": "Aesthetics"
+  ,"continue.start": "Continuing run {run_id}..."
+  ,"continue.complete": "Complete. Final: {path}"
+  ,"batch.start_methodology": "Starting methodology batch..."
+  ,"batch.start_plot": "Starting statistical plot batch..."
+  ,"batch.nothing": "Nothing to run; report at {path}"
+  ,"batch.input_missing": "Item {index}/{total} {id}: input missing"
+  ,"batch.data_missing": "Item {index}/{total} {id}: data missing"
+  ,"batch.item_ok": "Item {index}/{total} {id}: ok -> {path}"
+  ,"batch.item_retry": "Item {id}: retry {attempt}/{total} after {error}"
+  ,"batch.item_failed": "Item {index}/{total} {id}: failed - {error}"
+  ,"batch.composite": "Composite: {path}"
+  ,"batch.failed": "Batch failed: {error}"
+  ,"batch.summary": "Completed: {succeeded} succeeded, {failed} failed, {skipped} skipped."
+  ,"batch.report": "Report written: {path}"
+  ,"orchestration.start": "Starting figure-package orchestration..."
+  ,"orchestration.resume_conflict": "Error: clear the paper upload when resuming; provide only a resume ID or path."
+  ,"orchestration.paper_required": "Error: upload a .txt, .md, or .pdf paper, or enter a resume ID or path."
+  ,"orchestration.format_fallback": "Orchestration supports png/jpeg/webp only; using png instead of {format}."
+  ,"orchestration.failed": "Orchestration failed: {error}"
+  ,"orchestration.dry_complete": "Dry run complete (plan only)."
+  ,"orchestration.dry_package": "Dry run: no figure_package.json was generated."
+  ,"orchestration.summary": "Done. generated={generated} failed={failed} strict_success={success}"
+  ,"orchestration.package": "Package: {path}"
+  ,"orchestration.latex": "LaTeX: {path}"
+  ,"orchestration.captions": "Captions: {path}"
+  ,"orchestration.package_unreadable": "Package is not readable yet: {path}"
+  ,"sweep.start": "Starting parameter sweep..."
+  ,"sweep.input_missing": "Input file not found: {path}"
+  ,"sweep.max_variants_invalid": "max_variants must be >= 1"
+  ,"sweep.profile_axes_forbidden": "Provider/model axes are unavailable in profile mode because each saved URL, key, provider, and model must stay together."
+  ,"sweep.empty": "Sweep generated zero variants."
+  ,"sweep.id": "Sweep ID: {sweep_id}"
+  ,"sweep.variants": "Variants: {count}"
+  ,"sweep.output": "Output: {path}"
+  ,"sweep.dry_complete": "Dry run complete."
+  ,"sweep.variant": "Variant {index}/{total} - {id}"
+  ,"sweep.variant_ok": "  ok: score={score:.1f}, {seconds:.1f}s"
+  ,"sweep.variant_failed": "  failed: {error}"
+  ,"sweep.completed": "Completed: {count}"
+  ,"sweep.failed": "Failed: {count}"
+  ,"sweep.best": "Best variant: {variant}"
+  ,"composite.start": "Starting composite figure generation..."
+  ,"composite.images_required": "No valid image files provided. Upload at least one image."
+  ,"composite.position_invalid": "label_position must be 'top' or 'bottom'. Got: {value}"
+  ,"composite.spacing_invalid": "spacing must be >= 0. Got: {value}"
+  ,"composite.font_invalid": "label_font_size must be > 0. Got: {value}"
+  ,"composite.panels": "Panels: {count}"
+  ,"composite.layout": "Layout: {layout}"
+  ,"composite.output": "Output: {path}"
+  ,"placeholder.resume_batch": "Optional: batch ID or full batch directory path"
+  ,"placeholder.pdf_pages": "For example 1-5,8; empty means all pages"
+  ,"placeholder.resume_orchestration": "Optional: orchestration ID or full directory path"
+  ,"placeholder.sweep_pdf_pages": "For example 1-5,7; PDF inputs only"
+  ,"placeholder.iterations": "Comma-separated integers, for example 2,3,4"
+  ,"placeholder.boolean_axis": "Comma-separated on/off values"
+  ,"compare.select_both": "Select both runs to compare."
+  ,"compare.no_differences": "No differences detected in tracked comparison fields."
+  ,"compare.differences": "### Differences"
+  ,"compare.row": "- `{field}`: left=`{left}` | right=`{right}`"
+}

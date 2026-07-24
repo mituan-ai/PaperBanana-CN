@@ -1,36 +1,62 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-| Version | Supported |
-| ------- | --------- |
-| latest (main branch) | Yes |
+| Version | Status |
+|---|---|
+| `2.x` | Supported |
+| `1.x` / `v1` branch | Frozen and unsupported |
 
-## Reporting a Vulnerability
+Security fixes are made on `main` and released in the latest V2 package. The frozen V1 branch is
+kept for archival and migration purposes only.
 
-If you discover a security vulnerability in PaperBanana, please report it responsibly.
+## Report a vulnerability
 
-**Do not open a public issue.** Instead, email **dip@llmsresearch.com** with:
+Do not disclose a vulnerability in a public issue or Discussion. Use
+[GitHub Private Vulnerability Reporting](https://github.com/mituan-ai/PaperBanana-CN/security/advisories/new)
+so the report and follow-up remain private.
 
-- A description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix, if you have one
+Include:
 
-We will acknowledge receipt within 48 hours and aim to provide a fix or mitigation plan within 7 days for critical issues.
+- affected version or commit;
+- impact and realistic attack path;
+- minimal reproduction steps;
+- logs with every API key, URL credential, paper, and private dataset removed;
+- a proposed mitigation, when available.
 
-## Security Considerations
+## Security boundaries
 
-PaperBanana interacts with external APIs and processes user-provided text. Users should be aware of the following:
+### API credentials
 
-**API Keys**: Your Google Gemini API key is stored locally in `.env`. Never commit this file to version control. The `.gitignore` already excludes it.
+Saved connection profiles contain only credential references. API keys are stored outside the
+repository in the platform-specific PaperBanana-CN data directory with private file permissions.
+Keys must never appear in YAML, command-line arguments, logs, run metadata, exported packages,
+screenshots, or issue reports.
 
-**Generated Code Execution**: The `paperbanana plot` command generates and executes Matplotlib code via Gemini. While the execution environment is sandboxed to plotting functions, users should review generated code before running it in production environments.
+The GitHub Action accepts keys through GitHub Secrets and forwards only environment-variable names
+to `connections add --api-key-env`.
 
-**MCP Server**: The MCP server exposes PaperBanana's functionality to IDE clients. It runs locally and does not accept remote connections by default. Do not expose the MCP server to untrusted networks.
+### External model services
 
-**Reference Data**: The reference dataset contains publicly available figures from arXiv papers, used under fair use for research purposes. No proprietary or restricted data is included.
+Method text, images, prompts, and generated artifacts may be sent to the VLM or image service
+selected by the user. PaperBanana-CN cannot provide privacy guarantees for third-party or relay
+services. Review their retention, training, and regional-processing policies before submitting
+confidential research.
 
-## Dependencies
+### Generated plotting code
 
-We monitor dependencies for known vulnerabilities through GitHub's Dependabot. If you notice a vulnerability in one of our dependencies, please report it through the process above.
+The statistical plotting workflow generates and executes Python plotting code. Treat generated code
+and untrusted input data as untrusted, inspect them before reuse, and run sensitive workloads in an
+isolated environment.
+
+### MCP
+
+`paperbanana-cn mcp` uses local stdio transport. MCP clients can ask it to read input paths and write
+outputs with the permissions of the current user. Configure only trusted clients and do not expose
+the process through an unauthenticated remote bridge.
+
+### Artifacts and datasets
+
+Before sharing a run, inspect images, prompts, logs, metadata, PDFs, and manifests for private paper
+content or local paths. PaperBananaBench remains an upstream reference dataset with its own source
+and usage considerations.

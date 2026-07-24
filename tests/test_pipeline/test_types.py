@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.core.types import (
+from paperbanana_cn.core.types import (
     ASPECT_RATIO_VALUES,
     CritiqueResult,
     DiagramType,

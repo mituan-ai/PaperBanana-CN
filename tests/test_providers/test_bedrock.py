@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from paperbanana.core.config import Settings
-from paperbanana.providers.registry import ProviderRegistry
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.providers.registry import ProviderRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -140,7 +140,7 @@ class TestIsAvailable:
     def test_vlm_available_with_credentials(self):
         mock_session_cls, _, _ = _mock_boto3_session(has_credentials=True)
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.vlm.bedrock import BedrockVLM
+            from paperbanana_cn.providers.vlm.bedrock import BedrockVLM
 
             vlm = BedrockVLM()
             assert vlm.is_available() is True
@@ -148,7 +148,7 @@ class TestIsAvailable:
     def test_vlm_unavailable_without_credentials(self):
         mock_session_cls, _, _ = _mock_boto3_session(has_credentials=False)
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.vlm.bedrock import BedrockVLM
+            from paperbanana_cn.providers.vlm.bedrock import BedrockVLM
 
             vlm = BedrockVLM()
             assert vlm.is_available() is False
@@ -156,7 +156,7 @@ class TestIsAvailable:
     def test_imagen_available_with_credentials(self):
         mock_session_cls, _, _ = _mock_boto3_session(has_credentials=True)
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+            from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
             gen = BedrockImageGen()
             assert gen.is_available() is True
@@ -164,21 +164,21 @@ class TestIsAvailable:
     def test_imagen_unavailable_without_credentials(self):
         mock_session_cls, _, _ = _mock_boto3_session(has_credentials=False)
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+            from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
             gen = BedrockImageGen()
             assert gen.is_available() is False
 
     def test_vlm_unavailable_without_boto3(self):
         with patch.dict("sys.modules", {"boto3": None}):
-            from paperbanana.providers.vlm.bedrock import BedrockVLM
+            from paperbanana_cn.providers.vlm.bedrock import BedrockVLM
 
             vlm = BedrockVLM()
             assert vlm.is_available() is False
 
     def test_imagen_unavailable_without_boto3(self):
         with patch.dict("sys.modules", {"boto3": None}):
-            from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+            from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
             gen = BedrockImageGen()
             assert gen.is_available() is False
@@ -202,7 +202,7 @@ class TestBedrockVLMGenerate:
         }
 
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.vlm.bedrock import BedrockVLM
+            from paperbanana_cn.providers.vlm.bedrock import BedrockVLM
 
             vlm = BedrockVLM(model="us.amazon.nova-pro-v1:0")
             result = await vlm.generate("Hello")
@@ -220,7 +220,7 @@ class TestBedrockVLMGenerate:
         }
 
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.vlm.bedrock import BedrockVLM
+            from paperbanana_cn.providers.vlm.bedrock import BedrockVLM
 
             vlm = BedrockVLM()
             await vlm.generate("Hello", system_prompt="Be helpful")
@@ -236,7 +236,7 @@ class TestBedrockVLMGenerate:
 
         img = _make_small_image()
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.vlm.bedrock import BedrockVLM
+            from paperbanana_cn.providers.vlm.bedrock import BedrockVLM
 
             vlm = BedrockVLM()
             result = await vlm.generate("Describe this", images=[img])
@@ -258,7 +258,7 @@ class TestBedrockVLMGenerate:
         }
 
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.vlm.bedrock import BedrockVLM
+            from paperbanana_cn.providers.vlm.bedrock import BedrockVLM
 
             vlm = BedrockVLM()
             await vlm.generate("Hello", temperature=0.5, max_tokens=2048)
@@ -283,7 +283,7 @@ class TestBedrockImageGenGenerate:
         mock_client.invoke_model.return_value = {"body": mock_body}
 
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+            from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
             gen = BedrockImageGen(model="amazon.nova-canvas-v1:0")
             result = await gen.generate("A methodology diagram")
@@ -304,7 +304,7 @@ class TestBedrockImageGenGenerate:
         mock_client.invoke_model.return_value = {"body": mock_body}
 
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+            from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
             gen = BedrockImageGen()
             await gen.generate("A diagram", negative_prompt="blurry, low quality")
@@ -322,7 +322,7 @@ class TestBedrockImageGenGenerate:
         mock_client.invoke_model.return_value = {"body": mock_body}
 
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+            from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
             gen = BedrockImageGen()
             await gen.generate("A diagram", aspect_ratio="16:9")
@@ -341,7 +341,7 @@ class TestBedrockImageGenGenerate:
         mock_client.invoke_model.return_value = {"body": mock_body}
 
         with patch.dict("sys.modules", {"boto3": MagicMock(Session=mock_session_cls)}):
-            from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+            from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
             gen = BedrockImageGen()
             await gen.generate("A diagram", seed=42)
@@ -358,7 +358,7 @@ class TestBedrockImageGenGenerate:
 
 class TestDimensionResolution:
     def test_known_ratio(self):
-        from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+        from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
         gen = BedrockImageGen()
         assert gen._resolve_dimensions(1024, 1024, "16:9") == (1280, 720)
@@ -366,7 +366,7 @@ class TestDimensionResolution:
         assert gen._resolve_dimensions(1024, 1024, "9:16") == (720, 1280)
 
     def test_snap_to_closest(self):
-        from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+        from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
         gen = BedrockImageGen()
         # 1920x1080 is 16:9 ratio → should snap to (1280, 720)
@@ -378,14 +378,14 @@ class TestDimensionResolution:
         assert h > w  # should be portrait
 
     def test_unknown_ratio_is_rejected(self):
-        from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+        from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
         gen = BedrockImageGen()
         with pytest.raises(ValueError, match="does not support aspect ratio"):
             gen._resolve_dimensions(1024, 1024, "5:7")
 
     def test_supported_ratios_matches_dimension_map(self):
-        from paperbanana.providers.image_gen.bedrock_imagen import BedrockImageGen
+        from paperbanana_cn.providers.image_gen.bedrock_imagen import BedrockImageGen
 
         gen = BedrockImageGen()
         assert gen.supported_ratios == list(gen._RATIO_TO_DIMENSIONS.keys())

@@ -7,9 +7,9 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
-from paperbanana.agents.planner import PlannerAgent
-from paperbanana.core.types import ReferenceExample
-from paperbanana.core.utils import find_prompt_dir
+from paperbanana_cn.agents.planner import PlannerAgent
+from paperbanana_cn.core.types import ReferenceExample
+from paperbanana_cn.core.utils import find_prompt_dir
 
 
 class _MockVLM:

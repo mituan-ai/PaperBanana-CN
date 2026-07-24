@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from paperbanana.core.utils import find_prompt_dir
+from paperbanana_cn.core.utils import find_prompt_dir
 
 
 class TestFindPromptDir:
@@ -34,7 +34,7 @@ class TestFindPromptDir:
         """When no prompts/ dir exists anywhere, return 'prompts'."""
         monkeypatch.chdir(tmp_path)
         # Also patch __file__ resolution to a non-existent path
-        import paperbanana.core.utils as utils_mod
+        import paperbanana_cn.core.utils as utils_mod
 
         original_file = utils_mod.__file__
         monkeypatch.setattr(utils_mod, "__file__", str(tmp_path / "fake" / "core" / "utils.py"))

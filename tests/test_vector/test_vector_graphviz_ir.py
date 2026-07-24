@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.core.types import DiagramIR, DiagramIREdge, DiagramIRNode
-from paperbanana.vector.graphviz_render import (
+from paperbanana_cn.core.types import DiagramIR, DiagramIREdge, DiagramIRNode
+from paperbanana_cn.vector.graphviz_render import (
     diagram_ir_to_dot,
     find_dot_executable,
     render_dot_to_file,

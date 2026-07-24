@@ -1,0 +1,339 @@
+{
+  "app.title": "PaperBanana-CN 科研生图工作台",
+  "app.subtitle": "科研插图生成工作台",
+  "app.tip": "运行 `paperbanana-cn data download` 可安装扩展参考集。",
+  "app.disclaimer": "PaperBanana-CN，开发者 mituan",
+  "nav.generate": "生成",
+  "nav.improve": "改进",
+  "nav.automation": "自动化",
+  "nav.tools": "工具",
+  "nav.system": "系统",
+  "studio.advanced_settings": "高级设置",
+  "studio.recovery_settings": "恢复与重试",
+  "studio.result_canvas": "结果画布",
+  "studio.status_ready": "等待任务",
+  "studio.status_running": "正在运行",
+  "studio.status_complete": "已完成",
+  "studio.status_error": "运行失败",
+  "studio.connections_heading": "连接管理",
+  "studio.connections_help": "在这里管理视觉语言模型与图像生成连接。浏览连接不会改变当前运行配置，只有“保存并使用”会切换当前连接。",
+  "studio.connection_required": "生成方法图需要视觉语言模型和图像生成两个连接。",
+  "studio.runtime_heading": "运行与存储",
+  "studio.runtime_help": "这里保存 Studio 的默认输出目录和可选 YAML；各工作流只读取已保存的值。",
+  "studio.runs_browse": "运行浏览",
+  "studio.runs_compare": "运行对比",
+  "empty.generated_result": "生成完成后将在这里显示",
+  "empty.selected_run": "选择历史任务后将在这里显示",
+  "empty.composite_result": "组合完成后将在这里显示",
+  "empty.evaluation_result": "评估完成后将在这里显示四维评价结果",
+  "empty.iterations": "迭代图片将在生成后显示",
+  "empty.output_path": "任务完成后将在这里显示输出位置",
+  "empty.orchestration_preview": "全文编排完成后将在这里显示规划与图包内容",
+  "empty.compare_result": "选择两个运行任务后可在这里比较结果",
+  "settings.title": "设置",
+  "settings.general": "常规设置",
+  "settings.locale": "界面语言",
+  "settings.locale_saved": "界面语言已保存并应用。",
+  "settings.output_dir": "输出目录",
+  "settings.output_dir_help": "运行与批处理目录将在此创建。",
+  "settings.config_yaml": "工作流 YAML（可选）",
+  "settings.config_yaml_help": "留空时使用内置工作流默认配置。",
+  "settings.output_format": "输出格式",
+  "settings.resolution": "分辨率",
+  "settings.resolution_help": "可用档位由当前图像连接的能力决定。",
+  "settings.iterations": "精修迭代次数",
+  "settings.max_iterations": "自动精修最大次数",
+  "settings.optimize": "优化输入内容",
+  "settings.auto_refine": "自动精修直至通过评审",
+  "settings.save_prompts": "在运行目录中保存提示词",
+  "settings.seed": "随机种子（可选）",
+  "settings.seed_help": "留空时使用模型默认值。",
+  "settings.save_defaults": "保存默认值",
+  "settings.defaults_saved": "Studio 默认值已保存。",
+  "connection.vlm": "视觉语言模型连接",
+  "connection.image": "图像生成连接",
+  "connection.profile": "已保存连接",
+  "connection.name": "连接名称",
+  "connection.provider": "服务协议",
+  "connection.base_url": "服务地址（Base URL）",
+  "connection.model": "模型名称",
+  "connection.timeout": "超时时间（秒）",
+  "connection.api_key": "API Key（留空则保留已保存密钥）",
+  "connection.key_saved": "已保存 API Key",
+  "connection.key_missing": "尚未保存 API Key",
+  "connection.size_mode": "图像尺寸参数方式",
+  "connection.size_mode_native_tier": "原生分辨率档位",
+  "connection.size_mode_explicit_pixels": "显式像素尺寸",
+  "connection.size_mode_fixed": "服务固定尺寸",
+  "connection.size_mode_prompt_hint": "通过提示词指定",
+  "connection.new": "新建",
+  "connection.copy": "复制",
+  "connection.copied": "已复制：{name}",
+  "connection.save_only": "保存",
+  "connection.save": "保存并使用",
+  "connection.delete": "删除",
+  "connection.delete_confirm": "删除后无法恢复，确定删除这个连接吗？",
+  "connection.delete_apply": "确认删除",
+  "connection.cancel": "取消",
+  "connection.clear_key": "清除已保存的 API Key",
+  "connection.clear_key_confirm": "清除后该连接将无法运行，直到重新保存 API Key。",
+  "connection.clear_key_apply": "确认清除",
+  "connection.key_cleared": "已清除 API Key。",
+  "connection.test": "测试视觉语言模型",
+  "connection.test_image": "生成付费测试图",
+  "connection.paid_confirm": "下一步将发送真实图像请求，可能产生费用。",
+  "connection.paid_apply": "确认生成测试图",
+  "connection.unsaved": "存在未保存修改；运行仍使用上次保存的连接配置。",
+  "connection.saved": "已保存并选中：{name}",
+  "connection.deleted": "连接已删除。",
+  "connection.select_first": "请先选择或保存连接。",
+  "connection.test_ok": "连接测试成功。",
+  "connection.test_local_ok": "配置校验通过；勾选费用确认后才会发送图像请求。",
+  "connection.test_failed": "连接测试失败：{error}",
+  "connection.copy_suffix": "副本",
+  "tab.diagram": "科研方法图",
+  "tab.plot": "统计图",
+  "tab.evaluate": "质量评估",
+  "tab.continue": "继续运行",
+  "tab.batch": "批处理",
+  "tab.orchestrate": "全文编排",
+  "tab.composite": "多图组合",
+  "tab.sweep": "参数扫描",
+  "tab.runs": "运行记录",
+  "field.aspect_ratio": "宽高比",
+  "field.progress": "运行进度",
+  "field.context": "方法内容 / 上下文",
+  "field.context_file": "上下文文件（可选）",
+  "field.caption": "图注 / 表达意图",
+  "field.final_diagram": "最终方法图",
+  "field.final_plot": "最终统计图",
+  "field.iterations": "迭代图片",
+  "button.generate_diagram": "生成方法图",
+  "button.generate_plot": "生成统计图",
+  "button.open_settings": "前往设置"
+  ,"button.continue_selected": "继续所选运行"
+  ,"progress.optimizer_start": "阶段 0 - 正在优化输入..."
+  ,"progress.optimizer_end": "阶段 0 - 输入优化完成{seconds}"
+  ,"progress.retriever_start": "阶段 1 - 正在选择参考样例..."
+  ,"progress.retriever_end": "阶段 1 - 已选择 {count} 个样例{seconds}"
+  ,"progress.planner_start": "阶段 1 - 正在规划图形..."
+  ,"progress.planner_end": "阶段 1 - 规划完成{seconds}{ratio}"
+  ,"progress.stylist_start": "阶段 1 - 正在优化视觉风格..."
+  ,"progress.stylist_end": "阶段 1 - 风格优化完成{seconds}"
+  ,"progress.structurer_start": "矢量图 - 正在构建图形 IR..."
+  ,"progress.structurer_failed": "矢量图 - 图形 IR 构建失败{seconds}"
+  ,"progress.structurer_end": "矢量图 - 导出完成{seconds}"
+  ,"progress.visualizer_start": "阶段 2 - 正在生成第 {iteration}{total} 次迭代..."
+  ,"progress.visualizer_end": "阶段 2 - 图片已保存{seconds}"
+  ,"progress.critic_start": "阶段 2 - 正在评审图片..."
+  ,"progress.critic_revision": "阶段 2 - 需要继续修改{seconds}"
+  ,"progress.critic_satisfied": "阶段 2 - 图片已通过评审{seconds}"
+  ,"progress.ratio": "，建议比例 {ratio}"
+  ,"run.methodology_start": "正在启动科研方法图工作流..."
+  ,"run.plot_start": "正在启动统计图工作流..."
+  ,"run.complete": "运行完成，ID：{run_id}"
+  ,"run.final_image": "最终图片：{path}"
+  ,"run.actual_size": "实际图片尺寸：{size}"
+  ,"run.failed": "运行失败"
+  ,"error.context_empty": "方法内容不能为空。"
+  ,"error.caption_required": "请填写图注或表达意图。"
+  ,"error.data_required": "请上传数据文件。"
+  ,"error.intent_required": "请填写表达意图。"
+  ,"error.run_id_required": "请填写运行 ID。"
+  ,"error.images_required": "请同时上传生成图和参考图。"
+  ,"error.output_dir_required": "输出目录不能为空。"
+  ,"error.paper_or_resume_required": "请上传论文文件，或填写需要恢复的全文编排 ID。"
+  ,"error.connections_required": "请先配置并启用 VLM 与图像生成连接；如需使用旧配置，请显式启用 legacy 模式。"
+  ,"error.credential_missing": "连接引用的密钥不存在，请编辑该连接并重新保存 API Key。详情：{error}"
+  ,"error.connection_config": "连接配置文件无效，系统未自动重置。请按错误路径修复或移除该文件。详情：{error}"
+  ,"error.connection_conflict": "连接配置已被其他进程修改，请刷新页面后重新保存。详情：{error}"
+  ,"error.connection_test": "连接测试失败（{kind}）。请检查端点、密钥、模型和协议。详情：{error}"
+  ,"error.validation": "提交的设置无效，请检查对应字段。详情：{error}"
+  ,"error.profile_yaml": "已保存连接模式不能读取 YAML 中的连接字段。请移除 VLM/image 连接字段，或显式使用 legacy 模式。详情：{error}"
+  ,"error.unsupported_option": "当前图像连接不支持所选比例或分辨率，请改用该连接声明的选项。详情：{error}"
+  ,"error.unexpected": "操作失败（{type}），请检查连接与输入设置。详情：{error}"
+  ,"size.configure_connection": "请先保存并选择图像连接，以加载它支持的比例和分辨率。"
+  ,"size.capability_error": "无法读取图像连接能力：{error}"
+  ,"size.choose_supported": "当前选择不受该图像连接支持，请重新选择比例或分辨率。"
+  ,"size.preview": "实际请求：{request_size}；Provider：{provider}；尺寸模式：{mode}。"
+  ,"help.diagram": "粘贴方法内容或上传 `.txt` / `.md` 文件；两者同时提供时优先使用上传文件。"
+  ,"help.plot": "上传 **CSV** 或 **JSON** 数据文件，并说明希望生成的统计图。"
+  ,"help.evaluate": "使用项目的 VLM 评审协议，从四个维度及总体结果比较生成图片与人工参考图。"
+  ,"help.continue": "从输出目录中的历史 **run_*** 任务恢复状态，并继续执行生成与评审迭代。"
+  ,"help.batch": "上传 **YAML** 或 **JSON** 清单。方法图条目使用 `input` 与 `caption`，统计图条目使用 `data` 与 `intent`；相对路径以清单目录为准。"
+  ,"help.orchestrate": "规划并生成整篇论文的配图包。新任务上传论文，恢复任务填写编排 ID，两者不能同时设置；试运行只生成规划文件。"
+  ,"help.composite": "将多张图片组合为带子图标签的多面板图片。此功能仅在本地处理，不调用模型 API。"
+  ,"help.sweep": "使用当前已保存的连接运行多组方法图参数组合，并按内置质量代理分数排序。"
+  ,"help.runs": "查看已有的 **run_*** 与 **batch_*** 运行目录。"
+  ,"help.reference_category": "限制参考图检索领域；留空表示不限制。"
+  ,"help.reference_ids": "留空时使用自动检索。"
+  ,"help.additional_iterations": "留空时使用工作流设置中的默认值。"
+  ,"placeholder.context": "描述方法、系统架构，或粘贴论文片段"
+  ,"placeholder.caption": "例如：包含稀疏路由的编码器-解码器总体框架"
+  ,"placeholder.intent": "例如：比较不同方法在各基准上准确率的柱状图"
+  ,"placeholder.reference_ids": "逗号分隔，例如 2404.15806v1,2312.00001v1"
+  ,"placeholder.feedback": "例如：加粗箭头并提高颜色对比度"
+  ,"placeholder.data_directory": "包含 CSV/JSON 文件的目录"
+  ,"placeholder.labels": "例如：(a), (b), (c)；留空自动生成"
+  ,"field.reference_category": "参考图类别筛选"
+  ,"field.reference_ids": "参考图 ID（可选）"
+  ,"field.data_file": "数据文件"
+  ,"field.intent": "表达意图"
+  ,"field.evaluation_target": "评估对象"
+  ,"field.generated_image": "生成图片"
+  ,"field.human_reference": "人工参考图"
+  ,"field.source_context": "源上下文"
+  ,"field.plot_evaluation_data": "统计图数据文件（统计图评估必填）"
+  ,"field.figure_caption": "图注"
+  ,"field.log": "日志"
+  ,"field.run_id": "运行 ID"
+  ,"field.feedback": "给评审器的反馈（可选）"
+  ,"field.additional_iterations": "追加迭代次数（可选）"
+  ,"field.latest_result": "最新结果"
+  ,"field.new_iterations": "新增迭代图片"
+  ,"field.batch_type": "批处理类型"
+  ,"field.manifest": "任务清单"
+  ,"field.default_plot_ratio": "统计图默认宽高比"
+  ,"field.resume_batch": "恢复批处理（ID 或路径）"
+  ,"field.retry_failed": "重试失败条目"
+  ,"field.max_retries_item": "每个条目的最大重试次数"
+  ,"field.concurrency": "并发数"
+  ,"field.batch_log": "批处理日志"
+  ,"field.batch_output": "批处理输出目录"
+  ,"field.paper_source": "论文源文件（.txt、.md、.pdf）"
+  ,"field.data_directory": "数据目录（可选，仅新任务）"
+  ,"field.pdf_pages": "PDF 页码（可选）"
+  ,"field.max_method_figures": "方法图最大数量"
+  ,"field.max_plot_figures": "统计图最大数量"
+  ,"field.dry_run": "试运行（只规划，不生成图片）"
+  ,"field.venue": "投稿场所风格"
+  ,"field.resume_orchestration": "恢复全文编排（ID 或目录路径）"
+  ,"field.retry_failed_tasks": "重试失败任务"
+  ,"field.max_retries_task": "每个任务的最大重试次数"
+  ,"field.orchestration_log": "全文编排日志"
+  ,"field.orchestration_directory": "全文编排目录"
+  ,"field.orchestration_plan": "编排计划预览"
+  ,"field.figure_package": "图包清单预览"
+  ,"field.panel_images": "子图图片"
+  ,"field.layout": "布局"
+  ,"field.label_position": "标签位置"
+  ,"field.labels": "标签"
+  ,"field.spacing": "间距（像素）"
+  ,"field.label_font_size": "标签字号"
+  ,"field.output_filename": "输出文件名"
+  ,"field.composite_output": "组合图片"
+  ,"field.methodology_source": "方法内容源文件"
+  ,"field.vlm_providers": "VLM Provider"
+  ,"field.vlm_models": "VLM 模型"
+  ,"field.image_providers": "图像 Provider"
+  ,"field.image_models": "图像模型"
+  ,"field.iteration_axis": "迭代次数轴"
+  ,"field.optimize_axis": "输入优化轴"
+  ,"field.auto_refine_axis": "自动精修轴"
+  ,"field.max_variants": "最大组合数（可选）"
+  ,"field.dry_run_plan": "试运行（只规划）"
+  ,"field.sweep_log": "参数扫描日志"
+  ,"field.sweep_output": "参数扫描输出目录"
+  ,"field.sweep_report": "扫描报告路径"
+  ,"field.runs": "运行任务"
+  ,"field.batches": "批处理任务"
+  ,"field.selected_run_output": "所选任务的最终输出"
+  ,"field.metadata_preview": "运行元数据"
+  ,"field.run_input_preview": "原始运行输入"
+  ,"field.iteration_thumbnails": "迭代缩略图"
+  ,"field.batch_report_preview": "批处理报告预览"
+  ,"field.left_run": "左侧任务"
+  ,"field.right_run": "右侧任务"
+  ,"field.left_output": "左侧最终输出"
+  ,"field.right_output": "右侧最终输出"
+  ,"field.left_details": "左侧任务详情"
+  ,"field.right_details": "右侧任务详情"
+  ,"choice.methodology": "科研方法图"
+  ,"choice.statistical_plot": "统计图"
+  ,"choice.bottom": "底部"
+  ,"choice.top": "顶部"
+  ,"choice.default": "默认"
+  ,"button.evaluate": "开始评估"
+  ,"button.continue": "继续运行"
+  ,"button.batch": "开始批处理"
+  ,"button.orchestrate": "开始全文编排"
+  ,"button.composite": "组合图片"
+  ,"button.sweep": "开始参数扫描"
+  ,"button.refresh": "刷新列表"
+  ,"button.compare": "比较任务"
+  ,"heading.run_compare": "### 运行任务比较"
+  ,"error.manifest_required": "请上传任务清单文件。"
+  ,"error.methodology_source_required": "请上传方法内容源文件。"
+  ,"common.done": "完成。"
+  ,"evaluate.start": "正在启动对比评估（{task}，VLM 评审）..."
+  ,"evaluate.generated_missing": "找不到生成图片：{path}"
+  ,"evaluate.reference_missing": "找不到人工参考图：{path}"
+  ,"evaluate.plot_data_missing": "找不到统计图数据文件：{path}"
+  ,"evaluate.plot_data_invalid": "统计图数据无效：{error}"
+  ,"evaluate.results": "评估结果"
+  ,"evaluate.score": "得分 {score:.0f}"
+  ,"evaluate.overall": "总体结果"
+  ,"evaluate.dimension.faithfulness": "忠实性"
+  ,"evaluate.dimension.conciseness": "简洁性"
+  ,"evaluate.dimension.readability": "可读性"
+  ,"evaluate.dimension.aesthetics": "美观性"
+  ,"continue.start": "正在继续任务 {run_id}..."
+  ,"continue.complete": "任务完成。最终图片：{path}"
+  ,"batch.start_methodology": "正在启动科研方法图批处理..."
+  ,"batch.start_plot": "正在启动统计图批处理..."
+  ,"batch.nothing": "没有待执行条目；报告位于 {path}"
+  ,"batch.input_missing": "条目 {index}/{total} {id}：找不到输入文件"
+  ,"batch.data_missing": "条目 {index}/{total} {id}：找不到数据文件"
+  ,"batch.item_ok": "条目 {index}/{total} {id}：成功 -> {path}"
+  ,"batch.item_retry": "条目 {id}：第 {attempt}/{total} 次重试，原因：{error}"
+  ,"batch.item_failed": "条目 {index}/{total} {id}：失败 - {error}"
+  ,"batch.composite": "组合图片：{path}"
+  ,"batch.failed": "批处理失败：{error}"
+  ,"batch.summary": "批处理完成：成功 {succeeded}，失败 {failed}，跳过 {skipped}。"
+  ,"batch.report": "报告已写入：{path}"
+  ,"orchestration.start": "正在启动全文配图编排..."
+  ,"orchestration.resume_conflict": "错误：恢复任务时请清除论文上传，只填写恢复 ID 或目录路径。"
+  ,"orchestration.paper_required": "错误：请上传 .txt、.md 或 .pdf 论文，或填写恢复 ID 或目录路径。"
+  ,"orchestration.format_fallback": "全文编排仅支持 png/jpeg/webp；已将 {format} 改为 png。"
+  ,"orchestration.failed": "全文编排失败：{error}"
+  ,"orchestration.dry_complete": "试运行完成，仅生成规划。"
+  ,"orchestration.dry_package": "试运行不会生成 figure_package.json。"
+  ,"orchestration.summary": "编排完成：生成 {generated}，失败 {failed}，严格成功={success}"
+  ,"orchestration.package": "配图包：{path}"
+  ,"orchestration.latex": "LaTeX 文件：{path}"
+  ,"orchestration.captions": "图注文件：{path}"
+  ,"orchestration.package_unreadable": "配图包暂时无法读取：{path}"
+  ,"sweep.start": "正在启动参数扫描..."
+  ,"sweep.input_missing": "找不到输入文件：{path}"
+  ,"sweep.max_variants_invalid": "最大组合数必须大于等于 1。"
+  ,"sweep.profile_axes_forbidden": "已保存连接模式不能扫描 Provider 或模型，因为每个连接的 URL、密钥、Provider 和模型必须保持一致。"
+  ,"sweep.empty": "参数扫描没有生成任何组合。"
+  ,"sweep.id": "参数扫描 ID：{sweep_id}"
+  ,"sweep.variants": "组合数：{count}"
+  ,"sweep.output": "输出目录：{path}"
+  ,"sweep.dry_complete": "试运行完成。"
+  ,"sweep.variant": "组合 {index}/{total} - {id}"
+  ,"sweep.variant_ok": "  成功：得分={score:.1f}，耗时 {seconds:.1f} 秒"
+  ,"sweep.variant_failed": "  失败：{error}"
+  ,"sweep.completed": "完成：{count}"
+  ,"sweep.failed": "失败：{count}"
+  ,"sweep.best": "最佳组合：{variant}"
+  ,"composite.start": "正在组合多面板图片..."
+  ,"composite.images_required": "没有有效图片，请至少上传一张图片。"
+  ,"composite.position_invalid": "标签位置只能是顶部或底部，当前值：{value}"
+  ,"composite.spacing_invalid": "图片间距不能小于 0，当前值：{value}"
+  ,"composite.font_invalid": "标签字号必须大于 0，当前值：{value}"
+  ,"composite.panels": "子图数量：{count}"
+  ,"composite.layout": "布局：{layout}"
+  ,"composite.output": "输出文件：{path}"
+  ,"placeholder.resume_batch": "可选：批处理 ID 或批处理目录完整路径"
+  ,"placeholder.pdf_pages": "例如 1-5,8；留空表示全部页面"
+  ,"placeholder.resume_orchestration": "可选：全文编排 ID 或目录完整路径"
+  ,"placeholder.sweep_pdf_pages": "例如 1-5,7；仅适用于 PDF 输入"
+  ,"placeholder.iterations": "逗号分隔的整数，例如 2,3,4"
+  ,"placeholder.boolean_axis": "逗号分隔的开关值，例如 on,off"
+  ,"compare.select_both": "请选择两个运行任务进行比较。"
+  ,"compare.no_differences": "跟踪的比较字段没有差异。"
+  ,"compare.differences": "### 差异"
+  ,"compare.row": "- `{field}`：左侧=`{left}` | 右侧=`{right}`"
+}

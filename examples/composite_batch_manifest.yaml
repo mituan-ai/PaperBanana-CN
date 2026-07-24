@@ -1,6 +1,6 @@
 # Batch manifest with composite figure output.
 # Generates individual panels, then stitches them into a single labeled figure.
-# Run: paperbanana batch --manifest examples/composite_batch_manifest.yaml
+# Run: paperbanana-cn batch --manifest examples/composite_batch_manifest.yaml
 
 composite:
   layout: "1x2"           # rows x cols (or "auto")

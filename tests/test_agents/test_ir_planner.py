@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from paperbanana.agents.ir_planner import IRPlannerAgent
+from paperbanana_cn.agents.ir_planner import IRPlannerAgent
 
 
 def test_ir_planner_parse_basic_json():

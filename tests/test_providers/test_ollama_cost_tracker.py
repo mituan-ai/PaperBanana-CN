@@ -6,9 +6,9 @@ import types
 
 import pytest
 
-from paperbanana.core.cost_tracker import CostTracker
-from paperbanana.core.pricing import lookup_vlm_price
-from paperbanana.providers.vlm.ollama import OllamaVLM
+from paperbanana_cn.core.cost_tracker import CostTracker
+from paperbanana_cn.core.pricing import lookup_vlm_price
+from paperbanana_cn.providers.vlm.ollama import OllamaVLM
 
 
 def _fake_response(

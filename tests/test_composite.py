@@ -1,4 +1,4 @@
-"""Tests for paperbanana.core.composite — image composition and manifest parsing."""
+"""Tests for paperbanana_cn.core.composite — image composition and manifest parsing."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from paperbanana.core.composite import (
+from paperbanana_cn.core.composite import (
     _auto_labels,
     _parse_layout,
     compose_images,
@@ -220,7 +220,7 @@ def test_parse_composite_config_output():
 
 
 def test_load_batch_manifest_with_composite_no_composite(tmp_path: Path):
-    from paperbanana.core.batch import load_batch_manifest_with_composite
+    from paperbanana_cn.core.batch import load_batch_manifest_with_composite
 
     txt = tmp_path / "a.txt"
     txt.write_text("x", encoding="utf-8")
@@ -238,7 +238,7 @@ def test_load_batch_manifest_with_composite_no_composite(tmp_path: Path):
 
 
 def test_load_batch_manifest_with_composite_has_composite(tmp_path: Path):
-    from paperbanana.core.batch import load_batch_manifest_with_composite
+    from paperbanana_cn.core.batch import load_batch_manifest_with_composite
 
     txt = tmp_path / "a.txt"
     txt.write_text("x", encoding="utf-8")
@@ -264,7 +264,7 @@ items:
 
 
 def test_load_batch_manifest_with_composite_json(tmp_path: Path):
-    from paperbanana.core.batch import load_batch_manifest_with_composite
+    from paperbanana_cn.core.batch import load_batch_manifest_with_composite
 
     txt = tmp_path / "a.txt"
     txt.write_text("x", encoding="utf-8")

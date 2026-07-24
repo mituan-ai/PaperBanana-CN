@@ -14,9 +14,9 @@ import pytest
 import uvicorn
 from PIL import Image
 
-from paperbanana.connections.manager import ConnectionManager
-from paperbanana.connections.models import ConnectionProfile, ConnectionRole
-from paperbanana.studio.models import WORKFLOW_SPECS
+from paperbanana_cn.connections.manager import ConnectionManager
+from paperbanana_cn.connections.models import ConnectionProfile, ConnectionRole
+from paperbanana_cn.studio.models import WORKFLOW_SPECS
 
 playwright = pytest.importorskip("playwright.sync_api")
 
@@ -45,8 +45,8 @@ def _free_port() -> int:
 
 @pytest.fixture
 def running_studio(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from paperbanana.studio import app as app_module
-    from paperbanana.studio.pages import generate as generate_page
+    from paperbanana_cn.studio import app as app_module
+    from paperbanana_cn.studio.pages import generate as generate_page
 
     # Gradio probes its own startup endpoint; keep that request off host proxies.
     monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")

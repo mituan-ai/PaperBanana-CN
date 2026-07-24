@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from paperbanana.agents.critic import CriticAgent
-from paperbanana.core.utils import extract_json
+from paperbanana_cn.agents.critic import CriticAgent
+from paperbanana_cn.core.utils import extract_json
 
 
 class TestExtractJsonNoneSafe:

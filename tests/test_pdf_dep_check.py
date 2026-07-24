@@ -9,7 +9,7 @@ import click
 import pytest
 from typer.testing import CliRunner
 
-from paperbanana.cli import _check_pdf_dep, _require_pdf_dep, app
+from paperbanana_cn.cli import _check_pdf_dep, _require_pdf_dep, app
 
 runner = CliRunner()
 _real_import = builtins.__import__
@@ -51,7 +51,7 @@ def test_check_pdf_dep_ignores_non_pdf():
 
 def test_check_pdf_dep_delegates_for_pdf(monkeypatch):
     called = []
-    monkeypatch.setattr("paperbanana.cli._require_pdf_dep", lambda: called.append(True))
+    monkeypatch.setattr("paperbanana_cn.cli._require_pdf_dep", lambda: called.append(True))
     _check_pdf_dep(Path("paper.pdf"))
     assert called
 
@@ -76,7 +76,7 @@ def test_generate_exits_with_hint_when_fitz_missing(tmp_path, block_fitz):
     )
     assert result.exit_code == 1
     assert "PyMuPDF" in result.output
-    assert "paperbanana[pdf]" in result.output
+    assert "pip install --upgrade paperbanana-cn" in result.output
 
 
 def test_batch_exits_with_hint_when_manifest_has_pdf(tmp_path, block_fitz):
@@ -95,4 +95,4 @@ def test_studio_exits_with_hint_when_gradio_missing(block_gradio):
     result = runner.invoke(app, ["studio"])
     assert result.exit_code == 1
     assert "Gradio" in result.output
-    assert "paperbanana[studio]" in result.output
+    assert "pip install --upgrade paperbanana-cn" in result.output

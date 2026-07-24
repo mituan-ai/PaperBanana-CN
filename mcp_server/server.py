@@ -1,4 +1,4 @@
-"""PaperBanana MCP Server.
+"""PaperBanana-CN MCP Server.
 
 Exposes PaperBanana's core functionality as MCP tools usable from
 Claude Code, Cursor, or any MCP client.
@@ -17,7 +17,7 @@ Tools:
     batch_plots         — Batch statistical plots from a YAML/JSON manifest
 
 Usage:
-    paperbanana-mcp          # stdio transport (default)
+    paperbanana-cn mcp       # stdio transport (default)
 """
 
 from __future__ import annotations
@@ -35,20 +35,20 @@ from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
 from PIL import Image as PILImage
 
-from paperbanana.connections.models import ConnectionRole
-from paperbanana.connections.resolver import load_runtime_settings
-from paperbanana.core.config import Settings
-from paperbanana.core.pipeline import PaperBananaPipeline
-from paperbanana.core.resume import load_resume_state
-from paperbanana.core.types import DiagramType, GenerationInput
-from paperbanana.core.utils import detect_image_mime_type, find_prompt_dir
-from paperbanana.core.workflow_runner import (
+from paperbanana_cn.connections.models import ConnectionRole
+from paperbanana_cn.connections.resolver import load_runtime_settings
+from paperbanana_cn.core.config import Settings
+from paperbanana_cn.core.pipeline import PaperBananaPipeline
+from paperbanana_cn.core.resume import load_resume_state
+from paperbanana_cn.core.types import DiagramType, GenerationInput
+from paperbanana_cn.core.utils import detect_image_mime_type, find_prompt_dir
+from paperbanana_cn.core.workflow_runner import (
     run_methodology_batch,
     run_orchestration_package,
     run_plot_batch,
 )
-from paperbanana.evaluation.judge import VLMJudge
-from paperbanana.providers.registry import ProviderRegistry
+from paperbanana_cn.evaluation.judge import VLMJudge
+from paperbanana_cn.providers.registry import ProviderRegistry
 
 logger = structlog.get_logger()
 
@@ -171,7 +171,7 @@ def _embed_caption(image_path: str, caption: str) -> None:
         logger.debug("Failed to embed caption in image metadata")
 
 
-mcp = FastMCP("PaperBanana")
+mcp = FastMCP("PaperBanana-CN")
 
 
 def _validate_input_images(input_images: list[str] | None) -> list[str]:
@@ -356,6 +356,12 @@ async def continue_run(
         FileNotFoundError: If the run directory or ``run_input.json`` is missing.
         ValueError: If saved run state cannot be resumed.
     """
+    state = load_resume_state((output_dir or "outputs").strip() or "outputs", run_id.strip())
+    required_roles = (
+        (ConnectionRole.VLM,)
+        if state.diagram_type == DiagramType.STATISTICAL_PLOT
+        else (ConnectionRole.VLM, ConnectionRole.IMAGE)
+    )
     settings = _mcp_runtime_settings(
         config=config,
         vlm_connection=vlm_connection,
@@ -368,6 +374,7 @@ async def continue_run(
             "auto_refine": auto_refine,
             "generate_caption": generate_caption,
         },
+        required_roles=required_roles,
     )
 
     def _on_progress(event: str, payload: dict) -> None:
@@ -378,7 +385,6 @@ async def continue_run(
             **payload,
         )
 
-    state = load_resume_state(settings.output_dir, run_id)
     pipeline = PaperBananaPipeline(settings=settings, progress_callback=_on_progress)
 
     result = await pipeline.continue_run(
@@ -505,7 +511,7 @@ async def continue_diagram(
     """Continue a methodology diagram run under ``output_dir`` / ``run_id``.
 
     Loads ``run_input.json`` and the latest iteration from an existing ``run_*``
-    directory (same as ``paperbanana generate --continue-run``). Runs more
+    directory (same as ``paperbanana-cn generate --continue-run``). Runs more
     visualizer–critic rounds without redoing retrieval / planner / stylist.
 
     Args:
@@ -730,7 +736,7 @@ async def download_references(
     Returns:
         Status message with cache location and example count.
     """
-    from paperbanana.data.manager import DatasetManager
+    from paperbanana_cn.data.manager import DatasetManager
 
     dm = DatasetManager()
 
@@ -850,6 +856,24 @@ async def _continue_run_mcp(
     """Shared implementation for ``continue_diagram`` / ``continue_plot``."""
     tool_name = "continue_diagram" if expected == DiagramType.METHODOLOGY else "continue_plot"
     try:
+        resume_state = load_resume_state(
+            (output_dir or "outputs").strip() or "outputs",
+            run_id.strip(),
+        )
+    except (FileNotFoundError, ValueError) as e:
+        return _json_result({"error": str(e), "strict_success": False})
+
+    if resume_state.diagram_type != expected:
+        other = "continue_plot" if expected == DiagramType.METHODOLOGY else "continue_diagram"
+        return _json_result(
+            {
+                "error": (f"This run is {resume_state.diagram_type.value}; use {other} instead."),
+                "strict_success": False,
+                "actual_diagram_type": resume_state.diagram_type.value,
+            }
+        )
+
+    try:
         settings = _mcp_settings_for_continue(
             output_dir,
             config,
@@ -876,20 +900,6 @@ async def _continue_run_mcp(
         )
     except (OSError, ValueError) as e:
         return _json_result({"error": str(e), "strict_success": False})
-    try:
-        resume_state = load_resume_state(settings.output_dir, run_id.strip())
-    except (FileNotFoundError, ValueError) as e:
-        return _json_result({"error": str(e), "strict_success": False})
-
-    if resume_state.diagram_type != expected:
-        other = "continue_plot" if expected == DiagramType.METHODOLOGY else "continue_diagram"
-        return _json_result(
-            {
-                "error": (f"This run is {resume_state.diagram_type.value}; use {other} instead."),
-                "strict_success": False,
-                "actual_diagram_type": resume_state.diagram_type.value,
-            }
-        )
 
     def _on_progress(event: str, payload: dict) -> None:
         logger.info(
@@ -962,7 +972,7 @@ async def orchestrate_figures(
 ) -> str:
     """Plan and optionally generate a multi-figure publication package from a paper.
 
-    Mirrors ``paperbanana orchestrate``. Use ``dry_run=True`` to write
+    Mirrors ``paperbanana-cn orchestrate``. Use ``dry_run=True`` to write
     ``orchestration_plan.json`` only (no API generation). For continuation,
     pass ``resume_orchestrate`` with an orchestration id or package directory path.
 
@@ -1162,7 +1172,7 @@ async def batch_plots(
 
 def main():
     """MCP server entry point."""
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Tests for paperbanana.core.batch — manifest loading and report generation."""
+"""Tests for paperbanana_cn.core.batch — manifest loading and report generation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.core.batch import (
+from paperbanana_cn.core.batch import (
     REPORT_FILENAME,
     generate_batch_report_html,
     generate_batch_report_md,

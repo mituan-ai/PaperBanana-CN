@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from PIL import Image
 
-from paperbanana.providers.vlm.litellm import LiteLLMVLM
+from paperbanana_cn.providers.vlm.litellm import LiteLLMVLM
 
 
 def _install_litellm_stub(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
@@ -183,7 +183,7 @@ class TestLiteLLMVLMVision:
         mock_acompletion.return_value = _mock_response("I see a red square")
 
         monkeypatch.setattr(
-            "paperbanana.providers.vlm.litellm.image_to_base64",
+            "paperbanana_cn.providers.vlm.litellm.image_to_base64",
             lambda _: "fake-b64-data",
         )
 

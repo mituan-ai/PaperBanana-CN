@@ -1,4 +1,4 @@
-"""Tests for paperbanana.core.plot_data."""
+"""Tests for paperbanana_cn.core.plot_data."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from paperbanana.core.plot_data import load_statistical_plot_payload
+from paperbanana_cn.core.plot_data import load_statistical_plot_payload
 
 
 def test_load_statistical_plot_payload_csv(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from paperbanana.providers.vlm.gemini import (
+from paperbanana_cn.providers.vlm.gemini import (
     _DEFAULT_THINKING_BUDGET,
     GeminiEmptyResponseError,
     GeminiVLM,
@@ -93,7 +93,7 @@ class TestThinkingBudgetAdjustment:
             models = Models()
 
         # Patch the import inside generate().
-        import paperbanana.providers.vlm.gemini as gemini_mod
+        import paperbanana_cn.providers.vlm.gemini as gemini_mod
 
         monkeypatch.setattr(gemini_mod, "__name__", gemini_mod.__name__)  # no-op, just to anchor
 
@@ -198,7 +198,7 @@ class TestNoneResponseHandling:
     @pytest.mark.asyncio
     async def test_none_response_raises_without_retry(self, _mock_genai_none_response):
         """When response.text is None, generate() raises GeminiEmptyResponseError immediately."""
-        import paperbanana.providers.vlm.gemini as gemini_mod
+        import paperbanana_cn.providers.vlm.gemini as gemini_mod
 
         # Access the unwrapped function to bypass tenacity for unit testing
         original_generate = gemini_mod.GeminiVLM.generate.__wrapped__
