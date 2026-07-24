@@ -121,6 +121,15 @@ def validate_readme(path: Path, version: str) -> list[str]:
     if "sealed_token=" not in text:
         errors.append(f"{path}: Star History sealed token is missing")
 
+    public_urls = [
+        url
+        for url in [*parser.links, *(image.src for image in parser.images)]
+        if url.startswith(("http://", "https://"))
+    ]
+    for url in public_urls:
+        if not url.isascii():
+            errors.append(f"{path}: public URL must be percent-encoded: {url}")
+
     pypi_images = [image for image in parser.images if image.href == PYPI_PROJECT_URL]
     if not pypi_images:
         errors.append(f"{path}: PyPI button is not linked to {PYPI_PROJECT_URL}")
