@@ -14,10 +14,10 @@
 </p>
 
 <p align="center">
-  <a href="#60-秒开始使用"><img src="https://img.shields.io/badge/启动_STUDIO-uvx_paperbanana--cn_studio-147862?style=for-the-badge&logo=gnometerminal&logoColor=white" alt="启动 Studio"></a>
-  <a href="https://pypi.org/project/paperbanana-cn/"><img src="https://img.shields.io/badge/安装-PYPI-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="从 PyPI 安装"></a>
-  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/main/mcp_server/README.md"><img src="https://img.shields.io/badge/连接-11_个_MCP_工具-52605B?style=for-the-badge" alt="通过 MCP 连接"></a>
-  <a href="https://colab.research.google.com/github/mituan-ai/PaperBanana-CN/blob/main/notebooks/PaperBanana_CN_Quickstart.ipynb"><img src="https://img.shields.io/badge/体验-COLAB-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="在 Colab 中体验"></a>
+  <a href="#60-秒开始使用"><img src="https://img.shields.io/badge/%E5%90%AF%E5%8A%A8_STUDIO-uvx_paperbanana--cn_studio-147862?style=for-the-badge&logo=gnometerminal&logoColor=white" alt="启动 Studio"></a>
+  <a href="https://pypi.org/project/paperbanana-cn/"><img src="https://img.shields.io/badge/%E5%AE%89%E8%A3%85-PYPI-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="从 PyPI 安装"></a>
+  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/main/mcp_server/README.md"><img src="https://img.shields.io/badge/%E8%BF%9E%E6%8E%A5-11_%E4%B8%AA_MCP_%E5%B7%A5%E5%85%B7-52605B?style=for-the-badge" alt="通过 MCP 连接"></a>
+  <a href="https://colab.research.google.com/github/mituan-ai/PaperBanana-CN/blob/main/notebooks/PaperBanana_CN_Quickstart.ipynb"><img src="https://img.shields.io/badge/%E4%BD%93%E9%AA%8C-COLAB-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="在 Colab 中体验"></a>
 </p>
 
 <p align="center">
