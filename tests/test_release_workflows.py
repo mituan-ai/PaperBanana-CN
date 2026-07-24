@@ -68,6 +68,7 @@ def test_release_verifies_archives_mcp_images_and_public_surfaces():
         "docker logout ghcr.io",
         "verify_pypi_release.py",
         "verify_mcp_release.py",
+        "type=raw,value=${{ github.ref_name }}",
         "SHA256SUMS",
     }
     missing = {fragment for fragment in required_fragments if fragment not in text}
