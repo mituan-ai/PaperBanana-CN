@@ -157,8 +157,11 @@ def validate_readme(path: Path, version: str) -> list[str]:
             errors.append(f"{path}: missing required public link containing {fragment}")
 
     assets = referenced_local_assets(parser)
-    if len(assets) < 7:
-        errors.append(f"{path}: expected at least seven local visual assets")
+    asset_names = {asset.name for asset in assets}
+    if not any(name.startswith("hero") for name in asset_names):
+        errors.append(f"{path}: project hero is missing")
+    if "studio-workflow.gif" not in asset_names:
+        errors.append(f"{path}: real Studio workflow recording is missing")
     for asset in assets:
         errors.extend(validate_asset(asset))
     return errors

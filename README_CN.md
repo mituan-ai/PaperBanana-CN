@@ -9,98 +9,73 @@
   <img
     src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/hero-zh.webp"
     width="100%"
-    alt="PaperBanana-CN 科研生图工作台与真实生成的多模态故障诊断图"
+    alt="PaperBanana-CN 科研生图工作台与生成的多模态故障诊断方法图"
   >
 </p>
 
 <p align="center">
-  <a href="#60-秒开始使用"><img src="https://img.shields.io/badge/%E5%90%AF%E5%8A%A8_STUDIO-uvx_paperbanana--cn_studio-147862?style=for-the-badge&logo=gnometerminal&logoColor=white" alt="启动 Studio"></a>
+  PaperBanana-CN 根据研究方法描述生成科研方法图，也可以根据 CSV 或 JSON 数据生成统计图。
+  项目沿用 PaperBanana 的科研生图工作流，并增加 VLM 与图像模型独立连接、中文 Studio
+  以及明确的宽高比和分辨率控制。
+</p>
+
+<p align="center">
+  <a href="#快速开始"><img src="https://img.shields.io/badge/%E5%90%AF%E5%8A%A8_STUDIO-uvx_paperbanana--cn_studio-147862?style=for-the-badge&logo=gnometerminal&logoColor=white" alt="启动 Studio"></a>
   <a href="https://pypi.org/project/paperbanana-cn/"><img src="https://img.shields.io/badge/%E5%AE%89%E8%A3%85-PYPI-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="从 PyPI 安装"></a>
-  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/main/mcp_server/README.md"><img src="https://img.shields.io/badge/%E8%BF%9E%E6%8E%A5-11_%E4%B8%AA_MCP_%E5%B7%A5%E5%85%B7-52605B?style=for-the-badge" alt="通过 MCP 连接"></a>
-  <a href="https://colab.research.google.com/github/mituan-ai/PaperBanana-CN/blob/main/notebooks/PaperBanana_CN_Quickstart.ipynb"><img src="https://img.shields.io/badge/%E4%BD%93%E9%AA%8C-COLAB-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="在 Colab 中体验"></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/mituan-ai/PaperBanana-CN/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/mituan-ai/PaperBanana-CN/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="CI 状态"></a>
-  <img src="https://img.shields.io/badge/Package-2.0.1-147862?style=flat-square" alt="Package 版本 2.0.1">
-  <img src="https://img.shields.io/badge/Python-3.10--3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10 到 3.12">
-  <img src="https://img.shields.io/badge/Gradio-6.20.0-F97316?style=flat-square&logo=gradio&logoColor=white" alt="Gradio 6.20.0">
-  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-52605B?style=flat-square" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Package-2.0.1-147862?style=flat-square" alt="软件包版本 2.0.1">
+  <a href="https://github.com/mituan-ai/PaperBanana-CN/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-52605B?style=flat-square" alt="MIT 许可证"></a>
 </p>
 
-<p align="center">
-  <strong>把方法描述和研究数据直接变成科研示意图与统计图。</strong><br>
-  保留 PaperBanana 工作流，自由选择 VLM、图像服务、界面语言、宽高比和分辨率。
-</p>
-
-## 看一次真实运行
+## 从输入到成图的一次运行
 
 <p align="center">
   <img
     src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/studio-workflow.gif"
     width="960"
-    alt="PaperBanana-CN Studio 从配置输入、运行阶段到完成科研图的全过程"
+    alt="PaperBanana-CN Studio 从输入参数到完成科研图的运行过程"
   >
 </p>
 
-<p align="center">
-  <sub>一次真实 Studio 运行：配置输入 → 实时流程阶段 → 完成结果。画面不包含凭据或私有服务地址。</sub>
-</p>
+这段录屏展示了一次方法图任务，从提交输入到得到最终结果。
 
-## 真实产出，不是示意占位
+## 开始前需要准备
 
-<p align="center">
-  <img
-    src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/showcase-zh.webp"
-    width="100%"
-    alt="PaperBanana-CN 生成的科研方法图、精修概念图和统计图"
-  >
-</p>
+运行环境需要 Python 3.10-3.12、[uv](https://docs.astral.sh/uv/) 和桌面浏览器。
 
-科研方法图由已配置的 VLM 与图像模型完成生成和精修。统计图沿用 PaperBanana 的确定性
-绘图路径，其中的数值是专门构造的演示数据。
+| 任务 | 需要的模型连接 |
+|---|---|
+| 科研方法图 | VLM 和图像生成 |
+| 统计图 | 仅 VLM |
+| 多图组合与运行记录 | 不需要模型连接 |
 
-## V2 真正新增了什么
+每条连接分别填写协议、Base URL、API Key、模型名称和超时时间。VLM 与图像生成可以使用同一个
+服务，也可以连接两个完全不同的服务。
 
-<p align="center">
-  <img
-    src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/capabilities-zh.svg"
-    width="100%"
-    alt="PaperBanana-CN V2 新增双模型独立连接、中英文 Studio 和精确输出尺寸控制"
-  >
-</p>
+## 快速开始
 
-| 双模型链路独立配置 | 完整的中英文 Studio | 精确控制最终输出 |
-|---|---|---|
-| VLM 与图像生成分别设置协议、Base URL、API Key、模型名称和超时时间。 | 界面可在中文和英文之间切换，但不会改写 Prompt、论文内容或图中标签。 | 选择 10 种宽高比和 `1K` / `2K` / `4K`；不支持的组合会在付费图像请求前失败。 |
-
-Studio、CLI 和 MCP 共用同一组已保存连接。API Key 保存在仓库外，不会回填到浏览器，
-也不会进入运行 metadata。
-
-## 60 秒开始使用
-
-### 1. 启动桌面 Studio
-
-需要 Python 3.10-3.12、[uv](https://docs.astral.sh/uv/) 和桌面浏览器：
+### 1. 启动 Studio
 
 ```bash
 uvx paperbanana-cn studio
 ```
 
-浏览器打开 <http://127.0.0.1:7860>。`uvx` 使用独立环境，不会修改 Debian 或 Ubuntu
+浏览器打开 <http://127.0.0.1:7860>。`uvx` 使用隔离环境运行，不会修改 Debian 或 Ubuntu
 的系统 Python。
 
-### 2. 连接两个模型角色
+### 2. 添加模型连接
 
-打开**设置 → 视觉语言模型连接**，填写协议、Base URL、API Key、准确的模型名称和
-超时时间，然后选择**保存并使用**。在**图像生成连接**中重复一次。
+进入 **设置 → 视觉语言模型连接**，填写服务参数并选择 **保存并使用**。生成科研方法图前，
+还需要在 **图像生成连接** 中完成相同操作。
 
-> [!TIP]
-> 两个角色既可以使用同一中转站，也可以使用完全不同的服务。编辑已保存连接不会
-> 自动启用它，Key 输入框留空会保留原有 Key。
+编辑已经保存的连接不会自动启用它。API Key 留空会保留原有 Key，Studio 不会把已经保存的
+Key 回填到浏览器。
 
 <details>
-<summary><strong>查看连接管理界面</strong></summary>
+<summary><strong>查看连接管理界面与协议说明</strong></summary>
 
 <br>
 
@@ -108,21 +83,20 @@ uvx paperbanana-cn studio
   <img
     src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/connections-zh.webp"
     width="100%"
-    alt="PaperBanana-CN 连接管理器中的独立视觉语言模型服务字段"
+    alt="PaperBanana-CN 视觉语言模型连接管理界面"
   >
 </p>
 
-支持的协议、凭据存储、连接测试和显式 legacy 模式见
-[连接配置文档](https://github.com/mituan-ai/PaperBanana-CN/blob/main/docs/CONNECTIONS.md)。
+[连接配置说明](https://github.com/mituan-ai/PaperBanana-CN/blob/main/docs/CONNECTIONS.md)
+列出了支持的协议、凭据保存规则、连接测试和旧版兼容模式。
 
 </details>
 
-### 3. 开始生成
+### 3. 生成图片
 
-进入**科研方法图**，填写方法内容和表达意图，选择宽高比与分辨率后运行。结果画布会
-把最终图片、真实输出尺寸、迭代历史和下载操作放在一起。
+打开 **科研方法图**，填写方法内容和图注，选择宽高比、分辨率与输出格式，然后开始生成。
 
-同一任务也可以通过 CLI 运行：
+同一个任务也可以从命令行运行：
 
 ```bash
 paperbanana-cn generate \
@@ -133,49 +107,78 @@ paperbanana-cn generate \
   --format png
 ```
 
-## 围绕结果设计的工作台
+## PaperBanana-CN 的三项改动
+
+### VLM 与图像生成分别连接
+
+两条模型链路分别保存协议、Base URL、API Key、模型和超时时间。Studio、CLI 和 MCP 使用
+同一组已保存连接。连接配置只保存凭据引用，API Key 不会写入仓库和运行 metadata。
+
+项目支持官方接口、OpenAI-compatible 服务和 Gemini-compatible 服务。具体协议差异由
+provider adapter 处理，不进入科研生图工作流。
+
+### 中文与英文 Studio
+
+Studio 的界面、帮助、校验、进度和错误信息提供中文与英文版本。切换界面语言不会修改 prompt、
+论文内容或生成图片中的文字。
+
+### 宽高比与分辨率
+
+支持的宽高比：
+
+`1:1` · `4:3` · `3:2` · `5:4` · `16:9` · `21:9` · `4:5` · `3:4` · `2:3` · `9:16`
+
+分辨率档位：
+
+`1K` · `2K` · `4K`
+
+Studio 会在生成前显示实际请求尺寸或 provider 的原生档位。如果当前 adapter 不支持所选组合，
+校验会停止请求并指出不支持的选项。
+
+## Studio 功能
+
+| 区域 | 功能 | 模型连接 |
+|---|---|---|
+| 生成 | 科研方法图 | VLM 和图像生成 |
+| 生成 | 统计图 | VLM |
+| 改进 | 继续运行 | 根据原任务决定 |
+| 改进 | 质量评估 | VLM |
+| 自动化 | 全文编排 | VLM 和图像生成 |
+| 自动化 | 批处理 | 根据任务类型决定 |
+| 自动化 | 参数扫描 | VLM 和图像生成 |
+| 工具 | 多图组合 | 不需要 |
+| 工具 | 运行记录 | 不需要 |
 
 <p align="center">
   <img
-    src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/studio-tour-zh.webp"
+    src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/studio-methodology-en.webp"
     width="100%"
-    alt="带标注的 PaperBanana-CN Studio，展示任务输入、尺寸控制和结果画布"
+    alt="PaperBanana-CN 科研方法图工作区与生成结果"
   >
 </p>
 
-| 区域 | 工作流 | 所需连接 |
-|---|---|---|
-| **生成** | 科研方法图、统计图 | VLM + 图像模型 / 仅 VLM |
-| **改进** | 继续运行、质量评估 | 根据 run 决定 / 仅 VLM |
-| **自动化** | 全文编排、批处理、参数扫描 | 根据任务决定 |
-| **工具** | 多图组合、运行记录 | 无 |
-
-任务输入集中在左侧工作区，结果画布始终是视觉中心。运行完成后日志会自动收起；运行
-失败时保留全部输入，并直接显示可操作的错误信息。
-
-## 只有一套科研工作流
+<p align="center"><sub>科研方法图工作区，界面可切换为中文</sub></p>
 
 <p align="center">
   <img
-    src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/workflow-zh.svg"
+    src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/studio-statistical-plot-en.webp"
     width="100%"
-    alt="独立的 VLM 与图像生成连接进入现有科研生图流程"
+    alt="PaperBanana-CN 统计图工作区与生成的折线图"
   >
 </p>
 
-PaperBanana-CN 不维护第二套科研流程。检索、规划、候选生成、评审、精修、确定性统计图、
-任务恢复、批处理、全文编排和矢量导出仍沿用上游 PaperBanana 工作流。
+<p align="center"><sub>统计图工作区，图中使用合成演示数据</sub></p>
 
-## 选择适合你的入口
+## CLI、MCP、Docker 与 Colab
 
-| 入口 | 适合场景 | 从这里开始 |
-|---|---|---|
-| **Studio** | 交互式生图与连接管理 | `paperbanana-cn studio` |
-| **CLI** | 可复现的本地运行与脚本 | `paperbanana-cn generate --help` |
-| **MCP** | 在 MCP 客户端中调用 11 个科研图片工具 | `paperbanana-cn mcp` |
-| **GitHub Action** | 在仓库工作流内生成图片 | [Action 文档](https://github.com/mituan-ai/PaperBanana-CN/blob/main/integrations/github-action/README.md) |
-| **Docker** | 固定且隔离的运行环境 | `ghcr.io/mituan-ai/paperbanana-cn:2.0.1` |
-| **Colab** | 在云端 Notebook 中体验 | [快速入门](https://colab.research.google.com/github/mituan-ai/PaperBanana-CN/blob/main/notebooks/PaperBanana_CN_Quickstart.ipynb) |
+| 使用方式 | 命令或链接 |
+|---|---|
+| Studio | `paperbanana-cn studio` |
+| CLI | `paperbanana-cn generate --help` |
+| MCP Server | `paperbanana-cn mcp` |
+| GitHub Action | [Action 使用说明](https://github.com/mituan-ai/PaperBanana-CN/blob/main/integrations/github-action/README.md) |
+| Docker | `ghcr.io/mituan-ai/paperbanana-cn:2.0.1` |
+| Colab | [快速开始 Notebook](https://colab.research.google.com/github/mituan-ai/PaperBanana-CN/blob/main/notebooks/PaperBanana_CN_Quickstart.ipynb) |
 
 <details>
 <summary><strong>MCP 客户端配置</strong></summary>
@@ -191,13 +194,13 @@ PaperBanana-CN 不维护第二套科研流程。检索、规划、候选生成�
 }
 ```
 
-MCP Server 使用与 Studio、CLI 相同的当前连接。全部 11 个工具及参数见
-[MCP 文档](https://github.com/mituan-ai/PaperBanana-CN/blob/main/mcp_server/README.md)。
+MCP Server 提供 11 个工具，并读取 Studio 和 CLI 使用的同一组连接。工具清单和参数见
+[MCP 使用说明](https://github.com/mituan-ai/PaperBanana-CN/blob/main/mcp_server/README.md)。
 
 </details>
 
 <details>
-<summary><strong>Docker 启动命令</strong></summary>
+<summary><strong>Docker</strong></summary>
 
 ```bash
 docker run --rm -p 7860:7860 \
@@ -210,30 +213,17 @@ docker run --rm -p 7860:7860 \
 
 </details>
 
-## 输出尺寸清楚、可预期
-
-**宽高比**
-
-`1:1` · `4:3` · `3:2` · `5:4` · `16:9` · `21:9` · `4:5` · `3:4` · `2:3` · `9:16`
-
-**分辨率档位**
-
-`1K` · `2K` · `4K`
-
-每个图像适配器会声明自己接受原生档位、明确像素、固定预设还是 Prompt 提示。Studio
-会显示实际请求尺寸或原生档位，不会静默裁切、拉伸或替换不支持的比例。
-
 <details>
-<summary><strong>长期安装、源码运行与可选 Provider</strong></summary>
+<summary><strong>长期安装、源码运行与可选 provider</strong></summary>
 
-将命令安装到 uv 管理的独立环境：
+在 uv 管理的隔离环境中安装命令：
 
 ```bash
 uv tool install paperbanana-cn
 paperbanana-cn studio
 ```
 
-运行当前源码：
+运行当前仓库源码：
 
 ```bash
 git clone https://github.com/mituan-ai/PaperBanana-CN.git
@@ -242,58 +232,41 @@ uv sync
 uv run paperbanana-cn studio
 ```
 
-默认包已包含 Studio、MCP、PDF 输入、OpenAI-compatible 服务和 Gemini。
+默认安装包含 Studio、MCP、PDF 输入、OpenAI-compatible 服务和 Gemini。
 
-| 可选适配器 | 安装命令 |
+| 可选 adapter | 安装命令 |
 |---|---|
 | AWS Bedrock | `uv tool install "paperbanana-cn[bedrock]"` |
 | Anthropic | `uv tool install "paperbanana-cn[anthropic]"` |
 | LiteLLM | `uv tool install "paperbanana-cn[litellm]"` |
-| 全部可选 Provider | `uv tool install "paperbanana-cn[all-providers]"` |
+| 全部可选 provider | `uv tool install "paperbanana-cn[all-providers]"` |
 
-在 CI 中应从环境变量读取凭据，不要把 Key 放在命令行值里：
-
-```bash
-paperbanana-cn connections add \
-  --role vlm \
-  --name "Primary VLM" \
-  --provider openai \
-  --base-url "https://vlm.example.com/v1" \
-  --model "your-vlm-model" \
-  --api-key-env VLM_API_KEY
-```
+在 CI 中可以使用 `paperbanana-cn connections add --api-key-env ENV_VAR`，让命令从环境变量读取
+Key，避免把 Key 放进命令行参数。
 
 </details>
 
-## 保留 V1，继续推进 V2
+## V1 与上游项目
 
-<p align="center">
-  <img
-    src="https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/assets/readme/lineage-zh.svg"
-    width="100%"
-    alt="PaperBanana-CN V1 已冻结，V2 在 main 分支持续维护"
-  >
-</p>
+V2 在 `main` 分支持续维护，发布名为 `paperbanana-cn`，Python 模块名为 `paperbanana_cn`，
+唯一命令为 `paperbanana-cn`。
 
-V2 在 `main` 维护，对应 `paperbanana-cn` 分发包、`paperbanana_cn` Python 模块和
-`paperbanana-cn` 命令。V1 作为历史版本完整保留：
-
-- [浏览独立的 `v1` 分支](https://github.com/mituan-ai/PaperBanana-CN/tree/v1)
+- [查看冻结的 `v1` 分支](https://github.com/mituan-ai/PaperBanana-CN/tree/v1)
 - [下载 `v1.0.0` Release](https://github.com/mituan-ai/PaperBanana-CN/releases/tag/v1.0.0)
 
-## 项目与社区
+本项目的科研生图核心基于
+[`llmsresearch/paperbanana`](https://github.com/llmsresearch/paperbanana)。PaperBanana-CN
+是非官方社区实现，与上游作者不存在官方隶属或背书关系。
 
-PaperBanana-CN 由 [mituan](https://github.com/mituan-ai) 维护。
+## 社区
 
-- 使用问题请进入 [Discussions](https://github.com/mituan-ai/PaperBanana-CN/discussions)。
-- 可复现问题请提交到 [Issues](https://github.com/mituan-ai/PaperBanana-CN/issues)。
-- 安全漏洞请通过 [Private Vulnerability Reporting](https://github.com/mituan-ai/PaperBanana-CN/security/advisories/new) 私密提交。
-- 提交代码前请阅读 [CONTRIBUTING.md](https://github.com/mituan-ai/PaperBanana-CN/blob/main/CONTRIBUTING.md)。
+PaperBanana-CN 由 [mituan](https://github.com/mituan-ai) 维护，采用
+[MIT License](https://github.com/mituan-ai/PaperBanana-CN/blob/main/LICENSE)。
 
-PaperBanana-CN 使用
-[MIT License](https://github.com/mituan-ai/PaperBanana-CN/blob/main/LICENSE)，科研生图核心
-基于 [`llmsresearch/paperbanana`](https://github.com/llmsresearch/paperbanana)。
-这是一个非官方社区实现，与上游作者不存在隶属或官方合作关系。
+- 使用问题请发到 [Discussions](https://github.com/mituan-ai/PaperBanana-CN/discussions)。
+- 可以复现的程序问题请发到 [Issues](https://github.com/mituan-ai/PaperBanana-CN/issues)。
+- 安全问题请使用 [Private Vulnerability Reporting](https://github.com/mituan-ai/PaperBanana-CN/security/advisories/new)。
+- 提交 Pull Request 前请阅读 [CONTRIBUTING.md](https://github.com/mituan-ai/PaperBanana-CN/blob/main/CONTRIBUTING.md)。
 
 <details>
 <summary><strong>开发检查</strong></summary>
@@ -306,7 +279,7 @@ uv run pytest tests/ -q
 uv run ruff check paperbanana_cn/ mcp_server/ tests/ scripts/
 ```
 
-不得上传 API Key、私有中转站 URL、未公开论文、私有数据集、本地连接存储或运行目录。
+请勿上传 API Key、私有中转站地址、未公开论文、私有数据集、本地连接存储或运行输出目录。
 
 </details>
 
