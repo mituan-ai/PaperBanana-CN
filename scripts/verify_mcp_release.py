@@ -27,11 +27,19 @@ def registered_versions(name: str) -> list[dict]:
 def write_publish_output(publish: bool) -> None:
     output_path = os.environ.get("GITHUB_OUTPUT")
     line = f"publish={'true' if publish else 'false'}\n"
+    print(line, end="")
     if output_path:
         with open(output_path, "a", encoding="utf-8") as handle:
             handle.write(line)
-    else:
-        print(line, end="")
+
+
+def comparable_registry_metadata(server: dict) -> dict:
+    """Return fields retained by the MCP Registry read API."""
+    comparable = dict(server)
+    # The Registry accepts tool declarations during publication but omits them
+    # from server records returned by its read API.
+    comparable.pop("tools", None)
+    return comparable
 
 
 def main() -> None:
@@ -49,7 +57,9 @@ def main() -> None:
         print(f"{local['name']} {local['version']} is not present in the MCP Registry.")
         write_publish_output(True)
         return
-    if len(matches) != 1 or matches[0] != local:
+    if len(matches) != 1 or comparable_registry_metadata(
+        matches[0]
+    ) != comparable_registry_metadata(local):
         raise RuntimeError(
             f"MCP Registry already contains {local['name']} {local['version']} "
             "with different metadata"

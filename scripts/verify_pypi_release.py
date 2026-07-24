@@ -37,11 +37,10 @@ def remote_hashes(project: str, version: str) -> dict[str, str] | None:
 def write_publish_output(publish: bool) -> None:
     output_path = os.environ.get("GITHUB_OUTPUT")
     line = f"publish={'true' if publish else 'false'}\n"
+    print(line, end="")
     if output_path:
         with open(output_path, "a", encoding="utf-8") as handle:
             handle.write(line)
-    else:
-        print(line, end="")
 
 
 def main() -> None:
