@@ -346,6 +346,7 @@ class TestMcpContinueRun:
     async def test_continue_diagram_success_mocked_pipeline(self, tmp_path: Path, monkeypatch):
         import mcp_server.server as mcp_server_mod
         from mcp_server.server import _continue_run_mcp
+        from paperbanana_cn.core.config import Settings
         from paperbanana_cn.core.types import DiagramType, GenerationOutput
 
         out = self._write_resumable_run(tmp_path, diagram_type="methodology")
@@ -372,6 +373,16 @@ class TestMcpContinueRun:
                 )
 
         monkeypatch.setattr(mcp_server_mod, "PaperBananaPipeline", _FakePipeline)
+        monkeypatch.setattr(
+            mcp_server_mod,
+            "_mcp_settings_for_continue",
+            lambda output_dir, *_args, **_kwargs: Settings(
+                output_dir=output_dir,
+                connection_source="legacy",
+                vlm_provider="none",
+                image_provider="none",
+            ),
+        )
 
         raw = await _continue_run_mcp(
             expected=DiagramType.METHODOLOGY,
@@ -390,9 +401,11 @@ class TestMcpContinueRun:
         """continue_run accepts any resumable run and returns an Image (not JSON)."""
         import mcp_server.server as mcp_server_mod
         from mcp_server.server import continue_run as continue_run_mcp
+        from paperbanana_cn.connections.models import ConnectionRole
+        from paperbanana_cn.core.config import Settings
         from paperbanana_cn.core.types import GenerationOutput
 
-        self._write_resumable_run(tmp_path, diagram_type="methodology")
+        self._write_resumable_run(tmp_path, diagram_type="statistical_plot")
         monkeypatch.chdir(tmp_path)
         captured: dict = {}
 
@@ -415,7 +428,17 @@ class TestMcpContinueRun:
                 _write_png(final)
                 return GenerationOutput(image_path=str(final), description="done", iterations=[])
 
+        def _fake_runtime_settings(*, overrides, required_roles, **_kwargs):
+            captured["required_roles"] = required_roles
+            return Settings(
+                **overrides,
+                connection_source="legacy",
+                vlm_provider="none",
+                image_provider="none",
+            )
+
         monkeypatch.setattr(mcp_server_mod, "PaperBananaPipeline", _FakePipeline)
+        monkeypatch.setattr(mcp_server_mod, "_mcp_runtime_settings", _fake_runtime_settings)
 
         img = await continue_run_mcp(
             run_id="run_mcp_test",
@@ -428,5 +451,6 @@ class TestMcpContinueRun:
         assert captured["additional_iterations"] is None
         assert captured["settings_auto"] is True
         assert captured["settings_iters"] == 2
+        assert captured["required_roles"] == (ConnectionRole.VLM,)
         assert img.path is not None
         assert Path(img.path).exists()

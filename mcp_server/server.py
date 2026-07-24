@@ -356,6 +356,12 @@ async def continue_run(
         FileNotFoundError: If the run directory or ``run_input.json`` is missing.
         ValueError: If saved run state cannot be resumed.
     """
+    state = load_resume_state((output_dir or "outputs").strip() or "outputs", run_id.strip())
+    required_roles = (
+        (ConnectionRole.VLM,)
+        if state.diagram_type == DiagramType.STATISTICAL_PLOT
+        else (ConnectionRole.VLM, ConnectionRole.IMAGE)
+    )
     settings = _mcp_runtime_settings(
         config=config,
         vlm_connection=vlm_connection,
@@ -368,6 +374,7 @@ async def continue_run(
             "auto_refine": auto_refine,
             "generate_caption": generate_caption,
         },
+        required_roles=required_roles,
     )
 
     def _on_progress(event: str, payload: dict) -> None:
@@ -378,7 +385,6 @@ async def continue_run(
             **payload,
         )
 
-    state = load_resume_state(settings.output_dir, run_id)
     pipeline = PaperBananaPipeline(settings=settings, progress_callback=_on_progress)
 
     result = await pipeline.continue_run(
@@ -850,6 +856,24 @@ async def _continue_run_mcp(
     """Shared implementation for ``continue_diagram`` / ``continue_plot``."""
     tool_name = "continue_diagram" if expected == DiagramType.METHODOLOGY else "continue_plot"
     try:
+        resume_state = load_resume_state(
+            (output_dir or "outputs").strip() or "outputs",
+            run_id.strip(),
+        )
+    except (FileNotFoundError, ValueError) as e:
+        return _json_result({"error": str(e), "strict_success": False})
+
+    if resume_state.diagram_type != expected:
+        other = "continue_plot" if expected == DiagramType.METHODOLOGY else "continue_diagram"
+        return _json_result(
+            {
+                "error": (f"This run is {resume_state.diagram_type.value}; use {other} instead."),
+                "strict_success": False,
+                "actual_diagram_type": resume_state.diagram_type.value,
+            }
+        )
+
+    try:
         settings = _mcp_settings_for_continue(
             output_dir,
             config,
@@ -876,20 +900,6 @@ async def _continue_run_mcp(
         )
     except (OSError, ValueError) as e:
         return _json_result({"error": str(e), "strict_success": False})
-    try:
-        resume_state = load_resume_state(settings.output_dir, run_id.strip())
-    except (FileNotFoundError, ValueError) as e:
-        return _json_result({"error": str(e), "strict_success": False})
-
-    if resume_state.diagram_type != expected:
-        other = "continue_plot" if expected == DiagramType.METHODOLOGY else "continue_diagram"
-        return _json_result(
-            {
-                "error": (f"This run is {resume_state.diagram_type.value}; use {other} instead."),
-                "strict_success": False,
-                "actual_diagram_type": resume_state.diagram_type.value,
-            }
-        )
 
     def _on_progress(event: str, payload: dict) -> None:
         logger.info(
