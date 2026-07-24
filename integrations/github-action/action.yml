@@ -189,7 +189,7 @@ runs:
         [ -n "$BUDGET" ] && ARGS+=(--budget "$BUDGET")
         [ -n "$SEED" ] && ARGS+=(--seed "$SEED")
 
-        paperbanana-cn generate "${ARGS[@]}"
+        "${PAPERBANANA_CN_COMMAND:-paperbanana-cn}" generate "${ARGS[@]}"
 
         IMG=$(find "$RUNNER_TEMP/paperbanana-cn-output" -type f \
           \( -name 'final_output.png' -o -name 'final_output.jpg' \) \

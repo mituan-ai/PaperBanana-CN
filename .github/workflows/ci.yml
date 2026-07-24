@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -81,3 +88,128 @@ jobs:
             --command /tmp/paperbanana-cn-wheel/bin/paperbanana-cn
           test ! -e /tmp/paperbanana-cn-wheel/bin/paperbanana
           test ! -e /tmp/paperbanana-cn-wheel/bin/paperbanana-mcp
+
+  release-surfaces:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -e ".[dev]"
+      - name: Audit bilingual README release surfaces
+        run: python scripts/check_readme_release.py
+      - name: Build and audit release archives
+        run: |
+          python -m build
+          python -m twine check dist/*
+          python scripts/check_distribution_archive.py --dist-dir dist
+
+  action-smoke:
+    runs-on: ubuntu-latest
+    env:
+      ACTION_VLM_KEY: action-ci-vlm-key
+      ACTION_IMAGE_KEY: action-ci-image-key
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Build local wheel and retain its dependencies
+        run: |
+          pip install -e ".[dev]"
+          python -m build --wheel
+          pip uninstall -y paperbanana-cn
+          chmod +x tests/fixtures/fake_action_cli.py
+      - name: Run the composite Action without paid APIs
+        id: paperbanana
+        uses: ./integrations/github-action
+        env:
+          PIP_FIND_LINKS: ${{ github.workspace }}/dist
+          PIP_NO_INDEX: "1"
+          PAPERBANANA_CN_COMMAND: ${{ github.workspace }}/tests/fixtures/fake_action_cli.py
+          FAKE_ACTION_LOG: ${{ runner.temp }}/paperbanana-cn-action.log
+        with:
+          tex-file: tests/fixtures/action_method.tex
+          caption: "Deterministic CI methodology figure"
+          output-path: action-smoke/method.png
+          snippet-path: action-smoke/method.tex
+          vlm-provider: openai
+          vlm-base-url: https://vlm.invalid/v1
+          vlm-model: action-vlm-model
+          vlm-api-key: ${{ env.ACTION_VLM_KEY }}
+          image-provider: openai_imagen
+          image-base-url: https://image.invalid/v1
+          image-model: action-image-model
+          image-api-key: ${{ env.ACTION_IMAGE_KEY }}
+          image-size-mode: explicit_pixels
+          aspect-ratio: "16:9"
+          resolution: 2K
+          iterations: "2"
+          budget: "0.25"
+          seed: "42"
+          commit: "false"
+      - name: Verify Action outputs, arguments, and secret hygiene
+        env:
+          ACTION_LOG: ${{ runner.temp }}/paperbanana-cn-action.log
+          IMAGE_OUTPUT: ${{ steps.paperbanana.outputs.image-path }}
+          SNIPPET_OUTPUT: ${{ steps.paperbanana.outputs.snippet-path }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from PIL import Image
+
+          image_path = Path(os.environ["IMAGE_OUTPUT"])
+          snippet_path = Path(os.environ["SNIPPET_OUTPUT"])
+          log_text = Path(os.environ["ACTION_LOG"]).read_text(encoding="utf-8")
+          assert image_path == Path("action-smoke/method.png")
+          assert snippet_path == Path("action-smoke/method.tex")
+          assert image_path.is_file() and Image.open(image_path).size == (640, 360)
+          assert snippet_path.is_file()
+          assert "\\includegraphics" in snippet_path.read_text(encoding="utf-8")
+          for fragment in (
+              "--provider openai",
+              "--model action-vlm-model",
+              "--base-url https://vlm.invalid/v1",
+              "--provider openai_imagen",
+              "--model action-image-model",
+              "--base-url https://image.invalid/v1",
+              "--size-mode explicit_pixels",
+              "--aspect-ratio 16:9",
+              "--resolution 2K",
+              "--iterations 2",
+              "--budget 0.25",
+              "--seed 42",
+          ):
+              assert fragment in log_text, fragment
+          assert os.environ["ACTION_VLM_KEY"] not in log_text
+          assert os.environ["ACTION_IMAGE_KEY"] not in log_text
+          PY
+
+  ci-success:
+    name: ci-success
+    if: always()
+    needs: [lint, test, studio-e2e, build, release-surfaces, action-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI job to pass
+        env:
+          NEEDS_CONTEXT: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          results = {
+              name: details["result"]
+              for name, details in json.loads(os.environ["NEEDS_CONTEXT"]).items()
+          }
+          print(results)
+          failed = {name: result for name, result in results.items() if result != "success"}
+          if failed:
+              raise SystemExit(f"required CI jobs did not pass: {failed}")
+          PY

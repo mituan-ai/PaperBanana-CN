@@ -23,7 +23,7 @@ def _connection_command(
     key_env: str,
 ) -> list[str]:
     command = [
-        "paperbanana-cn",
+        env.get("PAPERBANANA_CN_COMMAND", "").strip() or "paperbanana-cn",
         "connections",
         "add",
         "--role",

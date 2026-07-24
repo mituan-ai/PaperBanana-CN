@@ -70,3 +70,28 @@ def test_action_connection_helper_keeps_keys_out_of_commands(monkeypatch):
     assert "image-secret" not in command_text
     assert "--api-key-env PB_VLM_API_KEY" in " ".join(vlm_command)
     assert "--api-key-env PB_IMAGE_API_KEY" in " ".join(image_command)
+
+
+def test_action_connection_helper_accepts_internal_command_override(monkeypatch):
+    calls: list[list[str]] = []
+
+    def record(command, *, check, env):
+        assert check is True
+        calls.append(command)
+
+    monkeypatch.setattr(_CONNECTION_HELPER.subprocess, "run", record)
+    env = {
+        "PAPERBANANA_CN_COMMAND": "/tmp/fake-paperbanana-cn",
+        "PB_VLM_PROVIDER": "openai",
+        "PB_VLM_MODEL": "vlm-model",
+        "PB_VLM_API_KEY": "vlm-secret",
+        "PB_IMAGE_PROVIDER": "openai_imagen",
+        "PB_IMAGE_MODEL": "image-model",
+        "PB_IMAGE_API_KEY": "image-secret",
+        "PB_IMAGE_SIZE_MODE": "fixed",
+    }
+
+    _CONNECTION_HELPER.configure_connections(env)
+
+    assert len(calls) == 2
+    assert all(command[0] == "/tmp/fake-paperbanana-cn" for command in calls)
