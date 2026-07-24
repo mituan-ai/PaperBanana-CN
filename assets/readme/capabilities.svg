@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="520" viewBox="0 0 1200 520"
+     role="img" aria-labelledby="title desc">
+  <title id="title">PaperBanana-CN core capabilities</title>
+  <desc id="desc">Independent VLM and image connections, a Chinese and English Studio, and exact aspect ratio and resolution controls.</desc>
+
+  <defs>
+    <marker id="arrow-green" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#147862"/>
+    </marker>
+    <marker id="arrow-gold" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#A87418"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="520" rx="18" fill="#EEF1F0"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="48" y="48" fill="#52605B" font-size="18" font-weight="700">THE THREE THINGS V2 ADDS</text>
+
+    <g id="dual-connections">
+      <rect x="48" y="72" width="650" height="400" rx="10" fill="#151A18"/>
+      <text x="84" y="119" fill="#8FD8C4" font-size="18" font-weight="700">01 / INDEPENDENT MODEL RAILS</text>
+      <text x="84" y="165" fill="#FFFFFF" font-size="34" font-weight="750">Connect each role on its own terms.</text>
+      <text x="84" y="199" fill="#C7D0CC" font-size="20">Protocol, URL, key, model, and timeout stay independent.</text>
+
+      <rect x="84" y="244" width="220" height="92" rx="7" fill="#203B34" stroke="#318A72"/>
+      <circle cx="111" cy="272" r="7" fill="#3CB894"/>
+      <text x="132" y="280" fill="#FFFFFF" font-size="23" font-weight="700">VLM</text>
+      <text x="108" y="314" fill="#C7D0CC" font-size="19">OpenAI / Gemini compatible</text>
+
+      <rect x="84" y="360" width="220" height="76" rx="7" fill="#332D20" stroke="#8A6D30"/>
+      <circle cx="111" cy="388" r="7" fill="#D6A84F"/>
+      <text x="132" y="396" fill="#FFFFFF" font-size="23" font-weight="700">IMAGE</text>
+      <text x="108" y="421" fill="#E0D3B5" font-size="18">Native tiers or explicit pixels</text>
+
+      <path d="M304 290H365V319H408" fill="none" stroke="#3CB894" stroke-width="4" marker-end="url(#arrow-green)"/>
+      <path d="M304 398H365V349H408" fill="none" stroke="#D6A84F" stroke-width="4" marker-end="url(#arrow-gold)"/>
+
+      <rect x="426" y="262" width="224" height="142" rx="8" fill="#F6F8F7"/>
+      <text x="456" y="296" fill="#52605B" font-size="18" font-weight="700">ONE WORKFLOW</text>
+      <rect x="456" y="320" width="60" height="34" rx="4" fill="#DCECE7"/>
+      <rect x="527" y="320" width="54" height="34" rx="4" fill="#F3E5C6"/>
+      <path d="M516 337H527M581 337H608" stroke="#18211E" stroke-width="3"/>
+      <circle cx="615" cy="337" r="8" fill="#147862"/>
+      <path d="M615 345V368H478" fill="none" stroke="#18211E" stroke-width="3"/>
+      <circle cx="470" cy="368" r="8" fill="#A87418"/>
+      <text x="538" y="390" fill="#52605B" font-size="16" text-anchor="middle">plan · draw · critique · refine</text>
+    </g>
+
+    <g id="language">
+      <rect x="722" y="72" width="430" height="188" rx="10" fill="#FFFFFF" stroke="#CBD4CF"/>
+      <text x="754" y="111" fill="#147862" font-size="18" font-weight="700">02 / BILINGUAL STUDIO</text>
+      <text x="754" y="153" fill="#18211E" font-size="30" font-weight="750">中文界面</text>
+      <path d="M922 137H958" stroke="#147862" stroke-width="3" marker-end="url(#arrow-green)"/>
+      <text x="980" y="153" fill="#18211E" font-size="30" font-weight="750">EN figure</text>
+      <text x="754" y="195" fill="#52605B" font-size="20">The interface language never rewrites paper text,</text>
+      <text x="754" y="225" fill="#52605B" font-size="20">prompts, or labels inside the generated figure.</text>
+    </g>
+
+    <g id="dimensions">
+      <rect x="722" y="284" width="430" height="188" rx="10" fill="#FFFFFF" stroke="#CBD4CF"/>
+      <text x="754" y="323" fill="#A87418" font-size="18" font-weight="700">03 / EXACT OUTPUT CONTROL</text>
+      <g fill="#18211E" font-size="22" font-weight="700">
+        <text x="754" y="368">1:1</text>
+        <text x="816" y="368">4:3</text>
+        <text x="878" y="368">16:9</text>
+        <text x="956" y="368">21:9</text>
+      </g>
+      <g fill="#F6F8F7" stroke="#CBD4CF">
+        <rect x="754" y="389" width="102" height="48" rx="6"/>
+        <rect x="870" y="389" width="102" height="48" rx="6"/>
+        <rect x="986" y="389" width="132" height="48" rx="6"/>
+      </g>
+      <g fill="#18211E" font-size="22" font-weight="750" text-anchor="middle">
+        <text x="805" y="421">1K</text>
+        <text x="921" y="421">2K</text>
+        <text x="1052" y="421">4K</text>
+      </g>
+      <text x="754" y="459" fill="#52605B" font-size="18">10 ratios · provider-aware validation · no silent crop</text>
+    </g>
+  </g>
+</svg>

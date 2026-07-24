@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="390" viewBox="0 0 1200 390"
+     role="img" aria-labelledby="title desc">
+  <title id="title">两条模型连接进入同一个科研生图流程</title>
+  <desc id="desc">视觉语言模型和图像生成服务分别保存协议、地址、密钥与模型设置，由原有 PaperBanana 流程协调规划、生成、评审和精修。</desc>
+
+  <defs>
+    <marker id="workflow-arrow-green-zh" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#147862"/>
+    </marker>
+    <marker id="workflow-arrow-gold-zh" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#A87418"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="390" rx="16" fill="#F6F8F7"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+    <text x="54" y="56" fill="#18211E" font-size="34" font-weight="760">一套科研生图流程，两条相互独立的模型链路。</text>
+    <text x="54" y="87" fill="#52605B" font-size="18">官方接口和兼容中转均可使用，VLM 与图像模型的设置互不覆盖。</text>
+
+    <g id="connections">
+      <rect x="54" y="128" width="264" height="88" rx="7" fill="#FFFFFF" stroke="#147862" stroke-width="2"/>
+      <circle cx="78" cy="157" r="7" fill="#147862"/>
+      <text x="96" y="164" fill="#18211E" font-size="22" font-weight="720">视觉语言模型连接</text>
+      <text x="78" y="194" fill="#52605B" font-size="18">协议 · 地址 · Key · 模型</text>
+
+      <rect x="54" y="246" width="264" height="88" rx="7" fill="#FFFFFF" stroke="#A87418" stroke-width="2"/>
+      <circle cx="78" cy="275" r="7" fill="#A87418"/>
+      <text x="96" y="282" fill="#18211E" font-size="22" font-weight="720">图像生成连接</text>
+      <text x="78" y="312" fill="#52605B" font-size="18">协议 · 地址 · Key · 模型</text>
+    </g>
+
+    <g id="pipeline">
+      <rect x="366" y="116" width="770" height="230" rx="9" fill="#FFFFFF" stroke="#CBD4CF"/>
+
+      <text x="396" y="151" fill="#147862" font-size="18" font-weight="720">VLM 链路</text>
+      <path d="M318 172H388" fill="none" stroke="#147862" stroke-width="3" marker-end="url(#workflow-arrow-green-zh)"/>
+      <path d="M396 172H890" fill="none" stroke="#147862" stroke-width="3"/>
+      <rect x="416" y="188" width="130" height="48" rx="6" fill="#DCECE7"/>
+      <text x="457" y="219" fill="#18211E" font-size="19" font-weight="650">理解</text>
+      <rect x="570" y="188" width="112" height="48" rx="6" fill="#DCECE7"/>
+      <text x="607" y="219" fill="#18211E" font-size="19" font-weight="650">规划</text>
+      <rect x="706" y="188" width="122" height="48" rx="6" fill="#DCECE7"/>
+      <text x="748" y="219" fill="#18211E" font-size="19" font-weight="650">评审</text>
+      <path d="M481 172V188M626 172V188M767 172V188" stroke="#147862" stroke-width="3"/>
+
+      <text x="396" y="271" fill="#A87418" font-size="18" font-weight="720">图像链路</text>
+      <path d="M318 290H388" fill="none" stroke="#A87418" stroke-width="3" marker-end="url(#workflow-arrow-gold-zh)"/>
+      <path d="M396 290H890" fill="none" stroke="#A87418" stroke-width="3"/>
+      <rect x="493" y="258" width="130" height="48" rx="6" fill="#F3E5C6"/>
+      <text x="539" y="289" fill="#18211E" font-size="19" font-weight="650">生成</text>
+      <rect x="650" y="258" width="112" height="48" rx="6" fill="#F3E5C6"/>
+      <text x="687" y="289" fill="#18211E" font-size="19" font-weight="650">精修</text>
+
+      <path d="M890 172H914V223" fill="none" stroke="#147862" stroke-width="3"/>
+      <path d="M890 290H914V241" fill="none" stroke="#A87418" stroke-width="3"/>
+      <path d="M914 232H940" stroke="#18211E" stroke-width="3" marker-end="url(#workflow-arrow-green-zh)"/>
+
+      <rect x="958" y="151" width="150" height="158" rx="7" fill="#F6F8F7" stroke="#18211E" stroke-width="2"/>
+      <text x="995" y="181" fill="#18211E" font-size="18" font-weight="720">最终图片</text>
+      <rect x="979" y="198" width="108" height="50" rx="4" fill="#FFFFFF" stroke="#CBD4CF"/>
+      <path d="M994 223H1025M1037 211H1071M1037 232H1071" stroke="#147862" stroke-width="4"/>
+      <text x="981" y="273" fill="#52605B" font-size="17">16:9 · 2K</text>
+      <text x="981" y="296" fill="#52605B" font-size="17">PNG / SVG / PDF</text>
+    </g>
+  </g>
+</svg>
