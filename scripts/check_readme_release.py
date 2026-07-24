@@ -13,8 +13,12 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import NamedTuple
 
-import tomllib
 from PIL import Image
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_PREFIX = "https://raw.githubusercontent.com/mituan-ai/PaperBanana-CN/main/"

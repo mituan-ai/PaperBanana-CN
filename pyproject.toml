@@ -60,6 +60,7 @@ all-providers = [
 dev = [
     "build>=1.2",
     "hatchling>=1.27",
+    "tomli>=2.0; python_version < '3.11'",
     "twine>=6.0",
     "nbformat>=5.10",
     "pytest>=8.0",

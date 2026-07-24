@@ -10,11 +10,14 @@ import sys
 import zipfile
 from pathlib import Path
 
-import tomllib
-
 import paperbanana_cn
 from paperbanana_cn.providers.image_gen.openrouter_imagen import OpenRouterImageGen
 from paperbanana_cn.providers.vlm.openrouter import OpenRouterVLM
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM_REPOSITORY = "https://github.com/llmsresearch/paperbanana"
