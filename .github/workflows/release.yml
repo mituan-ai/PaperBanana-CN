@@ -123,7 +123,7 @@ jobs:
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "$IMAGE_TAG" .
           docker run --rm "$IMAGE_TAG" --version | grep -F "${RELEASE_VERSION#v}"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: paperbanana-cn-${{ github.ref_name }}
           path: dist/*
