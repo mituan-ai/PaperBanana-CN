@@ -138,7 +138,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: paperbanana-cn-${{ github.ref_name }}
           path: dist
@@ -350,7 +350,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: paperbanana-cn-${{ github.ref_name }}
           path: dist
@@ -385,7 +385,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: paperbanana-cn-${{ github.ref_name }}
           path: dist
